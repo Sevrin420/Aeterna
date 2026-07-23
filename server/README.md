@@ -14,6 +14,8 @@ npm start
 pm2 start src/index.js --name aeterna
 ```
 
+This also serves the `../web` static frontend (the console boot screen + abbey courtyard scene) at `/`.
+
 ## What is included
 - Player state (`/me`)
 - Manual save (`/save`) — ready for Cloudflare Worker signature

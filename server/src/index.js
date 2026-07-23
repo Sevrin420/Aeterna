@@ -1,11 +1,18 @@
 import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
 import db from './db/database.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const webRoot = path.join(__dirname, '..', '..', 'web');
+
 const fastify = Fastify({ logger: true });
 await fastify.register(cors, { origin: true });
+await fastify.register(fastifyStatic, { root: webRoot, index: 'index.html' });
 
 // ========== HEALTH ==========
 fastify.get('/health', async () => ({ status: 'ok', service: 'aeterna' }));

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Aeterna — Vita Aeterna</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="stage">
+    <div class="console" id="console">
+      <img class="console-art" src="assets/console.jpg" alt="" draggable="false" />
+
+      <!-- Screen -->
+      <div class="screen-bezel">
+        <canvas id="screen" width="208" height="206"></canvas>
+        <div class="scanlines"></div>
+      </div>
+
+      <!-- Power slider -->
+      <button type="button" class="power-switch" id="powerSwitch" aria-label="Power" aria-pressed="false">
+        <span class="power-track">
+          <span class="power-knob"></span>
+        </span>
+        <span class="power-led"></span>
+      </button>
+
+      <!-- D-Pad hit zones -->
+      <div class="dpad-hit" id="dpadUp" data-dir="up"></div>
+      <div class="dpad-hit" id="dpadDown" data-dir="down"></div>
+      <div class="dpad-hit" id="dpadLeft" data-dir="left"></div>
+      <div class="dpad-hit" id="dpadRight" data-dir="right"></div>
+
+      <!-- Face buttons -->
+      <div class="btn-hit btn-a" id="btnA" aria-label="A"></div>
+      <div class="btn-hit btn-b" id="btnB" aria-label="B"></div>
+    </div>
+    <p class="hint" id="hint">Slide the switch to power on the console.</p>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
