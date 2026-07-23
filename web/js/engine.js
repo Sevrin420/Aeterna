@@ -16,12 +16,16 @@ export class Input {
       ArrowRight: 'right', KeyD: 'right',
     };
 
+    const isTyping = (e) => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
+
     window.addEventListener('keydown', (e) => {
+      if (isTyping(e)) return;
       if (keyMap[e.code]) { this.dirs[keyMap[e.code]] = true; e.preventDefault(); }
       if (e.code === 'Enter' || e.code === 'KeyZ' || e.code === 'Space') { this._setA(true); e.preventDefault(); }
       if (e.code === 'KeyX' || e.code === 'ShiftLeft') { this._setB(true); e.preventDefault(); }
     });
     window.addEventListener('keyup', (e) => {
+      if (isTyping(e)) return;
       if (keyMap[e.code]) this.dirs[keyMap[e.code]] = false;
       if (e.code === 'Enter' || e.code === 'KeyZ' || e.code === 'Space') this.a = false;
       if (e.code === 'KeyX' || e.code === 'ShiftLeft') this.b = false;

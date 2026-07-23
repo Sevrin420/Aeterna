@@ -25,7 +25,13 @@
             <label><input type="radio" name="sex" value="male" checked /> Brother</label>
             <label><input type="radio" name="sex" value="female" /> Sister</label>
           </div>
+          <input class="naming-input" id="namingHandle" type="text" maxlength="16" autocomplete="off" placeholder="@handle (optional)" />
           <button type="submit" class="naming-submit">Take the Oath</button>
+        </form>
+
+        <!-- Chat -->
+        <form class="chat-overlay" id="chatForm" hidden>
+          <input class="naming-input" id="chatInput" type="text" maxlength="120" autocomplete="off" placeholder="Say something..." />
         </form>
 
         <!-- HUD overlay -->

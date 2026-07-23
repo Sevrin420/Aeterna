@@ -28,8 +28,8 @@ async function req(path, opts = {}) {
 }
 
 export const api = {
-  register(name, sex) {
-    return req('/register', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), name, sex }) });
+  register(name, sex, xHandle) {
+    return req('/register', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), name, sex, xHandle }) });
   },
   me() {
     return req('/me', { headers: { 'x-wallet': getWalletId() } });

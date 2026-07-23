@@ -27,7 +27,7 @@ fastify.get('/health', async () => ({ status: 'ok', service: 'aeterna' }));
 // client generates a local pseudo-id and this upserts a Cultist row for it so
 // the rest of the API has a real player to work against.
 fastify.post('/register', async (req, reply) => {
-  const { wallet, name, sex } = req.body || {};
+  const { wallet, name, sex, xHandle } = req.body || {};
   if (!wallet || !name) return reply.code(400).send({ error: 'Missing wallet or name' });
 
   const w = String(wallet).toLowerCase();
@@ -40,13 +40,14 @@ fastify.post('/register', async (req, reply) => {
     name: String(name).slice(0, 32),
     prefix: sex === 'female' ? 'Sister' : 'Brother',
     sex: sex === 'female' ? 'female' : 'male',
+    x_handle: xHandle ? String(xHandle).replace(/^@/, '').slice(0, 15) : null,
     created_at: new Date().toISOString(),
     flags_date: todayStr(),
   };
 
   db.prepare(`
-    INSERT INTO players (id, wallet, name, prefix, sex, created_at, flags_date)
-    VALUES (@id, @wallet, @name, @prefix, @sex, @created_at, @flags_date)
+    INSERT INTO players (id, wallet, name, prefix, sex, x_handle, created_at, flags_date)
+    VALUES (@id, @wallet, @name, @prefix, @sex, @x_handle, @created_at, @flags_date)
   `).run(player);
 
   return db.prepare('SELECT * FROM players WHERE id = ?').get(player.id);
@@ -337,7 +338,18 @@ const online = new Map(); // socketId → player data
 io.on('connection', (socket) => {
   socket.on('join', (data) => {
     online.set(socket.id, { ...data, heldGiftId: null });
-    socket.broadcast.emit('player_joined', data);
+    socket.broadcast.emit('player_joined', {
+      id: data.tokenId || socket.id,
+      name: data.name,
+      prefix: data.prefix,
+      x: data.x,
+      y: data.y,
+    });
+    // Catch the new player up on everyone already in the abbey.
+    for (const [otherId, p] of online) {
+      if (otherId === socket.id) continue;
+      socket.emit('player_joined', { id: p.tokenId || otherId, name: p.name, prefix: p.prefix, x: p.x, y: p.y });
+    }
   });
 
   socket.on('move', (data) => {
@@ -366,7 +378,9 @@ io.on('connection', (socket) => {
   socket.on('chat', (data) => {
     const p = online.get(socket.id);
     if (!p) return;
-    // basic rate-limit could be added here
+    const now = Date.now();
+    if (p.lastChatAt && now - p.lastChatAt < 1500) return; // rate-limit: 1 msg / 1.5s
+    p.lastChatAt = now;
     socket.broadcast.emit('chat_msg', {
       id: p.tokenId || socket.id,
       name: p.name,

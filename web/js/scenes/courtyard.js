@@ -56,12 +56,13 @@ const STATIONS = [
 const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
 
 export class CourtyardScene {
-  constructor({ player, onPlayerUpdate, onToast, socket, onLeaderboard, onSaveExit }) {
+  constructor({ player, onPlayerUpdate, onToast, socket, onLeaderboard, onSaveExit, onChatOpen }) {
     this.player = player;
     this.onPlayerUpdate = onPlayerUpdate || (() => {});
     this.onToast = onToast || (() => {});
     this.onLeaderboard = onLeaderboard || (() => {});
     this.onSaveExit = onSaveExit || (() => {});
+    this.onChatOpen = onChatOpen || (() => {});
     this.socket = socket || null;
 
     this.t = 0;
@@ -69,6 +70,7 @@ export class CourtyardScene {
     this.gifts = []; // { id, loc_x, loc_y } tile coords, ground gifts
     this.giftPollTimer = 0;
     this.localEmoji = null; // { emoji, t }
+    this.localChat = null; // { text, t }
 
     this.remotePlayers = new Map(); // id -> { x, y, dir, name, prefix, emoji }
 
@@ -92,10 +94,28 @@ export class CourtyardScene {
     this._bindSocket();
     this._emitJoin();
     this._onKeyDown = (e) => {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
       const emoji = EMOJI_KEYS[e.code];
       if (emoji) this._sendEmoji(emoji);
+      if (e.code === 'KeyT') this.onChatOpen();
     };
     window.addEventListener('keydown', this._onKeyDown);
+  }
+
+  showChat(id, text) {
+    if (id === 'local') {
+      this.localChat = { text, t: 3.2 };
+    } else {
+      const existing = this.remotePlayers.get(id) || {};
+      this.remotePlayers.set(id, { ...existing, chat: { text, t: 3.2 } });
+    }
+  }
+
+  sendChat(text) {
+    text = text.trim().slice(0, 120);
+    if (!text) return;
+    this.showChat('local', text);
+    if (this.socket) this.socket.emit('chat', { text });
   }
 
   _bindSocket() {
@@ -111,10 +131,12 @@ export class CourtyardScene {
       const existing = this.remotePlayers.get(p.id) || {};
       this.remotePlayers.set(p.id, { ...existing, emoji: { emoji: p.emoji, t: 1.6 } });
     };
+    this._onChatMsg = (p) => this.showChat(p.id, p.text);
     s.on('player_joined', this._onJoined);
     s.on('player_left', this._onLeft);
     s.on('player_moved', this._onMoved);
     s.on('emoji_show', this._onEmoji);
+    s.on('chat_msg', this._onChatMsg);
   }
 
   _unbindSocket() {
@@ -124,6 +146,7 @@ export class CourtyardScene {
     s.off('player_left', this._onLeft);
     s.off('player_moved', this._onMoved);
     s.off('emoji_show', this._onEmoji);
+    s.off('chat_msg', this._onChatMsg);
   }
 
   _sendEmoji(emoji) {
@@ -329,10 +352,18 @@ export class CourtyardScene {
       this.localEmoji.t -= dt;
       if (this.localEmoji.t <= 0) this.localEmoji = null;
     }
+    if (this.localChat) {
+      this.localChat.t -= dt;
+      if (this.localChat.t <= 0) this.localChat = null;
+    }
     for (const rp of this.remotePlayers.values()) {
       if (rp.emoji) {
         rp.emoji.t -= dt;
         if (rp.emoji.t <= 0) rp.emoji = null;
+      }
+      if (rp.chat) {
+        rp.chat.t -= dt;
+        if (rp.chat.t <= 0) rp.chat = null;
       }
     }
   }
@@ -503,7 +534,7 @@ export class CourtyardScene {
     }
   }
 
-  _drawRobedFigure(ctx, x, y, dir, moving, bob, robeColor, holdingGift, label, emoji) {
+  _drawRobedFigure(ctx, x, y, dir, moving, bob, robeColor, holdingGift, label, emoji, chat) {
     const bobOffset = moving ? Math.sin(bob) * 1 : 0;
     const px_ = Math.round(x);
     const py_ = Math.round(y + bobOffset);
@@ -558,6 +589,23 @@ export class CourtyardScene {
       ctx.fillText(emoji.emoji, px_, py_ - 14 - (1.6 - emoji.t) * 4);
       ctx.restore();
     }
+
+    if (chat) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, chat.t);
+      ctx.font = '6px "Courier New", monospace';
+      const w = ctx.measureText(chat.text).width + 6;
+      const bx = px_, by = py_ - 22;
+      ctx.fillStyle = 'rgba(20,13,5,0.85)';
+      ctx.fillRect(bx - w / 2, by - 6, w, 9);
+      ctx.strokeStyle = '#6b5227';
+      ctx.lineWidth = 0.6;
+      ctx.strokeRect(bx - w / 2, by - 6, w, 9);
+      ctx.fillStyle = '#f4e5bd';
+      ctx.textAlign = 'center';
+      ctx.fillText(chat.text, bx, by);
+      ctx.restore();
+    }
   }
 
   render(ctx) {
@@ -576,10 +624,10 @@ export class CourtyardScene {
 
     for (const [id, rp] of this.remotePlayers) {
       if (rp.x == null) continue;
-      this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, 0, '#2e2440', false, rp.name, rp.emoji);
+      this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, 0, '#2e2440', false, rp.name, rp.emoji, rp.chat);
     }
 
-    this._drawRobedFigure(ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving, this.pc.bob, '#241a2e', this.holdingGift, null, this.localEmoji);
+    this._drawRobedFigure(ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving, this.pc.bob, '#241a2e', this.holdingGift, null, this.localEmoji, this.localChat);
 
     const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.72);
     grad.addColorStop(0, 'rgba(0,0,0,0)');

@@ -9,6 +9,9 @@ const powerSwitch = document.getElementById('powerSwitch');
 const hint = document.getElementById('hint');
 const namingForm = document.getElementById('namingForm');
 const namingName = document.getElementById('namingName');
+const namingHandle = document.getElementById('namingHandle');
+const chatForm = document.getElementById('chatForm');
+const chatInput = document.getElementById('chatInput');
 const hud = document.getElementById('hud');
 const hudName = document.getElementById('hudName');
 const hudDevotion = document.getElementById('hudDevotion');
@@ -65,6 +68,22 @@ function showLeaderboard(rows) {
 }
 leaderboardClose.addEventListener('click', () => { leaderboardOverlay.hidden = true; });
 
+function openChat() {
+  chatForm.hidden = false;
+  chatInput.value = '';
+  chatInput.focus();
+}
+
+chatForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (scene && scene.sendChat) scene.sendChat(chatInput.value);
+  chatForm.hidden = true;
+});
+chatInput.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') { chatForm.hidden = true; }
+  e.stopPropagation();
+});
+
 function enterCourtyard(player) {
   namingForm.hidden = true;
   updateHud(player);
@@ -75,9 +94,10 @@ function enterCourtyard(player) {
     socket: ensureSocket(),
     onLeaderboard: showLeaderboard,
     onSaveExit: powerOff,
+    onChatOpen: openChat,
   });
   scene.enter();
-  hint.textContent = 'D-pad/arrows to move · A to interact · B to drop a gift.';
+  hint.textContent = 'D-pad/arrows to move · A to interact · B to drop, T to chat.';
   window.__aeterna = { scene, player };
 }
 
@@ -102,8 +122,9 @@ namingForm.addEventListener('submit', async (e) => {
   const name = namingName.value.trim();
   if (!name) return;
   const sex = namingForm.querySelector('input[name="sex"]:checked').value;
+  const xHandle = namingHandle.value.trim();
   try {
-    await api.register(name, sex);
+    await api.register(name, sex, xHandle);
     const player = await api.me();
     enterCourtyard(player);
   } catch (err) {
@@ -138,6 +159,7 @@ function powerOff() {
   scene = null;
   if (socket) { socket.disconnect(); socket = null; }
   namingForm.hidden = true;
+  chatForm.hidden = true;
   hud.hidden = true;
   toastEl.hidden = true;
   leaderboardOverlay.hidden = true;

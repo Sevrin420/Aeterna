@@ -303,6 +303,17 @@ html, body {
 }
 .leaderboard-list .lb-devotion { color: #e9c468; }
 
+/* ===== Chat ===== */
+.chat-overlay[hidden] { display: none; }
+.chat-overlay {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: 4%;
+  z-index: 6;
+}
+.chat-overlay .naming-input { width: 100%; max-width: none; }
+
 .hint {
   margin: 0;
   font-size: 13px;
