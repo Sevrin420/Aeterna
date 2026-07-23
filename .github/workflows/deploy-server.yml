@@ -1,0 +1,40 @@
+name: Deploy Aeterna Server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync server code
+        run: |
+          rsync -az --delete \
+            --exclude 'node_modules' \
+            --exclude 'data' \
+            --exclude '.env' \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            server/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/aeterna-server/"
+
+      - name: Install deps and restart service
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" '
+            set -e
+            cd /opt/aeterna-server
+            npm ci --omit=dev
+            systemctl restart aeterna-server
+            systemctl --no-pager status aeterna-server
+          '
