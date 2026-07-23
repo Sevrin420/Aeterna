@@ -38,6 +38,7 @@ jobs:
           ssh -i ~/.ssh/deploy_key "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" '
             set -e
             cd /opt/aeterna-server
+            rm -rf node_modules
             npm ci --omit=dev
             systemctl restart aeterna-server
             systemctl --no-pager status aeterna-server
