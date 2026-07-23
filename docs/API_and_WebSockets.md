@@ -3,11 +3,12 @@
 ## REST API (Minimal)
 
 ### Auth
-- POST /auth/login
-- POST /auth/logout
+- POST /auth/login             (planned — see wallet-signature auth in server/README.md)
+- POST /auth/logout             (planned)
+- POST /register                ← current dev-mode stand-in: upserts a Cultist by a local pseudo-wallet id
 
 ### Player
-- GET  /me
+- GET  /me                      ← includes computed `multiplier`, `needsConfession`, `confessionCost`
 - POST /save                  ← triggers Cloudflare Worker signature
 
 ### Duties
@@ -19,7 +20,8 @@
 ### Gifts
 - GET  /gifts/nearby
 - POST /gifts/pickup
-- POST /gifts/give
+- POST /gifts/give               (`{ targetWallet }` for another Cultist, or `{ toGuru: true }`)
+- POST /gifts/drop                ← returns a held gift to the ground at the given tile
 
 ### Confession
 - POST /confession            ← escalating cost

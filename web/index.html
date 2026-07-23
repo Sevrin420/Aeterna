@@ -16,6 +16,26 @@
       <div class="screen-bezel">
         <canvas id="screen" width="208" height="206"></canvas>
         <div class="scanlines"></div>
+
+        <!-- Naming overlay (dev-mode identity, see web/js/scenes/naming.js) -->
+        <form class="naming-overlay" id="namingForm" hidden>
+          <p class="naming-title">Speak your name, Cultist</p>
+          <input class="naming-input" id="namingName" type="text" maxlength="24" autocomplete="off" placeholder="Name" required />
+          <div class="naming-sex">
+            <label><input type="radio" name="sex" value="male" checked /> Brother</label>
+            <label><input type="radio" name="sex" value="female" /> Sister</label>
+          </div>
+          <button type="submit" class="naming-submit">Take the Oath</button>
+        </form>
+
+        <!-- HUD overlay -->
+        <div class="hud" id="hud" hidden>
+          <div class="hud-name" id="hudName"></div>
+          <div class="hud-row"><span id="hudDevotion"></span><span id="hudStreak"></span></div>
+        </div>
+
+        <!-- Toast -->
+        <div class="toast" id="toast" hidden></div>
       </div>
 
       <!-- Power slider -->
@@ -39,6 +59,7 @@
     <p class="hint" id="hint">Slide the switch to power on the console.</p>
   </div>
 
+  <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

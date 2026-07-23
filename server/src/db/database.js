@@ -23,4 +23,11 @@ if (fs.existsSync(schemaFile)) {
   console.warn('Schema file not found — tables may need manual creation');
 }
 
+// Defensive migration for DBs created before flags_date existed.
+try {
+  db.exec('ALTER TABLE players ADD COLUMN flags_date TEXT');
+} catch {
+  // column already exists
+}
+
 export default db;

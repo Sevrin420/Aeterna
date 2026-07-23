@@ -1,11 +1,19 @@
 import { Input, makeLoop } from './engine.js';
 import { BootScene } from './scenes/boot.js';
 import { CourtyardScene } from './scenes/courtyard.js';
+import { api } from './api.js';
 
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');
 const powerSwitch = document.getElementById('powerSwitch');
 const hint = document.getElementById('hint');
+const namingForm = document.getElementById('namingForm');
+const namingName = document.getElementById('namingName');
+const hud = document.getElementById('hud');
+const hudName = document.getElementById('hudName');
+const hudDevotion = document.getElementById('hudDevotion');
+const hudStreak = document.getElementById('hudStreak');
+const toastEl = document.getElementById('toast');
 
 const input = new Input();
 input.bindDpad(document.getElementById('dpadUp'), 'up');
@@ -18,20 +26,80 @@ input.bindButton(document.getElementById('btnB'), 'b');
 let powered = false;
 let scene = null;
 let stopLoop = null;
+let toastTimer = null;
+let socket = null;
 
 function drawOff() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
-function goToCourtyard() {
-  scene = new CourtyardScene();
-  scene.enter();
-  hint.textContent = 'Move with the D-pad or arrow keys.';
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2400);
 }
 
+function updateHud(player) {
+  hudName.textContent = `${player.prefix} ${player.name}`;
+  hudDevotion.textContent = `Devotion ${player.devotion}`;
+  hudStreak.textContent = player.streak > 0 ? ` · Streak ${player.streak}d (${player.multiplier}x)` : '';
+  hud.hidden = false;
+}
+
+function ensureSocket() {
+  if (socket || typeof io === 'undefined') return socket;
+  socket = io({ autoConnect: true });
+  return socket;
+}
+
+function enterCourtyard(player) {
+  namingForm.hidden = true;
+  updateHud(player);
+  scene = new CourtyardScene({
+    player,
+    onPlayerUpdate: updateHud,
+    onToast: showToast,
+    socket: ensureSocket(),
+  });
+  scene.enter();
+  hint.textContent = 'D-pad/arrows to move · A to interact · B to drop a gift.';
+  window.__aeterna = { scene, player };
+}
+
+function showNamingForm() {
+  hud.hidden = true;
+  namingForm.hidden = false;
+  namingName.focus();
+  hint.textContent = 'Enter your name to join the abbey.';
+}
+
+async function afterBoot() {
+  try {
+    const player = await api.me();
+    enterCourtyard(player);
+  } catch {
+    showNamingForm();
+  }
+}
+
+namingForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = namingName.value.trim();
+  if (!name) return;
+  const sex = namingForm.querySelector('input[name="sex"]:checked').value;
+  try {
+    await api.register(name, sex);
+    const player = await api.me();
+    enterCourtyard(player);
+  } catch (err) {
+    showToast(err.message);
+  }
+});
+
 function startBoot() {
-  scene = new BootScene({ onComplete: goToCourtyard });
+  scene = new BootScene({ onComplete: afterBoot });
   scene.enter();
   hint.textContent = 'Press A when the console is ready.';
 }
@@ -53,7 +121,12 @@ function powerOff() {
   if (!powered) return;
   powered = false;
   powerSwitch.setAttribute('aria-pressed', 'false');
+  if (scene && scene.exit) scene.exit();
   scene = null;
+  if (socket) { socket.disconnect(); socket = null; }
+  namingForm.hidden = true;
+  hud.hidden = true;
+  toastEl.hidden = true;
   drawOff();
   hint.textContent = 'Slide the switch to power on the console.';
 }

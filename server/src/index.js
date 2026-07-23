@@ -1,11 +1,16 @@
 import 'dotenv/config';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
 import db from './db/database.js';
+import {
+  DUTY_DEVOTION, STREAK_BONUS_BASE, GIFT_DEVOTION, GIFT_DAILY_LIMITS,
+  todayStr, streakMultiplier, confessionCost, ensureFreshDay, pendingConfession,
+} from './lib/gameLogic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.join(__dirname, '..', '..', 'web');
@@ -17,6 +22,36 @@ await fastify.register(fastifyStatic, { root: webRoot, index: 'index.html' });
 // ========== HEALTH ==========
 fastify.get('/health', async () => ({ status: 'ok', service: 'aeterna' }));
 
+// ========== REGISTER (dev/testnet stand-in for wallet-signature auth) ==========
+// No real wallet is connected yet (see server/README.md "still needed"). The
+// client generates a local pseudo-id and this upserts a Cultist row for it so
+// the rest of the API has a real player to work against.
+fastify.post('/register', async (req, reply) => {
+  const { wallet, name, sex } = req.body || {};
+  if (!wallet || !name) return reply.code(400).send({ error: 'Missing wallet or name' });
+
+  const w = String(wallet).toLowerCase();
+  const existing = db.prepare('SELECT * FROM players WHERE wallet = ?').get(w);
+  if (existing) return ensureFreshDay(db, existing);
+
+  const player = {
+    id: randomUUID(),
+    wallet: w,
+    name: String(name).slice(0, 32),
+    prefix: sex === 'female' ? 'Sister' : 'Brother',
+    sex: sex === 'female' ? 'female' : 'male',
+    created_at: new Date().toISOString(),
+    flags_date: todayStr(),
+  };
+
+  db.prepare(`
+    INSERT INTO players (id, wallet, name, prefix, sex, created_at, flags_date)
+    VALUES (@id, @wallet, @name, @prefix, @sex, @created_at, @flags_date)
+  `).run(player);
+
+  return db.prepare('SELECT * FROM players WHERE id = ?').get(player.id);
+});
+
 // ========== PLAYER ==========
 fastify.get('/me', async (req, reply) => {
   const wallet = req.headers['x-wallet'];
@@ -24,7 +59,15 @@ fastify.get('/me', async (req, reply) => {
 
   const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
   if (!player) return reply.code(404).send({ error: 'Player not found' });
-  return player;
+
+  const fresh = ensureFreshDay(db, player);
+  const pending = pendingConfession(db, fresh.id);
+  return {
+    ...fresh,
+    multiplier: streakMultiplier(fresh.streak, fresh.level),
+    needsConfession: !!pending,
+    confessionCost: pending ? confessionCost(fresh.confession_count) : null,
+  };
 });
 
 // Manual Save → later calls Cloudflare Worker for signature
@@ -56,6 +99,9 @@ fastify.post('/save', async (req, reply) => {
 });
 
 // ========== CONFESSION (escalating cost) ==========
+// NOTE: this is the same dev/testnet stand-in the server already had a TODO
+// for — it records the confession and forgives the break, but does not yet
+// verify an on-chain ETH payment for `cost` using txHash.
 fastify.post('/confession', async (req, reply) => {
   const { wallet, txHash } = req.body || {};
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
@@ -63,30 +109,36 @@ fastify.post('/confession', async (req, reply) => {
   const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
   if (!player) return reply.code(404).send({ error: 'Player not found' });
 
-  const cost = 0.005 + (player.confession_count * 0.001);
-  // TODO: Verify on-chain payment of `cost` ETH using txHash
+  const fresh = ensureFreshDay(db, player);
+  const pending = pendingConfession(db, fresh.id);
+  if (!pending) return reply.code(400).send({ error: 'No broken streak to confess' });
 
+  const cost = confessionCost(fresh.confession_count);
   const now = new Date().toISOString();
+
+  db.prepare(`
+    UPDATE streak_logs SET confessed = 1, confessed_at = ?, cost_eth = ?, tx_hash = ?
+    WHERE id = ?
+  `).run(now, cost, txHash || null, pending.id);
+
+  // Forgive the break: restore the streak the player had going into it, and
+  // back-date last_duty_date to "yesterday" so today's duties continue it.
   db.prepare(`
     UPDATE players
-    SET confession_count = confession_count + 1
+    SET confession_count = confession_count + 1, streak = ?, last_duty_date = ?
     WHERE id = ?
-  `).run(player.id);
-
-  db.prepare(`
-    INSERT INTO streak_logs (player_id, date, streak_before, broke, confessed, confessed_at, cost_eth, tx_hash)
-    VALUES (?, ?, ?, 1, 1, ?, ?, ?)
-  `).run(player.id, now.slice(0, 10), player.streak, now, cost, txHash || null);
+  `).run(pending.streak_before, todayStr(new Date(Date.now() - 86400000)), fresh.id);
 
   return {
     success: true,
     costPaid: cost,
-    nextCost: cost + 0.001,
-    confessionCount: player.confession_count + 1
+    nextCost: confessionCost(fresh.confession_count + 1),
+    confessionCount: fresh.confession_count + 1,
+    restoredStreak: pending.streak_before,
   };
 });
 
-// ========== DUTIES (stubs) ==========
+// ========== DUTIES ==========
 fastify.post('/duty/:type', async (req, reply) => {
   const { type } = req.params;
   const { wallet } = req.body || {};
@@ -98,11 +150,155 @@ fastify.post('/duty/:type', async (req, reply) => {
   const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
   if (!player) return reply.code(404).send({ error: 'Player not found' });
 
+  const fresh = ensureFreshDay(db, player);
   const col = `${type}_today`;
-  db.prepare(`UPDATE players SET ${col} = 1 WHERE id = ?`).run(player.id);
+  if (fresh[col]) return { success: true, duty: type, alreadyDone: true, devotionGained: 0 };
 
-  // TODO: add Devotion, check streak completion, etc.
-  return { success: true, duty: type };
+  db.prepare(`UPDATE players SET ${col} = 1 WHERE id = ?`).run(fresh.id);
+
+  let devotionGained = DUTY_DEVOTION;
+  const allDone =
+    (col === 'pray_today' || fresh.pray_today) &&
+    (col === 'garden_today' || fresh.garden_today) &&
+    (col === 'candles_today' || fresh.candles_today);
+
+  let streakAdvanced = false;
+  let newStreak = fresh.streak;
+  const today = todayStr();
+
+  if (allDone && fresh.last_duty_date !== today) {
+    const multiplier = streakMultiplier(fresh.streak, fresh.level);
+    devotionGained += Math.round(STREAK_BONUS_BASE * (multiplier - 1));
+    newStreak = fresh.streak + 1;
+    streakAdvanced = true;
+    db.prepare('UPDATE players SET streak = ?, last_duty_date = ? WHERE id = ?').run(newStreak, today, fresh.id);
+  }
+
+  db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(devotionGained, fresh.id);
+
+  return {
+    success: true,
+    duty: type,
+    devotionGained,
+    streakAdvanced,
+    streak: newStreak,
+    multiplier: streakMultiplier(newStreak, fresh.level),
+  };
+});
+
+// ========== GIFTS (physical: spawn -> pickup -> carry -> offer -> accept) ==========
+// Fixed spawn points in courtyard tile-space (see web/js/scenes/courtyard.js MAP).
+const GIFT_SPAWN_POINTS = [
+  { x: 4, y: 4 }, { x: 11, y: 4 }, { x: 4, y: 11 }, { x: 11, y: 11 }, { x: 7, y: 4 }, { x: 7, y: 11 },
+];
+const MAX_GROUND_GIFTS = 3;
+
+function maybeSpawnGifts() {
+  const groundCount = db.prepare(`
+    SELECT COUNT(*) AS n FROM gifts WHERE picked_up_by IS NULL AND given_to IS NULL
+  `).get().n;
+  if (groundCount >= MAX_GROUND_GIFTS) return;
+
+  const taken = new Set(
+    db.prepare(`SELECT loc_x, loc_y FROM gifts WHERE picked_up_by IS NULL AND given_to IS NULL`)
+      .all().map((g) => `${g.loc_x},${g.loc_y}`)
+  );
+  const free = GIFT_SPAWN_POINTS.filter((p) => !taken.has(`${p.x},${p.y}`));
+  if (!free.length) return;
+
+  const spot = free[Math.floor(Math.random() * free.length)];
+  db.prepare(`
+    INSERT INTO gifts (id, spawned_at, loc_x, loc_y)
+    VALUES (?, ?, ?, ?)
+  `).run(randomUUID(), new Date().toISOString(), spot.x, spot.y);
+}
+
+fastify.get('/gifts/nearby', async () => {
+  maybeSpawnGifts();
+  return db.prepare(`
+    SELECT id, loc_x, loc_y FROM gifts
+    WHERE picked_up_by IS NULL AND given_to IS NULL
+  `).all();
+});
+
+fastify.post('/gifts/pickup', async (req, reply) => {
+  const { wallet, giftId } = req.body || {};
+  if (!wallet || !giftId) return reply.code(400).send({ error: 'Missing wallet or giftId' });
+
+  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
+  if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (player.held_gift_id) return reply.code(400).send({ error: 'Already holding a gift' });
+
+  const gift = db.prepare('SELECT * FROM gifts WHERE id = ?').get(giftId);
+  if (!gift || gift.picked_up_by || gift.given_to) return reply.code(400).send({ error: 'Gift not available' });
+
+  db.prepare('UPDATE gifts SET picked_up_by = ? WHERE id = ?').run(player.id, giftId);
+  db.prepare('UPDATE players SET held_gift_id = ? WHERE id = ?').run(giftId, player.id);
+  return { success: true, giftId };
+});
+
+fastify.post('/gifts/give', async (req, reply) => {
+  const { wallet, targetWallet, toGuru } = req.body || {};
+  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+
+  const giver = ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase()));
+  if (!giver) return reply.code(404).send({ error: 'Player not found' });
+  if (!giver.held_gift_id) return reply.code(400).send({ error: 'Not holding a gift' });
+  if (giver.gifts_given_today >= GIFT_DAILY_LIMITS.giverPerDay) {
+    return reply.code(400).send({ error: 'Daily gift-giving limit reached' });
+  }
+
+  const giftId = giver.held_gift_id;
+  const now = new Date().toISOString();
+
+  if (toGuru) {
+    db.prepare('UPDATE gifts SET given_to = ?, given_at = ? WHERE id = ?').run('guru', now, giftId);
+    db.prepare(`
+      UPDATE players SET held_gift_id = NULL, gifts_given_today = gifts_given_today + 1, devotion = devotion + ?
+      WHERE id = ?
+    `).run(GIFT_DEVOTION.giverToGuru, giver.id);
+    return { success: true, devotionGained: GIFT_DEVOTION.giverToGuru, to: 'guru' };
+  }
+
+  if (!targetWallet) return reply.code(400).send({ error: 'Missing targetWallet' });
+  const receiver = ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE wallet = ?').get(targetWallet.toLowerCase()));
+  if (!receiver) return reply.code(404).send({ error: 'Recipient not found' });
+  if (receiver.id === giver.id) return reply.code(400).send({ error: 'Cannot gift yourself' });
+  if (receiver.gifts_received_today >= GIFT_DAILY_LIMITS.receiverPerDay) {
+    return reply.code(400).send({ error: 'Recipient has reached their daily gift limit' });
+  }
+
+  db.prepare('UPDATE gifts SET given_to = ?, given_at = ? WHERE id = ?').run(receiver.id, now, giftId);
+  db.prepare(`
+    UPDATE players SET held_gift_id = NULL, gifts_given_today = gifts_given_today + 1, devotion = devotion + ?
+    WHERE id = ?
+  `).run(GIFT_DEVOTION.giverToCultist, giver.id);
+  db.prepare(`
+    UPDATE players SET gifts_received_today = gifts_received_today + 1, devotion = devotion + ?
+    WHERE id = ?
+  `).run(GIFT_DEVOTION.receiverFromCultist, receiver.id);
+
+  return {
+    success: true,
+    devotionGained: GIFT_DEVOTION.giverToCultist,
+    to: receiver.name,
+    receiverDevotionGained: GIFT_DEVOTION.receiverFromCultist,
+  };
+});
+
+fastify.post('/gifts/drop', async (req, reply) => {
+  const { wallet, x, y } = req.body || {};
+  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+
+  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
+  if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (!player.held_gift_id) return reply.code(400).send({ error: 'Not holding a gift' });
+
+  db.prepare('UPDATE gifts SET picked_up_by = NULL, loc_x = ?, loc_y = ? WHERE id = ?')
+    .run(Number.isFinite(x) ? x : null, Number.isFinite(y) ? y : null, player.held_gift_id);
+  db.prepare('UPDATE players SET held_gift_id = NULL WHERE id = ?').run(player.id);
+
+  return { success: true };
 });
 
 // ========== ADMIN AWARD ==========

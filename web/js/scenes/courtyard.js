@@ -1,5 +1,8 @@
-// The walled abbey courtyard — first scene after boot.
-// Small hand-authored tile map rendered with plain canvas primitives (no sprite assets).
+// The walled abbey courtyard — first scene after boot + naming.
+// Small hand-authored tile map rendered with plain canvas primitives (no sprite assets),
+// wired to the real Fastify API (duties, gifts, confession) and Socket.io presence.
+
+import { api, getWalletId } from '../api.js';
 
 const TILE = 13;
 const COLS = 16;
@@ -29,21 +32,41 @@ const MAP = [
 
 const SOLID = new Set(['#', 'P', 'F']);
 const TORCH_COLS = [4, 11];
+const GIFT_POLL_MS = 4000;
 
 function tileAt(col, row) {
   if (row < 0 || row >= ROWS || col < 0 || col >= COLS) return '#';
   return MAP[row][col];
 }
-
 function isSolid(col, row) {
   return SOLID.has(tileAt(col, row));
 }
 
+const px = (tx) => tx * TILE + TILE / 2;
+
+const STATIONS = [
+  { id: 'pray', kind: 'duty', label: 'Pray', x: px(8), y: px(2.4), r: 15 },
+  { id: 'garden', kind: 'duty', label: 'Tend Garden', x: px(3), y: px(5), r: 15 },
+  { id: 'candles', kind: 'duty', label: 'Light Candles', x: px(12.5), y: px(5), r: 15 },
+  { id: 'guru', kind: 'guru', label: 'Offer to the Guru', x: px(7.5), y: px(11), r: 16 },
+  { id: 'confession', kind: 'confession', label: 'Confess', x: px(3), y: px(12.3), r: 15 },
+];
+
 export class CourtyardScene {
-  constructor() {
+  constructor({ player, onPlayerUpdate, onToast, socket }) {
+    this.player = player;
+    this.onPlayerUpdate = onPlayerUpdate || (() => {});
+    this.onToast = onToast || (() => {});
+    this.socket = socket || null;
+
     this.t = 0;
-    // spawn just inside the gate, facing up into the courtyard
-    this.player = {
+    this.holdingGift = !!player.held_gift_id;
+    this.gifts = []; // { id, loc_x, loc_y } tile coords, ground gifts
+    this.giftPollTimer = 0;
+
+    this.remotePlayers = new Map(); // id -> { x, y, dir, name, prefix }
+
+    this.pc = {
       x: (7.5) * TILE,
       y: (14.4) * TILE,
       w: 8,
@@ -53,37 +76,177 @@ export class CourtyardScene {
       moving: false,
       bob: 0,
     };
-    this.entryMessage = 'You stand within the abbey walls.';
+    this.entryMessage = `You stand within the abbey walls, ${player.prefix} ${player.name}.`;
     this.messageTimer = 4;
+    this.lastEmittedMove = 0;
   }
 
-  enter() {}
+  enter() {
+    this._refreshGifts();
+    this._bindSocket();
+    this._emitJoin();
+  }
+
+  _bindSocket() {
+    const s = this.socket;
+    if (!s) return;
+    this._onJoined = (p) => this.remotePlayers.set(p.id, p);
+    this._onLeft = (p) => this.remotePlayers.delete(p.id);
+    this._onMoved = (p) => {
+      const existing = this.remotePlayers.get(p.id) || {};
+      this.remotePlayers.set(p.id, { ...existing, ...p });
+    };
+    s.on('player_joined', this._onJoined);
+    s.on('player_left', this._onLeft);
+    s.on('player_moved', this._onMoved);
+  }
+
+  _unbindSocket() {
+    const s = this.socket;
+    if (!s) return;
+    s.off('player_joined', this._onJoined);
+    s.off('player_left', this._onLeft);
+    s.off('player_moved', this._onMoved);
+  }
+
+  _emitJoin() {
+    if (!this.socket) return;
+    this.socket.emit('join', {
+      tokenId: getWalletId(),
+      name: this.player.name,
+      prefix: this.player.prefix,
+      x: this.pc.x,
+      y: this.pc.y,
+    });
+  }
+
+  async _refreshGifts() {
+    try {
+      this.gifts = await api.giftsNearby();
+    } catch {
+      // non-fatal — ground gifts are cosmetic/optional
+    }
+  }
 
   _tryMove(dx, dy) {
-    const p = this.player;
+    const p = this.pc;
     const nx = p.x + dx;
     const ny = p.y + dy;
-
     const half = p.w / 2;
     const corners = (x, y) => [
-      [x - half, y - half],
-      [x + half, y - half],
-      [x - half, y + half],
-      [x + half, y + half],
+      [x - half, y - half], [x + half, y - half],
+      [x - half, y + half], [x + half, y + half],
     ];
-
     const blockedX = corners(nx, p.y).some(([cx, cy]) => isSolid(Math.floor(cx / TILE), Math.floor(cy / TILE)));
     if (!blockedX) p.x = nx;
-
     const blockedY = corners(p.x, ny).some(([cx, cy]) => isSolid(Math.floor(cx / TILE), Math.floor(cy / TILE)));
     if (!blockedY) p.y = ny;
+  }
+
+  _nearestStation() {
+    let best = null, bestD = Infinity;
+    for (const s of STATIONS) {
+      const d = Math.hypot(this.pc.x - s.x, this.pc.y - s.y);
+      if (d < s.r && d < bestD) { best = s; bestD = d; }
+    }
+    return best;
+  }
+
+  _nearestGift() {
+    let best = null, bestD = Infinity;
+    for (const g of this.gifts) {
+      const gx = px(g.loc_x), gy = px(g.loc_y);
+      const d = Math.hypot(this.pc.x - gx, this.pc.y - gy);
+      if (d < 12 && d < bestD) { best = g; bestD = d; }
+    }
+    return best;
+  }
+
+  async _handleDuty(id) {
+    try {
+      const res = await api.duty(id);
+      if (res.alreadyDone) {
+        this.onToast('Already done today.');
+        return;
+      }
+      this.player[`${id}_today`] = 1;
+      this.player.devotion += res.devotionGained;
+      this.player.streak = res.streak;
+      this.player.multiplier = res.multiplier;
+      this.onPlayerUpdate(this.player);
+      this.onToast(
+        res.streakAdvanced
+          ? `+${res.devotionGained} Devotion — streak day ${res.streak} (${res.multiplier}x)`
+          : `+${res.devotionGained} Devotion`
+      );
+    } catch (e) {
+      this.onToast(e.message);
+    }
+  }
+
+  async _handleGuru() {
+    if (!this.holdingGift) { this.onToast('You have nothing to offer the Guru.'); return; }
+    try {
+      const res = await api.giftGive({ toGuru: true });
+      this.holdingGift = false;
+      this.player.devotion += res.devotionGained;
+      this.onPlayerUpdate(this.player);
+      this.onToast(`The Guru accepts your gift. +${res.devotionGained} Devotion`);
+    } catch (e) {
+      this.onToast(e.message);
+    }
+  }
+
+  async _handleConfession() {
+    if (!this.player.needsConfession) { this.onToast('No confession needed.'); return; }
+    try {
+      const res = await api.confession();
+      this.player.needsConfession = false;
+      this.player.confessionCost = null;
+      this.player.streak = res.restoredStreak;
+      this.onPlayerUpdate(this.player);
+      this.onToast(`Confession accepted. Streak restored to ${res.restoredStreak}.`);
+    } catch (e) {
+      this.onToast(e.message);
+    }
+  }
+
+  async _handlePickup(gift) {
+    try {
+      await api.giftPickup(gift.id);
+      this.holdingGift = true;
+      this.gifts = this.gifts.filter((g) => g.id !== gift.id);
+      if (this.socket) this.socket.emit('pickup_gift', { giftId: gift.id });
+      this.onToast('You pick up the gift.');
+    } catch (e) {
+      this.onToast(e.message);
+    }
+  }
+
+  async _handleDrop() {
+    if (!this.holdingGift) return;
+    try {
+      await api.giftDrop(this.pc.x / TILE, this.pc.y / TILE);
+      this.holdingGift = false;
+      if (this.socket) this.socket.emit('drop_gift');
+      this.onToast('You set the gift down.');
+      this._refreshGifts();
+    } catch (e) {
+      this.onToast(e.message);
+    }
   }
 
   update(dt, input) {
     this.t += dt;
     if (this.messageTimer > 0) this.messageTimer -= dt;
 
-    const p = this.player;
+    this.giftPollTimer += dt;
+    if (this.giftPollTimer > GIFT_POLL_MS / 1000) {
+      this.giftPollTimer = 0;
+      this._refreshGifts();
+    }
+
+    const p = this.pc;
     let dx = 0, dy = 0;
     if (input.dirs.up) { dy -= 1; p.dir = 'up'; }
     if (input.dirs.down) { dy += 1; p.dir = 'down'; }
@@ -95,10 +258,29 @@ export class CourtyardScene {
       const len = Math.hypot(dx, dy) || 1;
       this._tryMove((dx / len) * p.speed * dt, (dy / len) * p.speed * dt);
       p.bob += dt * 10;
+
+      this.lastEmittedMove += dt;
+      if (this.socket && this.lastEmittedMove > 0.08) {
+        this.lastEmittedMove = 0;
+        this.socket.emit('move', { x: p.x, y: p.y, dir: p.dir });
+      }
     }
 
-    input.consumeAPress();
-    input.consumeBPress();
+    this._activeStation = this._nearestStation();
+    this._activeGift = this._nearestGift();
+
+    if (input.consumeAPress()) {
+      if (this._activeGift && !this.holdingGift) {
+        this._handlePickup(this._activeGift);
+      } else if (this._activeStation) {
+        if (this._activeStation.kind === 'duty') this._handleDuty(this._activeStation.id);
+        else if (this._activeStation.kind === 'guru') this._handleGuru();
+        else if (this._activeStation.kind === 'confession') this._handleConfession();
+      }
+    }
+    if (input.consumeBPress()) {
+      this._handleDrop();
+    }
   }
 
   _drawFloor(ctx) {
@@ -114,7 +296,6 @@ export class CourtyardScene {
           ctx.strokeStyle = 'rgba(80,60,30,0.5)';
           ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
         } else {
-          // sandstone floor with light dithering
           ctx.fillStyle = ((r + c) % 2 === 0) ? '#c9a35f' : '#bd9752';
           ctx.fillRect(x, y, TILE, TILE);
           if ((r * 7 + c * 13) % 11 === 0) {
@@ -124,8 +305,6 @@ export class CourtyardScene {
         }
       }
     }
-
-    // gate threshold glow
     ctx.fillStyle = 'rgba(233, 196, 104, 0.18)';
     ctx.fillRect(7 * TILE, 15 * TILE, 2 * TILE, TILE);
   }
@@ -158,56 +337,154 @@ export class CourtyardScene {
       const flick = 0.7 + Math.sin(this.t * 14 + col) * 0.15 + Math.random() * 0.08;
       ctx.fillStyle = '#3a2a18';
       ctx.fillRect(x - 2, y - 2, 4, 8);
-      ctx.fillStyle = `rgba(255, ${Math.floor(140 + flick * 60)}, 60, ${0.85})`;
+      ctx.fillStyle = `rgba(255, ${Math.floor(140 + flick * 60)}, 60, 0.85)`;
       ctx.beginPath();
       ctx.ellipse(x, y - 6, 3.5 * flick, 5.5 * flick, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = `rgba(255, 220, 140, ${0.7})`;
+      ctx.fillStyle = 'rgba(255, 220, 140, 0.7)';
       ctx.beginPath();
       ctx.ellipse(x, y - 6, 1.5 * flick, 2.5 * flick, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
-  _drawPlayer(ctx) {
-    const p = this.player;
-    const bobOffset = p.moving ? Math.sin(p.bob) * 1 : 0;
-    const x = Math.round(p.x);
-    const y = Math.round(p.y + bobOffset);
+  _drawStations(ctx) {
+    for (const s of STATIONS) {
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      if (s.id === 'pray') {
+        ctx.fillStyle = '#5c4a2a';
+        ctx.fillRect(-6, 2, 12, 4);
+        ctx.fillStyle = this.player.pray_today ? '#8fe0c8' : '#e9c468';
+        const glow = 0.6 + Math.sin(this.t * 4) * 0.25;
+        ctx.globalAlpha = glow;
+        ctx.beginPath();
+        ctx.arc(0, -2, 3.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      } else if (s.id === 'garden') {
+        ctx.fillStyle = '#3a2c18';
+        ctx.fillRect(-8, -3, 16, 8);
+        const leafColor = this.player.garden_today ? '#7fd68a' : '#4f8b52';
+        ctx.fillStyle = leafColor;
+        for (let i = -6; i <= 6; i += 4) {
+          ctx.beginPath();
+          ctx.ellipse(i, -3 + Math.sin(this.t * 2 + i) * 0.6, 2, 3.4, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (s.id === 'candles') {
+        ctx.fillStyle = '#3a2c18';
+        ctx.fillRect(-2, -8, 4, 16);
+        for (const off of [-6, 0, 6]) {
+          const lit = this.player.candles_today;
+          const flick = 0.7 + Math.sin(this.t * 12 + off) * 0.2;
+          ctx.fillStyle = '#8a6a34';
+          ctx.fillRect(off - 1, 4, 2, 4);
+          ctx.fillStyle = lit ? `rgba(255,200,110,${flick})` : 'rgba(120,110,90,0.5)';
+          ctx.beginPath();
+          ctx.ellipse(off, 2, 1.4, 2.4, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (s.id === 'guru') {
+        // stationary robed NPC in pale gold, taller than the player
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.beginPath();
+        ctx.ellipse(0, 7, 6, 2.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#e9dcae';
+        ctx.beginPath();
+        ctx.moveTo(-5, 6);
+        ctx.lineTo(-6, -4);
+        ctx.quadraticCurveTo(0, -11, 6, -4);
+        ctx.lineTo(5, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#a9821f';
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
+        ctx.fillStyle = '#2a2010';
+        ctx.beginPath();
+        ctx.ellipse(0, -8, 4, 4.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(233,196,104,0.95)';
+        ctx.beginPath();
+        ctx.ellipse(0, -8, 1.3, 1.3, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (s.id === 'confession') {
+        ctx.fillStyle = '#241a12';
+        ctx.fillRect(-7, -10, 14, 18);
+        ctx.fillStyle = '#4a3a22';
+        ctx.fillRect(-7, -10, 14, 3);
+        ctx.fillStyle = this.player.needsConfession ? 'rgba(220,80,60,0.85)' : 'rgba(90,70,40,0.6)';
+        ctx.beginPath();
+        ctx.arc(0, -2, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
 
-    // shadow
+  _drawGifts(ctx) {
+    for (const g of this.gifts) {
+      const x = px(g.loc_x), y = px(g.loc_y);
+      const bob = Math.sin(this.t * 3 + g.loc_x) * 1.2;
+      ctx.save();
+      ctx.translate(x, y + bob);
+      ctx.fillStyle = '#7a2f2f';
+      ctx.fillRect(-4, -3, 8, 7);
+      ctx.fillStyle = '#e9c468';
+      ctx.fillRect(-4, -0.5, 8, 1.5);
+      ctx.fillRect(-0.75, -3, 1.5, 7);
+      ctx.restore();
+    }
+  }
+
+  _drawRobedFigure(ctx, x, y, dir, moving, bob, robeColor, holdingGift, label) {
+    const bobOffset = moving ? Math.sin(bob) * 1 : 0;
+    const px_ = Math.round(x);
+    const py_ = Math.round(y + bobOffset);
+
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
-    ctx.ellipse(x, y + 5, 5, 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(px_, py_ + 5, 5, 2, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // robe
-    ctx.fillStyle = '#241a2e';
+    ctx.fillStyle = robeColor;
     ctx.beginPath();
-    ctx.moveTo(x - 4, y + 5);
-    ctx.lineTo(x - 5, y - 2);
-    ctx.quadraticCurveTo(x, y - 8, x + 5, y - 2);
-    ctx.lineTo(x + 4, y + 5);
+    ctx.moveTo(px_ - 4, py_ + 5);
+    ctx.lineTo(px_ - 5, py_ - 2);
+    ctx.quadraticCurveTo(px_, py_ - 8, px_ + 5, py_ - 2);
+    ctx.lineTo(px_ + 4, py_ + 5);
     ctx.closePath();
     ctx.fill();
-
-    // gold trim
     ctx.strokeStyle = '#d9b264';
     ctx.lineWidth = 0.8;
     ctx.stroke();
 
-    // hood / head shadow
     ctx.fillStyle = '#140d19';
     ctx.beginPath();
-    ctx.ellipse(x, y - 6, 3.4, 3.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(px_, py_ - 6, 3.4, 3.6, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // face glow, offset by facing direction
-    const faceOffset = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[p.dir] || [0, 1];
+    const faceOffset = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir] || [0, 1];
     ctx.fillStyle = 'rgba(233, 196, 104, 0.9)';
     ctx.beginPath();
-    ctx.ellipse(x + faceOffset[0] * 1.2, y - 6 + faceOffset[1] * 1.2, 1.1, 1.1, 0, 0, Math.PI * 2);
+    ctx.ellipse(px_ + faceOffset[0] * 1.2, py_ - 6 + faceOffset[1] * 1.2, 1.1, 1.1, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    if (holdingGift) {
+      ctx.fillStyle = '#7a2f2f';
+      ctx.fillRect(px_ - 3, py_ - 12, 6, 5);
+      ctx.fillStyle = '#e9c468';
+      ctx.fillRect(px_ - 3, py_ - 10.5, 6, 1.2);
+    }
+
+    if (label) {
+      ctx.font = '5px "Courier New", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(244,229,189,0.85)';
+      ctx.fillText(label, px_, py_ - 16);
+    }
   }
 
   render(ctx) {
@@ -216,24 +493,41 @@ export class CourtyardScene {
 
     this._drawFloor(ctx);
     this._drawFountain(ctx);
+    this._drawStations(ctx);
+    this._drawGifts(ctx);
     this._drawPillar(ctx, 1, 1);
     this._drawPillar(ctx, 14, 1);
     this._drawPillar(ctx, 1, 14);
     this._drawPillar(ctx, 14, 14);
     this._drawTorches(ctx);
-    this._drawPlayer(ctx);
 
-    // subtle vignette
+    for (const [id, rp] of this.remotePlayers) {
+      if (rp.x == null) continue;
+      this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, 0, '#2e2440', false, rp.name);
+    }
+
+    this._drawRobedFigure(ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving, this.pc.bob, '#241a2e', this.holdingGift, null);
+
     const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.72);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
     grad.addColorStop(1, 'rgba(0,0,0,0.45)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
+    ctx.textAlign = 'center';
+    if (this._activeGift && !this.holdingGift) {
+      ctx.font = '6px "Courier New", monospace';
+      ctx.fillStyle = '#f4e5bd';
+      ctx.fillText('[A] Pick up gift', W / 2, H - 16);
+    } else if (this._activeStation) {
+      ctx.font = '6px "Courier New", monospace';
+      ctx.fillStyle = '#f4e5bd';
+      ctx.fillText(`[A] ${this._activeStation.label}`, W / 2, H - 16);
+    }
+
     if (this.messageTimer > 0) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, this.messageTimer);
-      ctx.textAlign = 'center';
       ctx.font = '7px "Courier New", monospace';
       ctx.fillStyle = '#f4e5bd';
       ctx.fillText(this.entryMessage, W / 2, H - 6);
@@ -241,5 +535,7 @@ export class CourtyardScene {
     }
   }
 
-  exit() {}
+  exit() {
+    this._unbindSocket();
+  }
 }

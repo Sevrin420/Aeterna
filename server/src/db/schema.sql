@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS players (
   level         INTEGER NOT NULL DEFAULT 1,
   devotion      INTEGER NOT NULL DEFAULT 0,
   streak        INTEGER NOT NULL DEFAULT 0,
-  last_duty_date TEXT,                            -- YYYY-MM-DD
+  last_duty_date TEXT,                            -- YYYY-MM-DD, last day all 3 duties were completed
+  flags_date    TEXT,                             -- YYYY-MM-DD the *_today columns currently reflect
   pray_today    INTEGER DEFAULT 0,
   garden_today  INTEGER DEFAULT 0,
   candles_today INTEGER DEFAULT 0,
