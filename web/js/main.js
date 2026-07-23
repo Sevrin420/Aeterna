@@ -14,6 +14,9 @@ const hudName = document.getElementById('hudName');
 const hudDevotion = document.getElementById('hudDevotion');
 const hudStreak = document.getElementById('hudStreak');
 const toastEl = document.getElementById('toast');
+const leaderboardOverlay = document.getElementById('leaderboardOverlay');
+const leaderboardList = document.getElementById('leaderboardList');
+const leaderboardClose = document.getElementById('leaderboardClose');
 
 const input = new Input();
 input.bindDpad(document.getElementById('dpadUp'), 'up');
@@ -54,6 +57,14 @@ function ensureSocket() {
   return socket;
 }
 
+function showLeaderboard(rows) {
+  leaderboardList.innerHTML = rows.map((r) => `
+    <li><span>${r.prefix} ${r.name}</span><span class="lb-devotion">${r.devotion}${r.streak > 0 ? ` · ${r.streak}d` : ''}</span></li>
+  `).join('') || '<li>No Cultists yet.</li>';
+  leaderboardOverlay.hidden = false;
+}
+leaderboardClose.addEventListener('click', () => { leaderboardOverlay.hidden = true; });
+
 function enterCourtyard(player) {
   namingForm.hidden = true;
   updateHud(player);
@@ -62,6 +73,8 @@ function enterCourtyard(player) {
     onPlayerUpdate: updateHud,
     onToast: showToast,
     socket: ensureSocket(),
+    onLeaderboard: showLeaderboard,
+    onSaveExit: powerOff,
   });
   scene.enter();
   hint.textContent = 'D-pad/arrows to move · A to interact · B to drop a gift.';
@@ -127,6 +140,7 @@ function powerOff() {
   namingForm.hidden = true;
   hud.hidden = true;
   toastEl.hidden = true;
+  leaderboardOverlay.hidden = true;
   drawOff();
   hint.textContent = 'Slide the switch to power on the console.';
 }

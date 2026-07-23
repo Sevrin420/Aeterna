@@ -52,4 +52,10 @@ export const api = {
   giftDrop(x, y) {
     return req('/gifts/drop', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), x, y }) });
   },
+  save() {
+    return req('/save', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
+  },
+  leaderboard() {
+    return req('/leaderboard');
+  },
 };

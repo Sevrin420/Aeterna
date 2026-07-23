@@ -50,21 +50,27 @@ const STATIONS = [
   { id: 'candles', kind: 'duty', label: 'Light Candles', x: px(12.5), y: px(5), r: 15 },
   { id: 'guru', kind: 'guru', label: 'Offer to the Guru', x: px(7.5), y: px(11), r: 16 },
   { id: 'confession', kind: 'confession', label: 'Confess', x: px(3), y: px(12.3), r: 15 },
+  { id: 'leaderboard', kind: 'leaderboard', label: 'View Leaderboard', x: px(12.5), y: px(2.2), r: 15 },
+  { id: 'gate', kind: 'gate', label: 'Save & Exit [B]', x: px(7.5), y: px(14), r: 22 },
 ];
+const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
 
 export class CourtyardScene {
-  constructor({ player, onPlayerUpdate, onToast, socket }) {
+  constructor({ player, onPlayerUpdate, onToast, socket, onLeaderboard, onSaveExit }) {
     this.player = player;
     this.onPlayerUpdate = onPlayerUpdate || (() => {});
     this.onToast = onToast || (() => {});
+    this.onLeaderboard = onLeaderboard || (() => {});
+    this.onSaveExit = onSaveExit || (() => {});
     this.socket = socket || null;
 
     this.t = 0;
     this.holdingGift = !!player.held_gift_id;
     this.gifts = []; // { id, loc_x, loc_y } tile coords, ground gifts
     this.giftPollTimer = 0;
+    this.localEmoji = null; // { emoji, t }
 
-    this.remotePlayers = new Map(); // id -> { x, y, dir, name, prefix }
+    this.remotePlayers = new Map(); // id -> { x, y, dir, name, prefix, emoji }
 
     this.pc = {
       x: (7.5) * TILE,
@@ -85,6 +91,11 @@ export class CourtyardScene {
     this._refreshGifts();
     this._bindSocket();
     this._emitJoin();
+    this._onKeyDown = (e) => {
+      const emoji = EMOJI_KEYS[e.code];
+      if (emoji) this._sendEmoji(emoji);
+    };
+    window.addEventListener('keydown', this._onKeyDown);
   }
 
   _bindSocket() {
@@ -96,9 +107,14 @@ export class CourtyardScene {
       const existing = this.remotePlayers.get(p.id) || {};
       this.remotePlayers.set(p.id, { ...existing, ...p });
     };
+    this._onEmoji = (p) => {
+      const existing = this.remotePlayers.get(p.id) || {};
+      this.remotePlayers.set(p.id, { ...existing, emoji: { emoji: p.emoji, t: 1.6 } });
+    };
     s.on('player_joined', this._onJoined);
     s.on('player_left', this._onLeft);
     s.on('player_moved', this._onMoved);
+    s.on('emoji_show', this._onEmoji);
   }
 
   _unbindSocket() {
@@ -107,6 +123,12 @@ export class CourtyardScene {
     s.off('player_joined', this._onJoined);
     s.off('player_left', this._onLeft);
     s.off('player_moved', this._onMoved);
+    s.off('emoji_show', this._onEmoji);
+  }
+
+  _sendEmoji(emoji) {
+    this.localEmoji = { emoji, t: 1.6 };
+    if (this.socket) this.socket.emit('emoji', { emoji });
   }
 
   _emitJoin() {
@@ -236,6 +258,25 @@ export class CourtyardScene {
     }
   }
 
+  async _handleLeaderboard() {
+    try {
+      const rows = await api.leaderboard();
+      this.onLeaderboard(rows);
+    } catch (e) {
+      this.onToast(e.message);
+    }
+  }
+
+  async _handleSaveExit() {
+    try {
+      const res = await api.save();
+      this.onToast(`Saved. ${res.devotion} Devotion secured.`);
+      this.onSaveExit();
+    } catch (e) {
+      this.onToast(e.message);
+    }
+  }
+
   update(dt, input) {
     this.t += dt;
     if (this.messageTimer > 0) this.messageTimer -= dt;
@@ -276,10 +317,23 @@ export class CourtyardScene {
         if (this._activeStation.kind === 'duty') this._handleDuty(this._activeStation.id);
         else if (this._activeStation.kind === 'guru') this._handleGuru();
         else if (this._activeStation.kind === 'confession') this._handleConfession();
+        else if (this._activeStation.kind === 'leaderboard') this._handleLeaderboard();
       }
     }
     if (input.consumeBPress()) {
-      this._handleDrop();
+      if (this.holdingGift) this._handleDrop();
+      else if (this._activeStation && this._activeStation.kind === 'gate') this._handleSaveExit();
+    }
+
+    if (this.localEmoji) {
+      this.localEmoji.t -= dt;
+      if (this.localEmoji.t <= 0) this.localEmoji = null;
+    }
+    for (const rp of this.remotePlayers.values()) {
+      if (rp.emoji) {
+        rp.emoji.t -= dt;
+        if (rp.emoji.t <= 0) rp.emoji = null;
+      }
     }
   }
 
@@ -419,6 +473,16 @@ export class CourtyardScene {
         ctx.beginPath();
         ctx.arc(0, -2, 2, 0, Math.PI * 2);
         ctx.fill();
+      } else if (s.id === 'leaderboard') {
+        ctx.fillStyle = '#4a3a22';
+        ctx.fillRect(-5, 0, 10, 6);
+        ctx.fillStyle = '#e9dcae';
+        ctx.fillRect(-6, -6, 12, 8);
+        ctx.strokeStyle = '#a9821f';
+        ctx.lineWidth = 0.7;
+        ctx.strokeRect(-6, -6, 12, 8);
+        ctx.fillStyle = '#8a6a34';
+        for (let i = -3; i <= 3; i += 3) ctx.fillRect(-4, i, 8, 1);
       }
       ctx.restore();
     }
@@ -439,7 +503,7 @@ export class CourtyardScene {
     }
   }
 
-  _drawRobedFigure(ctx, x, y, dir, moving, bob, robeColor, holdingGift, label) {
+  _drawRobedFigure(ctx, x, y, dir, moving, bob, robeColor, holdingGift, label, emoji) {
     const bobOffset = moving ? Math.sin(bob) * 1 : 0;
     const px_ = Math.round(x);
     const py_ = Math.round(y + bobOffset);
@@ -485,6 +549,15 @@ export class CourtyardScene {
       ctx.fillStyle = 'rgba(244,229,189,0.85)';
       ctx.fillText(label, px_, py_ - 16);
     }
+
+    if (emoji) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, emoji.t);
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(emoji.emoji, px_, py_ - 14 - (1.6 - emoji.t) * 4);
+      ctx.restore();
+    }
   }
 
   render(ctx) {
@@ -503,10 +576,10 @@ export class CourtyardScene {
 
     for (const [id, rp] of this.remotePlayers) {
       if (rp.x == null) continue;
-      this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, 0, '#2e2440', false, rp.name);
+      this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, 0, '#2e2440', false, rp.name, rp.emoji);
     }
 
-    this._drawRobedFigure(ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving, this.pc.bob, '#241a2e', this.holdingGift, null);
+    this._drawRobedFigure(ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving, this.pc.bob, '#241a2e', this.holdingGift, null, this.localEmoji);
 
     const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.72);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
@@ -522,7 +595,8 @@ export class CourtyardScene {
     } else if (this._activeStation) {
       ctx.font = '6px "Courier New", monospace';
       ctx.fillStyle = '#f4e5bd';
-      ctx.fillText(`[A] ${this._activeStation.label}`, W / 2, H - 16);
+      const prefix = this._activeStation.kind === 'gate' ? '' : '[A] ';
+      ctx.fillText(`${prefix}${this._activeStation.label}`, W / 2, H - 16);
     }
 
     if (this.messageTimer > 0) {
@@ -537,5 +611,6 @@ export class CourtyardScene {
 
   exit() {
     this._unbindSocket();
+    if (this._onKeyDown) window.removeEventListener('keydown', this._onKeyDown);
   }
 }

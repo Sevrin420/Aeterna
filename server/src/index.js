@@ -301,6 +301,16 @@ fastify.post('/gifts/drop', async (req, reply) => {
   return { success: true };
 });
 
+// ========== SOCIAL ==========
+fastify.get('/leaderboard', async () => {
+  return db.prepare(`
+    SELECT name, prefix, level, devotion, streak
+    FROM players
+    ORDER BY devotion DESC
+    LIMIT 10
+  `).all();
+});
+
 // ========== ADMIN AWARD ==========
 fastify.post('/admin/award', async (req, reply) => {
   const { wallet, amount, reason } = req.body || {};
