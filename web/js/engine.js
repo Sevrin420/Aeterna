@@ -1,6 +1,8 @@
 // Tiny input manager shared by every scene.
 // Tracks keyboard + on-screen D-pad/A/B hit zones as a single directional/button state.
 
+import { sfx } from './sfx.js';
+
 export class Input {
   constructor() {
     this.dirs = { up: false, down: false, left: false, right: false };
@@ -32,11 +34,11 @@ export class Input {
     });
   }
 
-  _setA(v) { if (v && !this.a) this._aJustPressed = true; this.a = v; }
-  _setB(v) { if (v && !this.b) this._bJustPressed = true; this.b = v; }
+  _setA(v) { if (v && !this.a) { this._aJustPressed = true; sfx.click(); } this.a = v; }
+  _setB(v) { if (v && !this.b) { this._bJustPressed = true; sfx.click(); } this.b = v; }
 
   bindDpad(el, dir) {
-    const on = (e) => { this.dirs[dir] = true; e.preventDefault(); };
+    const on = (e) => { this.dirs[dir] = true; sfx.click(); e.preventDefault(); };
     const off = (e) => { this.dirs[dir] = false; if (e) e.preventDefault(); };
     el.addEventListener('pointerdown', on);
     el.addEventListener('pointerup', off);

@@ -2,6 +2,7 @@ import { Input, makeLoop } from './engine.js';
 import { BootScene } from './scenes/boot.js';
 import { CourtyardScene } from './scenes/courtyard.js';
 import { api } from './api.js';
+import { sfx } from './sfx.js';
 
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');
@@ -16,6 +17,9 @@ const hud = document.getElementById('hud');
 const hudName = document.getElementById('hudName');
 const hudDevotion = document.getElementById('hudDevotion');
 const hudStreak = document.getElementById('hudStreak');
+const pipPray = document.getElementById('pipPray');
+const pipGarden = document.getElementById('pipGarden');
+const pipCandles = document.getElementById('pipCandles');
 const toastEl = document.getElementById('toast');
 const leaderboardOverlay = document.getElementById('leaderboardOverlay');
 const leaderboardList = document.getElementById('leaderboardList');
@@ -51,6 +55,9 @@ function updateHud(player) {
   hudName.textContent = `${player.prefix} ${player.name}`;
   hudDevotion.textContent = `Devotion ${player.devotion}`;
   hudStreak.textContent = player.streak > 0 ? ` · Streak ${player.streak}d (${player.multiplier}x)` : '';
+  pipPray.classList.toggle('done', !!player.pray_today);
+  pipGarden.classList.toggle('done', !!player.garden_today);
+  pipCandles.classList.toggle('done', !!player.candles_today);
   hud.hidden = false;
 }
 
@@ -141,6 +148,7 @@ function startBoot() {
 function powerOn() {
   if (powered) return;
   powered = true;
+  sfx.power(true);
   powerSwitch.setAttribute('aria-pressed', 'true');
   startBoot();
   if (!stopLoop) {
@@ -154,6 +162,7 @@ function powerOn() {
 function powerOff() {
   if (!powered) return;
   powered = false;
+  sfx.power(false);
   powerSwitch.setAttribute('aria-pressed', 'false');
   if (scene && scene.exit) scene.exit();
   scene = null;

@@ -3,6 +3,7 @@
 // wired to the real Fastify API (duties, gifts, confession) and Socket.io presence.
 
 import { api, getWalletId } from '../api.js';
+import { sfx } from '../sfx.js';
 
 const TILE = 13;
 const COLS = 16;
@@ -219,12 +220,14 @@ export class CourtyardScene {
       this.player.streak = res.streak;
       this.player.multiplier = res.multiplier;
       this.onPlayerUpdate(this.player);
+      res.streakAdvanced ? sfx.streakBonus() : sfx.dutyComplete();
       this.onToast(
         res.streakAdvanced
           ? `+${res.devotionGained} Devotion — streak day ${res.streak} (${res.multiplier}x)`
           : `+${res.devotionGained} Devotion`
       );
     } catch (e) {
+      sfx.error();
       this.onToast(e.message);
     }
   }
@@ -236,8 +239,10 @@ export class CourtyardScene {
       this.holdingGift = false;
       this.player.devotion += res.devotionGained;
       this.onPlayerUpdate(this.player);
+      sfx.gift();
       this.onToast(`The Guru accepts your gift. +${res.devotionGained} Devotion`);
     } catch (e) {
+      sfx.error();
       this.onToast(e.message);
     }
   }
@@ -250,8 +255,10 @@ export class CourtyardScene {
       this.player.confessionCost = null;
       this.player.streak = res.restoredStreak;
       this.onPlayerUpdate(this.player);
+      sfx.confession();
       this.onToast(`Confession accepted. Streak restored to ${res.restoredStreak}.`);
     } catch (e) {
+      sfx.error();
       this.onToast(e.message);
     }
   }
@@ -262,8 +269,10 @@ export class CourtyardScene {
       this.holdingGift = true;
       this.gifts = this.gifts.filter((g) => g.id !== gift.id);
       if (this.socket) this.socket.emit('pickup_gift', { giftId: gift.id });
+      sfx.gift();
       this.onToast('You pick up the gift.');
     } catch (e) {
+      sfx.error();
       this.onToast(e.message);
     }
   }
@@ -277,6 +286,7 @@ export class CourtyardScene {
       this.onToast('You set the gift down.');
       this._refreshGifts();
     } catch (e) {
+      sfx.error();
       this.onToast(e.message);
     }
   }
@@ -296,6 +306,7 @@ export class CourtyardScene {
       this.onToast(`Saved. ${res.devotion} Devotion secured.`);
       this.onSaveExit();
     } catch (e) {
+      sfx.error();
       this.onToast(e.message);
     }
   }

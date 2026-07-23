@@ -245,6 +245,24 @@ html, body {
 }
 .hud-name { color: #e9c468; font-weight: bold; }
 .hud-row { display: flex; gap: 8px; }
+.hud-duties { display: flex; gap: 3px; }
+.duty-pip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6em;
+  height: 1.6em;
+  border-radius: 50%;
+  border: 1px solid rgba(107, 82, 39, 0.7);
+  color: rgba(201, 163, 95, 0.6);
+  font-size: 0.85em;
+  font-weight: bold;
+}
+.duty-pip.done {
+  color: #140d05;
+  background: #8fe0c8;
+  border-color: #8fe0c8;
+}
 
 /* ===== Toast ===== */
 .toast {
