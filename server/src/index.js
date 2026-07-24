@@ -188,9 +188,10 @@ fastify.post('/duty/:type', async (req, reply) => {
 });
 
 // ========== GIFTS (physical: spawn -> pickup -> carry -> offer -> accept) ==========
-// Fixed spawn points in courtyard tile-space (see web/js/scenes/courtyard.js MAP).
+// Fixed spawn points in courtyard tile-space (see web/js/abbeyMap.js) — scattered
+// around the garden room's open ground, clear of the fountain/benches/pillars.
 const GIFT_SPAWN_POINTS = [
-  { x: 4, y: 4 }, { x: 11, y: 4 }, { x: 4, y: 11 }, { x: 11, y: 11 }, { x: 7, y: 4 }, { x: 7, y: 11 },
+  { x: 20, y: 14 }, { x: 26, y: 14 }, { x: 20, y: 18 }, { x: 26, y: 18 }, { x: 21, y: 10 }, { x: 25, y: 20 },
 ];
 const MAX_GROUND_GIFTS = 3;
 
