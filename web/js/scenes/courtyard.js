@@ -234,20 +234,14 @@ export class CourtyardScene {
     if (!blockedY) p.y = ny;
   }
 
-  // With a dt, eases toward the target instead of snapping — smooths out the
-  // scroll as the player moves. Called with no dt (e.g. on spawn, or by
-  // tests) to jump straight to the target.
-  _updateCamera(dt) {
-    const targetX = Math.max(0, Math.min(MAP_W - W, this.pc.x - W / 2));
-    const targetY = Math.max(0, Math.min(MAP_H - H, this.pc.y - H / 2));
-    if (dt == null) {
-      this.cam.x = targetX;
-      this.cam.y = targetY;
-    } else {
-      const k = 1 - Math.exp(-10 * dt);
-      this.cam.x += (targetX - this.cam.x) * k;
-      this.cam.y += (targetY - this.cam.y) * k;
-    }
+  // Lock the camera exactly to the player every frame. For a pixel-art game
+  // this is what keeps the world rock-steady: the player stays pinned to the
+  // centre and the background scrolls in clean whole-pixel steps. (An eased
+  // camera lags and catches up in 1px hops that don't line up with the
+  // player's sub-pixel motion, which reads as a jitter/shimmer while walking.)
+  _updateCamera() {
+    this.cam.x = Math.max(0, Math.min(MAP_W - W, this.pc.x - W / 2));
+    this.cam.y = Math.max(0, Math.min(MAP_H - H, this.pc.y - H / 2));
   }
 
   _nearestStation() {
@@ -528,14 +522,18 @@ export class CourtyardScene {
         const bhash = h2(c, r);
         if (ch === '#') {
           const shade = bhash % 3;
-          ctx.fillStyle = shade === 0 ? '#8c8f92' : shade === 1 ? '#7e8184' : '#85888c';
+          // dark masonry — deliberately much darker than the light floor so a
+          // player can tell at a glance what's a solid wall vs. walkable stone
+          ctx.fillStyle = shade === 0 ? '#565a5f' : shade === 1 ? '#4d5156' : '#515559';
           ctx.fillRect(x, y, TILE, TILE);
-          // flat cartoon stone: a whisper of top light + a thin seam on the
-          // bottom/right so blocks read as separate, but NO heavy emboss
-          ctx.fillStyle = 'rgba(230,232,230,0.14)';
-          ctx.fillRect(x, y, TILE, 1);
-          ctx.fillStyle = 'rgba(24,26,28,0.22)';
-          ctx.fillRect(x, y + TILE - 1, TILE, 1);
+          // lit top face (the cap of the wall catching light) reads as height
+          ctx.fillStyle = 'rgba(150,156,158,0.55)';
+          ctx.fillRect(x, y, TILE, 3);
+          // deep shadow where the wall base meets the floor
+          ctx.fillStyle = 'rgba(10,11,13,0.5)';
+          ctx.fillRect(x, y + TILE - 2, TILE, 2);
+          // faint mortar seam between blocks
+          ctx.fillStyle = 'rgba(18,19,21,0.3)';
           ctx.fillRect(x + TILE - 1, y, 1, TILE);
           // moss creeping onto wall tiles that border the garden
           const nearGarden = tileAt(c, r - 1) === 'g' || tileAt(c, r + 1) === 'g' ||
