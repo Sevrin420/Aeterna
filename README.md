@@ -38,7 +38,9 @@ In the courtyard: walk to the **shrine**, **garden**, or **candle rack** and pre
 
 ## Visual engine
 
-The console shell (font, container-relative scaling, the black-veil boot reveal, drag-or-tap power switch) and the Cultist sprite renderer (color-ramp shading + a colored-outline pass, per-player robe color) adapt techniques from `sevrin420/members-only`'s `games/clubnile.html` — not copied wholesale (that's a different casino game with its own trait/wallet system), but the same underlying rendering approach applied to Aeterna's abbey theme.
+The console shell (font, container-relative scaling, the black-veil boot reveal, drag-or-tap power switch) adapts the boot sequence from `sevrin420/members-only`'s `games/clubnile.html`, which turns out to reuse the exact same console artwork.
+
+Cultist and Guru characters (`web/assets/sprites/`) are real character sprites copied from that same repo's `assets/membersonly/speakeasy/frames/` set (its playable in-game cast — full N/S/E/W walk+idle animation per character), downscaled and given a light shared torchlight tint (`web/js/spritesheet.js`) rather than hand-authored pixel art. Each player is deterministically assigned one of 8 characters by wallet id + registered sex; the Guru NPC uses a 9th, larger and gold-tinted. Source characters are a 1920s-speakeasy cast, not abbey monks — used for their animation/art quality per the project owner's direction rather than for thematic fit.
 
 ## Status
 

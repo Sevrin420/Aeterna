@@ -4,7 +4,7 @@
 
 import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
-import { getCultistSprite } from '../pixelart.js';
+import { drawCharacter, pickCharacter, preloadCharacter, GURU_CHAR } from '../spritesheet.js';
 
 const TILE = 13;
 const COLS = 16;
@@ -82,7 +82,7 @@ export class CourtyardScene {
       w: 8,
       h: 8,
       speed: 46,
-      dir: 'up',
+      dir: 'down',
       moving: false,
       bob: 0,
     };
@@ -92,6 +92,9 @@ export class CourtyardScene {
   }
 
   enter() {
+    this.myChar = pickCharacter(getWalletId(), this.player.sex);
+    preloadCharacter(this.myChar);
+    preloadCharacter(GURU_CHAR);
     this._refreshGifts();
     this._bindSocket();
     this._emitJoin();
@@ -483,15 +486,15 @@ export class CourtyardScene {
           ctx.fill();
         }
       } else if (s.id === 'guru') {
-        // stationary NPC in pale gold, taller than the player
+        // stationary NPC, taller than the player, gold-lit
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.beginPath();
         ctx.ellipse(0, 7, 6, 2.4, 0, 0, Math.PI * 2);
         ctx.fill();
-        const sheet = getCultistSprite('guru-npc', '#e9dcae', '#a9821f');
-        const scale = 1.3, sw = sheet.w * scale, sh = sheet.h * scale;
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(sheet.down, -sw / 2, 7 - sh, sw, sh);
+        drawCharacter(ctx, {
+          char: GURU_CHAR, dir: 'down', moving: false, animPhase: this.t,
+          x: 0, groundY: 7, targetHeight: 30, tint: 'rgba(230, 190, 90, 0.28)',
+        });
       } else if (s.id === 'confession') {
         ctx.fillStyle = '#241a12';
         ctx.fillRect(-7, -10, 14, 18);
@@ -531,21 +534,18 @@ export class CourtyardScene {
     }
   }
 
-  _drawRobedFigure(ctx, x, y, dir, moving, bob, seed, holdingGift, label, emoji, chat, robeBase) {
-    const bobOffset = moving ? Math.sin(bob) * 1 : 0;
+  _drawRobedFigure(ctx, x, y, dir, moving, animPhase, char, holdingGift, label, emoji, chat, targetHeight = 27) {
     const px_ = Math.round(x);
-    const py_ = Math.round(y + bobOffset);
+    const py_ = Math.round(y);
 
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
     ctx.ellipse(px_, py_ + 5, 5, 2, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    const sheet = getCultistSprite(seed, robeBase);
-    const sw = sheet.w, sh = sheet.h;
-    const drawX = px_ - sw / 2, drawY = py_ + 6 - sh;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(sheet[dir] || sheet.down, drawX, drawY, sw, sh);
+    const groundY = py_ + 6;
+    const drawn = drawCharacter(ctx, { char, dir, moving, animPhase, x: px_, groundY, targetHeight });
+    const drawY = drawn ? groundY - drawn.h : groundY - targetHeight;
 
     if (holdingGift) {
       ctx.fillStyle = '#7a2f2f';
@@ -643,10 +643,11 @@ export class CourtyardScene {
 
     for (const [id, rp] of this.remotePlayers) {
       if (rp.x == null) continue;
-      this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, 0, id, false, rp.name, rp.emoji, rp.chat);
+      const rpChar = pickCharacter(id, rp.prefix === 'Sister' ? 'female' : 'male');
+      this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, this.t, rpChar, false, rp.name, rp.emoji, rp.chat);
     }
 
-    this._drawRobedFigure(ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving, this.pc.bob, getWalletId(), this.holdingGift, null, this.localEmoji, this.localChat);
+    this._drawRobedFigure(ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving, this.pc.moving ? this.pc.bob : this.t, this.myChar, this.holdingGift, null, this.localEmoji, this.localChat);
 
     const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.72);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
