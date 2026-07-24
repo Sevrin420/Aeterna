@@ -142,7 +142,7 @@ mancalaLeaveBtn.addEventListener('click', () => {
 });
 
 function showFinalCommunion(info) {
-  communionBody.textContent = `Season ${info.season}, Day ${info.day} has arrived. The abbey gathers for Final Communion — gold reveal and the choice to Leave or Tithe are not yet available in this build; the Guru will announce next steps.`;
+  communionBody.textContent = `Season ${info.season}, Day ${info.day} has arrived. The abbey gathers for Final Communion — gold reveal and the choice to Leave or Tithe are not yet available in this build; the Abbot will announce next steps.`;
   communionOverlay.hidden = false;
 }
 communionClose.addEventListener('click', () => { communionOverlay.hidden = true; });
@@ -183,9 +183,11 @@ function enterCourtyard(player) {
 
 // Dev-mode stand-in for real identity: until Cultist NFTs are attached,
 // new players get an auto-assigned name/sex instead of a naming form.
+// Names are drawn from 12th-13th century English monastic rolls -- the
+// brothers and sisters of a 1200 AD abbey.
 const AUTO_NAMES = {
-  male: ['Osiris', 'Horus', 'Anubis', 'Thoth', 'Set', 'Khonsu', 'Amun', 'Ra', 'Sobek', 'Geb'],
-  female: ['Isis', 'Nefertari', 'Sekhmet', 'Bastet', 'Hathor', 'Nephthys', 'Serket', 'Mut', 'Renenutet', 'Tefnut'],
+  male: ['Aldric', 'Cuthbert', 'Edmund', 'Godwin', 'Wulfstan', 'Oswald', 'Anselm', 'Alcuin', 'Dunstan', 'Osbern', 'Wilfrid', 'Baldwin'],
+  female: ['Agnes', 'Hild', 'Edith', 'Mildred', 'Winifred', 'Etheldreda', 'Clare', 'Milburga', 'Werburgh', 'Frideswide', 'Osgyth', 'Aethelthryth'],
 };
 function randomIdentity() {
   const sex = Math.random() < 0.5 ? 'male' : 'female';

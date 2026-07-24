@@ -18,7 +18,7 @@ const STATIONS = [
   { id: 'pray', kind: 'duty', label: 'Pray', x: px(8), y: px(3), r: 13 },
   { id: 'garden', kind: 'duty', label: 'Tend Garden', x: px(20), y: px(9), r: 12 },
   { id: 'candles', kind: 'duty', label: 'Light Candles', x: px(8), y: px(30), r: 13 },
-  { id: 'guru', kind: 'guru', label: 'Offer to the Guru', x: px(23), y: px(18), r: 14 },
+  { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: px(23), y: px(18), r: 14 },
   { id: 'confession', kind: 'confession', label: 'Confess', x: px(4), y: px(17), r: 12 },
   { id: 'leaderboard', kind: 'leaderboard', label: 'View Leaderboard', x: px(33), y: px(9), r: 12 },
   { id: 'gate', kind: 'gate', label: 'Save & Exit [B]', x: px(8), y: px(35), r: 18 },
@@ -293,14 +293,14 @@ export class CourtyardScene {
   }
 
   async _handleGuru() {
-    if (!this.holdingGift) { this.onToast('You have nothing to offer the Guru.'); return; }
+    if (!this.holdingGift) { this.onToast('You have nothing to offer the Abbot.'); return; }
     try {
       const res = await api.giftGive({ toGuru: true });
       this.holdingGift = false;
       this.player.devotion += res.devotionGained;
       this.onPlayerUpdate(this.player);
       sfx.gift();
-      this.onToast(`The Guru accepts your gift. +${res.devotionGained} Devotion`);
+      this.onToast(`The Abbot accepts your gift. +${res.devotionGained} Devotion`);
     } catch (e) {
       sfx.error();
       this.onToast(e.message);

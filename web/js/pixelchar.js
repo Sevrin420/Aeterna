@@ -4,9 +4,10 @@
 // shading, the colored-outline pass, buildFrameHD). This is the same
 // procedural system that renders that project's real character art —
 // not an approximation of it. Only traitsForSeed() below is new,
-// swapping the 1920s-speakeasy trait pool for an Egyptian-cult one
-// (fez/turban/nemes headwear, an always-on cloak) and dropping the
-// giraffe/NFT-card/casino-specific code this project doesn't need.
+// swapping the 1920s-speakeasy trait pool for a 1200 AD English monastic
+// one (tonsure/plain hair, undyed-wool habits, an always-on hooded cloak)
+// and dropping the giraffe/NFT-card/casino-specific code this project
+// doesn't need.
 
 function hex2rgb(h) {
   return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -25,7 +26,9 @@ function ramp(base) {
    differently). linen = soft high-key; leather = glossy with a deep core shadow. */
 function rampSoft(base)    { return { hi: mixc(base, '#fff6e2', 0.5),  base, sh: mixc(base, '#3a3050', 0.30) }; }
 function rampLeather(base) { return { hi: mixc(base, '#ffe9c0', 0.52), base, sh: mixc(base, '#1a0e12', 0.55) }; }
-function rampWool(base)    { return { hi: mixc(base, '#fff3cf', 0.34), base, sh: mixc(base, '#241a38', 0.56) }; }
+/* undyed-wool habit: keep it earthen -- warm near-black shadow (not the cool
+   plum used elsewhere) so browns stay brown and greys/blacks stay neutral */
+function rampWool(base)    { return { hi: mixc(base, '#f3e8cc', 0.30), base, sh: mixc(base, '#181510', 0.52) }; }
 /* saturation dial around a colour's own luma — <1 mutes, >1 enriches (rarity tint) */
 function satAdjust(hex, f) {
   const c = hex2rgb(hex), L = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
@@ -439,7 +442,7 @@ function makeCharacterHD_human(t) {
     feather: (t.feather && ramp(t.feather).base) || '#e9dfce',
     featherHi: (t.feather && ramp(t.feather).hi) || '#fff8ea',
     hat: bycol.base, hatHi: bycol.hi, hatDark: mixc(bycol.sh, '#0d1a0e', 0.35),
-    cloak: t.cloak ? ramp(t.cloak) : null
+    cloak: t.cloak ? rampWool(t.cloak) : null   // the habit's cloak is wool, not glossy
   };
   const acc = (t.cloak || (t.headAcc && t.headAcc !== 'none') || (t.faceAcc && t.faceAcc !== 'none'))
     ? accPainter(t, ax) : null;
@@ -466,22 +469,26 @@ function mulberry32(a) {
   };
 }
 
-// ===================== Aeterna trait pool (Egyptian cult, not casino) =====================
-const AETERNA_SKIN = ['#f6cfa4', '#e9b98c', '#d3a87e', '#c68a5e', '#a9714a', '#8a5a38', '#6f4429'];
-const AETERNA_HAIR = ['#14100d', '#2a1c12', '#3a2718', '#5a3a1e', '#4a4a44'];
-const AETERNA_ROBE = ['#3a2c52', '#4a2436', '#243a4e', '#2f4a34', '#4a3a20', '#3a2626', '#241a2e'];
-const AETERNA_GOLD = ['#d9c07a', '#c9a13b', '#e8dcc0', '#e9c468'];
-const AETERNA_JEWEL = ['#c0392b', '#2f7f96', '#3a8a5a', '#6b46a8', '#c98a1a'];
+// ===================== Aeterna trait pool (1200 AD English abbey) =====================
+// Monastic dress, not Egyptian: undyed-wool habits in the colors real
+// medieval orders wore -- Franciscan brown/grey, Cistercian undyed cream,
+// Benedictine black -- with muted pewter/bronze fittings and subdued
+// liturgical accent colors. Weathered, austere, earthen.
+const AETERNA_SKIN = ['#f2cba0', '#e9b98c', '#d9ac84', '#c68a5e', '#a9714a', '#8a5a38'];
+const AETERNA_HAIR = ['#2a1c12', '#3a2718', '#5a3a1e', '#4a4440', '#7a736a', '#161210'];
+const AETERNA_ROBE = ['#4a3826', '#3a3630', '#26241f', '#5a4a34', '#2e2b24', '#463d2c', '#33302a'];
+const AETERNA_GOLD = ['#8a8378', '#9a8a5a', '#6e685c', '#7a7066'];
+const AETERNA_JEWEL = ['#7a2e28', '#3a5a3e', '#8a6a2a', '#4a3a5a', '#6a4a2a'];
 const AETERNA_LINEN = ['#f4ead2', '#e8dcc0', '#d9c8a0', '#dfe0e2'];
 const AETERNA_LEATHER = ['#5a3a1d', '#3d2712', '#6e4a24', '#4a3020'];
 const AETERNA_IRIS = ['#241a12', '#1a2436', '#22321f', '#2a1a22'];
-const HEADS_M = ['fez', 'turban', 'bald', 'curly'];
-const HEADS_F = ['turban', 'fez', 'bald', 'wavy'];
+const HEADS_M = ['bald', 'bald', 'curly', 'wavy'];
+const HEADS_F = ['wavy', 'curly', 'wavy', 'bald'];
 
 // Deterministic Cultist traits from a wallet-id/name seed, in the same shape
-// makeCharacterHD expects. Always cloaked (a hooded-robe cult, not a hat
-// crowd), head drawn from an Egyptian pool (fez/turban), robe/cloak colors
-// from Aeterna's dark gold-and-stone palette rather than 1920s jewel tones.
+// makeCharacterHD expects. Always cloaked (a hooded wool habit), tonsured or
+// plain-haired (no Egyptian headwear), robe/cloak colors from the monastic
+// wool palette above rather than jewel tones.
 export function traitsForSeed(seed, sex) {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) h = (Math.imul(h ^ seed.charCodeAt(i), 16777619)) >>> 0;
@@ -510,24 +517,27 @@ export function traitsForSeed(seed, sex) {
     trim: metal,
     mouth: '#8e4a42',
     feather: metal,
-    headAcc: rnd() < 0.18 ? 'band' : 'none',
+    headAcc: 'none',
     faceAcc: 'none',
     cloak,
   };
 }
 
+// The Abbot: the abbey's presiding figure. A tonsured elder in a fine near-
+// black habit with a deep violet-black cloak and restrained gold trim (the
+// mark of his office) -- distinguished from the plain wool of the brethren.
 export function traitsForGuru() {
   return {
-    head: 'nemes',
+    head: 'bald',
     body: 'vest',
     legs: 'suit',
-    skin: '#e0a878', hair: '#14100d',
-    hat: '#e8dcc0', coat: '#e8dcc0', pants: '#c9a13b',
+    skin: '#e6bd92', hair: '#8a837a',
+    hat: '#2a2620', coat: '#2a2620', pants: '#201d17',
     shoes: '#120d10',
-    metal: '#e8c24a', jewel: '#fff2b8', tie: '#fff2b8',
-    shirt: '#f4ead2', leather: '#5a3a1d', iris: '#1a1216', trim: '#e8c24a',
-    mouth: '#8e4a42', feather: '#e8c24a',
-    headAcc: 'tiara', faceAcc: 'none',
-    cloak: '#8a6a2a',
+    metal: '#c9a13b', jewel: '#7a2e28', tie: '#7a2e28',
+    shirt: '#e8dcc0', leather: '#3d2712', iris: '#1a1216', trim: '#c9a13b',
+    mouth: '#8e4a42', feather: '#c9a13b',
+    headAcc: 'none', faceAcc: 'none',
+    cloak: '#332844',
   };
 }

@@ -66,15 +66,16 @@ export class BootScene {
     ctx.fillRect(0, 0, W, H);
 
     // flanking stone pillars with gold banding
+    // grey gothic stone columns with carved courses (mortar lines)
     const column = (cx) => {
-      ctx.fillStyle = '#241a10';
+      ctx.fillStyle = '#2a2b2e';
       ctx.fillRect(cx - 8, 6, 16, H - 44);
-      ctx.fillStyle = '#40301c';
+      ctx.fillStyle = '#44464a';
       ctx.fillRect(cx - 6, 6, 12, H - 44);
-      ctx.fillStyle = '#5a4426';
+      ctx.fillStyle = '#5c5e63';
       ctx.fillRect(cx - 6, 6, 3, H - 44);
-      ctx.fillStyle = '#c9a13b';
-      for (let y = 14; y < H - 44; y += 12) ctx.fillRect(cx - 6, y, 12, 2);
+      ctx.fillStyle = 'rgba(20,21,23,0.7)';
+      for (let y = 14; y < H - 44; y += 12) ctx.fillRect(cx - 6, y, 12, 1.4);
     };
     column(16);
     column(W - 16);
@@ -108,22 +109,24 @@ export class BootScene {
       ctx.fillRect(gx, gy, 2, 1);
     }
 
-    // stone altar with a glowing ankh
+    // pale-stone altar with a glowing Latin cross
     const ax = W / 2, ay = H - 40;
-    ctx.fillStyle = '#3a2c18';
+    ctx.fillStyle = '#5a5852';
     ctx.fillRect(ax - 16, ay - 10, 32, 10);
-    ctx.fillStyle = '#4a3a22';
+    ctx.fillStyle = '#74726a';
     ctx.fillRect(ax - 16, ay - 10, 32, 2);
-    ctx.fillStyle = '#241a10';
+    ctx.fillStyle = '#2e2c28';
     ctx.fillRect(ax - 12, ay, 24, 4);
+    // a white altar cloth draped over the front edge
+    ctx.fillStyle = '#d8d2c2';
+    ctx.fillRect(ax - 13, ay - 8, 26, 2.4);
 
     const pulse = 0.6 + Math.sin(this.t * 3) * 0.3;
     ctx.save();
     ctx.translate(ax, ay - 22);
     ctx.fillStyle = `rgba(233, 196, 104, ${0.55 + pulse * 0.3})`;
-    ctx.beginPath(); ctx.arc(0, -3, 4.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillRect(-1.4, -3, 2.8, 13);
-    ctx.fillRect(-6, 3, 12, 2.4);
+    ctx.fillRect(-1.6, -10, 3.2, 20);   // cross upright
+    ctx.fillRect(-6, -4, 12, 3);        // cross beam (upper third)
     ctx.restore();
   }
 
