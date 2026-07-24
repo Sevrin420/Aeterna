@@ -565,7 +565,7 @@ export class CourtyardScene {
         ctx.fill();
         drawCharacter(ctx, {
           sheet: getGuruSprite(), dir: 'down', moving: false, animPhase: this.t,
-          x: 0, groundY: 7, targetHeight: 32,
+          x: 0, groundY: 7, targetHeight: 22.4,
         });
       } else if (s.id === 'confession') {
         ctx.fillStyle = '#241a12';
@@ -614,7 +614,7 @@ export class CourtyardScene {
     }
   }
 
-  _drawRobedFigure(ctx, x, y, dir, moving, animPhase, sheet, holdingGift, label, emoji, chat, targetHeight = 30) {
+  _drawRobedFigure(ctx, x, y, dir, moving, animPhase, sheet, holdingGift, label, emoji, chat, targetHeight = 21) {
     const px_ = Math.round(x);
     const py_ = Math.round(y);
 
