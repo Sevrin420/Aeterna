@@ -50,6 +50,14 @@ jobs:
             cd /opt/aeterna-server
             rm -rf node_modules
             npm ci --omit=dev
+            # The unit previously hardcoded /usr/bin/node (v18.19.1, ABI 109),
+            # but a plain SSH session (and this npm ci) resolves to
+            # /usr/local/bin/node (v22.22.3, ABI 127) -- two parallel Node
+            # installs on this box left the unit and the native deps
+            # ABI-mismatched, crash-looping better-sqlite3 on every restart.
+            # Point the unit at the same Node npm ci just built against.
+            sed -i "s#ExecStart=/usr/bin/node #ExecStart=/usr/local/bin/node #" /etc/systemd/system/aeterna-server.service
+            systemctl daemon-reload
             systemctl restart aeterna-server
             sleep 1
             systemctl --no-pager status aeterna-server
