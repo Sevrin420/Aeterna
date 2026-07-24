@@ -15,6 +15,20 @@ const GIFT_POLL_MS = 4000;
 
 const px = (t) => t * TILE + TILE / 2;
 
+// One clean, calm grass surface used everywhere outdoors. Two close medium
+// greens picked per ~2x2 clump (not per tile) so it reads as soft grass, not a
+// noisy checker; a rare single blade for a touch of life. No near-black
+// splotches or competing shades — keeps the palette simple.
+function drawGrass(ctx, x, y, c, r) {
+  const clump = h2(c >> 1, r >> 1) % 2;
+  ctx.fillStyle = clump === 0 ? '#5f8c4c' : '#57853f';
+  ctx.fillRect(x, y, TILE, TILE);
+  if (h2(c, r) % 12 === 0) {
+    ctx.fillStyle = 'rgba(122,168,96,0.35)';
+    ctx.fillRect(x + 4, y + TILE - 5, 1, 4);
+  }
+}
+
 const STATIONS = [
   { id: 'pray', kind: 'duty', label: 'Pray', x: px(8), y: px(3), r: 13 },
   { id: 'garden', kind: 'duty', label: 'Tend Garden', x: px(20), y: px(9), r: 12 },
@@ -543,39 +557,20 @@ export class CourtyardScene {
             ctx.fillRect(x, y + TILE - 3, TILE, 3);
           }
         } else if (ch === 'g') {
-          ctx.fillStyle = (bhash % 3 === 0) ? '#3c5a30' : '#345028';
-          ctx.fillRect(x, y, TILE, TILE);
-          if (bhash % 5 === 0) { ctx.fillStyle = 'rgba(90,140,70,0.4)'; ctx.fillRect(x + 3, y + 3, 2, 2); }
-          if (bhash % 13 === 0) { ctx.fillStyle = 'rgba(60,45,25,0.22)'; ctx.fillRect(x + 2, y + 5, 4, 2); }
-          if (bhash % 6 === 0) {
-            // static grass tufts (no per-frame sway -> calmer, less twitchy)
-            ctx.strokeStyle = 'rgba(110,160,90,0.35)';
-            ctx.lineWidth = 0.6;
-            ctx.beginPath();
-            ctx.moveTo(x + 3, y + TILE - 1); ctx.lineTo(x + 3, y + TILE - 5);
-            ctx.moveTo(x + 7, y + TILE - 1); ctx.lineTo(x + 7, y + TILE - 4);
-            ctx.stroke();
-          }
+          drawGrass(ctx, x, y, c, r);
         } else if (ch === 'k' || ch === 'd') {
-          ctx.fillStyle = ((r + c) % 2 === 0) ? '#a87840' : '#9a6c38';
+          // calm single-tone timber (kitchen/dorm) — muted, low contrast so it
+          // doesn't add a loud orange to the palette; a single soft plank seam
+          ctx.fillStyle = ((r + c) % 2 === 0) ? '#8a6a44' : '#82633e';
           ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = 'rgba(255,220,160,0.4)';
-          ctx.fillRect(x, y, TILE, 1.4);
-          ctx.fillStyle = 'rgba(60,36,14,0.4)';
-          ctx.fillRect(x, y + TILE - 1.5, TILE, 1.5);
-          ctx.strokeStyle = 'rgba(48,28,10,0.7)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+          ctx.fillStyle = 'rgba(20,12,6,0.18)';
+          ctx.fillRect(x, y + TILE - 1, TILE, 1);
         } else if (ch === 'w') {
-          ctx.fillStyle = ((r + c) % 2 === 0) ? '#c99a54' : '#bb8c48';
+          // dock timber — same muted family, a touch lighter than interior wood
+          ctx.fillStyle = ((r + c) % 2 === 0) ? '#9a774c' : '#8f6e45';
           ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = 'rgba(255,230,180,0.4)';
-          ctx.fillRect(x, y, TILE, 1.3);
-          ctx.fillStyle = 'rgba(60,36,14,0.35)';
-          ctx.fillRect(x, y + TILE - 1.4, TILE, 1.4);
-          ctx.strokeStyle = 'rgba(58,36,14,0.55)';
-          ctx.lineWidth = 0.8;
-          ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+          ctx.fillStyle = 'rgba(20,12,6,0.16)';
+          ctx.fillRect(x, y + TILE - 1, TILE, 1);
         } else if (ch === '~') {
           const shimmer = (Math.sin(this.t * 2 + c * 0.4 + r * 0.3) + 1) / 2;
           ctx.fillStyle = `rgb(${40 + shimmer * 20}, ${70 + shimmer * 30}, ${95 + shimmer * 35})`;
@@ -599,16 +594,9 @@ export class CourtyardScene {
             ctx.fillRect(x, y, TILE, TILE);
           }
         } else {
-          // exterior grass
-          ctx.fillStyle = (bhash % 5 === 0) ? '#3d5a30' : (bhash % 7 === 0) ? '#182412' : '#2a4020';
-          ctx.fillRect(x, y, TILE, TILE);
-          if (bhash % 8 === 0) {
-            ctx.strokeStyle = 'rgba(90,130,70,0.28)';
-            ctx.lineWidth = 0.6;
-            ctx.beginPath();
-            ctx.moveTo(x + 4, y + TILE - 1); ctx.lineTo(x + 4, y + TILE - 4);
-            ctx.stroke();
-          }
+          // exterior grass — identical to the garden so the whole outdoors
+          // reads as one calm surface (no competing greens)
+          drawGrass(ctx, x, y, c, r);
         }
       }
     }
@@ -737,78 +725,124 @@ export class CourtyardScene {
       case 'fountain-block': break; // covered by the fountain draw above
       case 'pillar': this._drawPillar(ctx, p.col, p.row); this._drawLantern(ctx, p.col, p.row); break;
       case 'torch': this._drawTorch(ctx, p.col, p.row); break;
-      case 'bench':
-        this._dropShadow(ctx, x, y + 3, 7, 2.2);
-        ctx.fillStyle = '#5c4426';
-        ctx.fillRect(x - 6, y - 2, 12, 4);
-        ctx.fillStyle = '#6e5230';
-        ctx.fillRect(x - 6, y - 2, 12, 1.2);
-        ctx.fillStyle = '#3a2c18';
-        ctx.fillRect(x - 5, y + 2, 1.5, 2);
-        ctx.fillRect(x + 3.5, y + 2, 1.5, 2);
+      case 'bench': {
+        // garden bench — a solid timber seat with a back rail and legs
+        this._dropShadow(ctx, x, y + 5, 8, 2.4);
+        ctx.fillStyle = '#5c4224';                 // back rail
+        ctx.fillRect(x - 7, y - 5, 14, 2.4);
+        ctx.fillStyle = '#6f512c';
+        ctx.fillRect(x - 7, y - 5, 14, 1);
+        ctx.fillStyle = '#6a4c28';                 // seat plank
+        ctx.fillRect(x - 7, y - 1, 14, 4.4);
+        ctx.fillStyle = '#7d5c34';
+        ctx.fillRect(x - 7, y - 1, 14, 1.3);
+        ctx.fillStyle = '#3f2c16';                 // front shadow + legs
+        ctx.fillRect(x - 7, y + 3, 14, 1.2);
+        ctx.fillRect(x - 6, y + 4, 2, 3);
+        ctx.fillRect(x + 4, y + 4, 2, 3);
         break;
+      }
       case 'altar': {
-        this._dropShadow(ctx, x, y + 5, 8, 2.6);
+        // large stone altar: draped white cloth, gold hem, standing cross
+        this._dropShadow(ctx, x, y + 7, 12, 3.2);
         const glowA = 0.5 + Math.sin(this.t * 2) * 0.25;
-        const pool = ctx.createRadialGradient(x, y - 4, 1, x, y - 4, 12);
-        pool.addColorStop(0, `rgba(233,196,104,${0.18 + glowA * 0.08})`);
+        const pool = ctx.createRadialGradient(x, y - 8, 1, x, y - 8, 20);
+        pool.addColorStop(0, `rgba(233,196,104,${0.16 + glowA * 0.08})`);
         pool.addColorStop(1, 'rgba(233,196,104,0)');
         ctx.fillStyle = pool;
-        ctx.fillRect(x - 12, y - 16, 24, 24);
-        ctx.fillStyle = '#3a2c18';
-        ctx.fillRect(x - 7, y - 4, 14, 8);
-        ctx.fillStyle = '#c9a13b';
-        ctx.fillRect(x - 7, y - 4, 14, 1.5);
+        ctx.fillRect(x - 20, y - 26, 40, 34);
+        ctx.fillStyle = '#6f6a60';                 // stone body
+        ctx.fillRect(x - 10, y - 2, 20, 10);
+        ctx.fillStyle = '#847e73';
+        ctx.fillRect(x - 10, y - 2, 20, 2);
+        ctx.fillStyle = '#494539';
+        ctx.fillRect(x - 10, y + 6, 20, 2);
+        ctx.fillStyle = '#ece6d4';                 // white cloth
+        ctx.fillRect(x - 11, y - 5, 22, 4);
+        ctx.fillStyle = '#d7cfb8';
+        ctx.fillRect(x - 11, y - 1.4, 22, 1.2);
+        ctx.fillStyle = '#c9a13b';                 // gold hem
+        ctx.fillRect(x - 11, y - 0.4, 22, 1);
+        ctx.fillStyle = '#c9a13b';                 // standing cross
+        ctx.fillRect(x - 1, y - 18, 2, 13);
+        ctx.fillRect(x - 4.5, y - 14, 9, 2);
+        ctx.fillStyle = '#e6c766';
+        ctx.fillRect(x - 1, y - 18, 1, 13);
         ctx.fillStyle = `rgba(233,196,104,${glowA})`;
-        ctx.beginPath(); ctx.arc(x, y - 6, 2.4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y - 5, 2.2, 0, Math.PI * 2); ctx.fill();
         for (let i = 0; i < 2; i++) {
           const phase = (this.t * 0.2 + i * 0.5) % 1;
           const sx = x + Math.sin(this.t * 0.6 + i * 2) * (2 + phase * 3);
-          const sy = y - 6 - phase * 14;
-          const sa = Math.sin(phase * Math.PI) * 0.22;
+          const sy = y - 6 - phase * 16;
+          const sa = Math.sin(phase * Math.PI) * 0.2;
           ctx.fillStyle = `rgba(220,215,200,${sa})`;
           ctx.beginPath(); ctx.arc(sx, sy, 1 + phase * 1.5, 0, Math.PI * 2); ctx.fill();
         }
         break;
       }
-      case 'pew':
-        this._dropShadow(ctx, x, y + 2, 5, 1.8);
-        ctx.fillStyle = '#4a3420';
-        ctx.fillRect(x - 4, y - 3, 8, 6);
-        ctx.fillStyle = '#5c4426';
-        ctx.fillRect(x - 4, y - 3, 8, 1.5);
-        break;
-      case 'counter':
-        this._dropShadow(ctx, x, y + 3, 6, 2);
-        ctx.fillStyle = '#6e4a28';
-        ctx.fillRect(x - 5, y - 4, 10, 8);
-        ctx.fillStyle = '#8a6238';
-        ctx.fillRect(x - 5, y - 4, 10, 1.5);
-        break;
-      case 'stove': {
-        this._dropShadow(ctx, x, y + 3, 6, 2);
-        const flick = 0.5 + Math.sin(this.t * 6) * 0.2;
-        const pool = ctx.createRadialGradient(x, y, 1, x, y, 10);
-        pool.addColorStop(0, `rgba(255,120,60,${0.12 + flick * 0.06})`);
-        pool.addColorStop(1, 'rgba(255,120,60,0)');
-        ctx.fillStyle = pool;
-        ctx.fillRect(x - 10, y - 10, 20, 20);
-        ctx.fillStyle = '#3a3a3e';
-        ctx.fillRect(x - 5, y - 4, 10, 8);
-        ctx.fillStyle = `rgba(255,120,60,${flick})`;
-        ctx.fillRect(x - 3, y - 2, 2.4, 2.4);
-        ctx.fillRect(x + 0.6, y - 2, 2.4, 2.4);
+      case 'pew': {
+        // a long church pew: seat plank, back rail, end posts, grain
+        this._dropShadow(ctx, x, y + 4, 8, 2.4);
+        ctx.fillStyle = '#5a3f22';                 // back rail
+        ctx.fillRect(x - 7, y - 6, 14, 2.6);
+        ctx.fillStyle = '#6f4f2b';
+        ctx.fillRect(x - 7, y - 6, 14, 1);
+        ctx.fillStyle = '#6a4a28';                 // seat
+        ctx.fillRect(x - 7, y - 2, 14, 5);
+        ctx.fillStyle = '#7d5a32';
+        ctx.fillRect(x - 7, y - 2, 14, 1.4);
+        ctx.fillStyle = 'rgba(58,40,20,0.5)';      // grain + front edge
+        ctx.fillRect(x - 5, y + 0.6, 10, 0.6);
+        ctx.fillStyle = '#3d2a14';
+        ctx.fillRect(x - 7, y + 3, 14, 1.3);
+        ctx.fillRect(x - 7, y - 6, 1.6, 10);       // end posts
+        ctx.fillRect(x + 5.4, y - 6, 1.6, 10);
         break;
       }
-      case 'bed':
-        this._dropShadow(ctx, x, y + 4, 6, 2.2);
-        ctx.fillStyle = '#5c4426';
-        ctx.fillRect(x - 5, y - 4, 10, 9);
-        ctx.fillStyle = '#7a3a3a';
-        ctx.fillRect(x - 4, y - 3, 8, 6);
-        ctx.fillStyle = '#e9dcae';
-        ctx.fillRect(x - 4, y - 3, 3, 2.4);
+      case 'stove': {
+        // big stone kitchen hearth with a glowing firebox
+        this._dropShadow(ctx, x, y + 7, 11, 3.2);
+        const flick = 0.5 + Math.sin(this.t * 6) * 0.2;
+        const pool = ctx.createRadialGradient(x, y, 1, x, y, 18);
+        pool.addColorStop(0, `rgba(255,130,60,${0.14 + flick * 0.07})`);
+        pool.addColorStop(1, 'rgba(255,130,60,0)');
+        ctx.fillStyle = pool;
+        ctx.fillRect(x - 18, y - 18, 36, 36);
+        ctx.fillStyle = '#4a4640';                 // stone body
+        ctx.fillRect(x - 9, y - 7, 18, 14);
+        ctx.fillStyle = '#5c574f';                 // lit top / mantel
+        ctx.fillRect(x - 10, y - 8, 20, 2.4);
+        ctx.fillStyle = '#33302b';
+        ctx.fillRect(x - 9, y + 5, 18, 2);
+        ctx.fillStyle = '#160f0a';                 // firebox
+        ctx.fillRect(x - 5, y - 2, 10, 7);
+        ctx.fillStyle = `rgba(255,140,50,${flick})`; // flames
+        ctx.beginPath(); ctx.ellipse(x - 2, y + 2, 2, 3.4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x + 2, y + 2, 2, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(255,214,120,${flick})`;
+        ctx.beginPath(); ctx.ellipse(x, y + 2.6, 1.4, 2.2, 0, 0, Math.PI * 2); ctx.fill();
         break;
+      }
+      case 'bed': {
+        // monk's cot: timber frame, wool blanket, cream pillow
+        this._dropShadow(ctx, x, y + 7, 7, 2.6);
+        ctx.fillStyle = '#573d21';                 // frame
+        ctx.fillRect(x - 6, y - 8, 12, 16);
+        ctx.fillStyle = '#6b4d2b';
+        ctx.fillRect(x - 6, y - 8, 12, 1.4);
+        ctx.fillStyle = '#6b5140';                 // wool blanket (muted)
+        ctx.fillRect(x - 5, y - 2, 10, 9);
+        ctx.fillStyle = '#7d6350';
+        ctx.fillRect(x - 5, y - 2, 10, 1.4);
+        ctx.fillStyle = 'rgba(50,36,26,0.4)';      // fold seams
+        ctx.fillRect(x - 5, y + 2, 10, 0.7);
+        ctx.fillRect(x - 5, y + 4.5, 10, 0.7);
+        ctx.fillStyle = '#e4dcc4';                 // pillow
+        ctx.fillRect(x - 4, y - 6, 8, 4);
+        ctx.fillStyle = '#cfc4a4';
+        ctx.fillRect(x - 4, y - 2.8, 8, 0.8);
+        break;
+      }
       case 'rock':
         this._dropShadow(ctx, x, y + 1, 4, 1.6);
         ctx.fillStyle = '#5a5a58';

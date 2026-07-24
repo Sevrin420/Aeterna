@@ -85,21 +85,21 @@ prop('pillar', 27, 9);
 prop('pillar', 19, 21);
 prop('pillar', 27, 21);
 
-// Church: altar, flanking pews down the nave (aisle stays clear at col 8)
+// Church: altar + a few large pews flanking the nave (aisle stays clear at
+// col 8). Just three rows a side — sparse and readable, not a sea of benches.
 prop('altar', 8, 4);
-for (let r = 6; r <= 28; r += 2) { prop('pew', 6, r); prop('pew', 10, r); }
+for (const r of [8, 14, 20]) { prop('pew', 6, r); prop('pew', 10, r); }
 prop('torch', 6, 3);
 prop('torch', 10, 3);
-prop('torch', 3, 16);
-prop('torch', 13, 16);
 
-// Kitchen: counter + stove
-for (let c = 20; c <= 26; c++) prop('counter', c, 27);
-prop('stove', 24, 29);
+// Kitchen: one big hearth/stove (the counter row is gone — one strong item)
+prop('stove', 23, 28);
 
-// Dorms: bed rows along the west wall
-for (let r = 4; r <= 14; r += 2) prop('bed', 33, r);
-for (let r = 20; r <= 32; r += 2) prop('bed', 33, r);
+// Dorms: two big beds per dormitory along the west wall
+prop('bed', 33, 5);
+prop('bed', 33, 12);
+prop('bed', 33, 22);
+prop('bed', 33, 29);
 
 // Season/day bulletin, just off the dock near the gate
 prop('bulletin', 5, 34);
@@ -124,15 +124,19 @@ prop('nursery', 36, 20, false);
 // Mancala wager table (GDD section 10), in the kitchen's open floor
 prop('mancala-table', 20, 30);
 
-// Scattered rocks/shrubs on the open grounds (never on the dock/river band)
-for (let i = 0; i < 60; i++) {
-  const c = h2(i * 7, 3) % COLS;
-  const r = h2(3, i * 7) % ROWS;
-  if (GRID[r][c] !== ' ') continue;
-  if (r >= 33) continue;
-  const kind = h2(i, i) % 3;
-  if (kind === 0) prop('rock', c, r, true);
-  else if (kind === 1) prop('bush', c, r, false);
+// A handful of large rocks/shrubs on the open grounds for a little life —
+// deliberately sparse (was dozens of tiny specks; now ~8 bigger ones).
+{
+  let placed = 0;
+  for (let i = 0; i < 60 && placed < 8; i++) {
+    const c = h2(i * 7, 3) % COLS;
+    const r = h2(3, i * 7) % ROWS;
+    if (GRID[r][c] !== ' ') continue;
+    if (r >= 33) continue;
+    if (h2(i, i) % 2 === 0) prop('rock', c, r, true);
+    else prop('bush', c, r, false);
+    placed++;
+  }
 }
 
 const SOLID_CHARS = new Set(['#', '~']);
