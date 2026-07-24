@@ -41,12 +41,16 @@ muteToggle.addEventListener('click', () => {
 });
 
 const input = new Input();
-input.bindDpad(document.getElementById('dpadUp'), 'up');
-input.bindDpad(document.getElementById('dpadDown'), 'down');
-input.bindDpad(document.getElementById('dpadLeft'), 'left');
-input.bindDpad(document.getElementById('dpadRight'), 'right');
+input.bindDpadZone(document.getElementById('dpad'));
 input.bindButton(document.getElementById('btnA'), 'a');
 input.bindButton(document.getElementById('btnB'), 'b');
+
+// Scenes draw in a fixed 208-logical coordinate space; the canvas backing
+// store is 2x that (416x412) so the pixel art stays crisp when the console
+// is scaled up on a phone (Club Nile does the same — a 240-logical world
+// drawn 2x into a 480 buffer). Every frame we reset to this 2x base
+// transform before the scene renders.
+const RES = 2;
 
 let powered = false;
 let scene = null;
@@ -55,6 +59,7 @@ let toastTimer = null;
 let socket = null;
 
 function drawOff() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
@@ -243,7 +248,15 @@ function powerOn() {
   if (!stopLoop) {
     stopLoop = makeLoop(
       (dt) => { if (scene) scene.update(dt, input); },
-      () => { if (powered && scene) scene.render(ctx); else drawOff(); }
+      () => {
+        if (powered && scene) {
+          ctx.setTransform(RES, 0, 0, RES, 0, 0);
+          ctx.imageSmoothingEnabled = false;
+          scene.render(ctx);
+        } else {
+          drawOff();
+        }
+      }
     );
   }
 }

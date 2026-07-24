@@ -37,13 +37,30 @@ export class Input {
   _setA(v) { if (v && !this.a) { this._aJustPressed = true; sfx.click(); } this.a = v; }
   _setB(v) { if (v && !this.b) { this._bJustPressed = true; sfx.click(); } this.b = v; }
 
-  bindDpad(el, dir) {
-    const on = (e) => { this.dirs[dir] = true; sfx.click(); e.preventDefault(); };
-    const off = (e) => { this.dirs[dir] = false; if (e) e.preventDefault(); };
-    el.addEventListener('pointerdown', on);
-    el.addEventListener('pointerup', off);
-    el.addEventListener('pointerleave', off);
-    el.addEventListener('pointercancel', off);
+  // Single continuous d-pad zone (Club Nile style): press once anywhere on
+  // the cross, then slide the thumb to change direction without lifting.
+  // Direction is the dominant axis of the thumb's offset from the zone
+  // centre, recomputed on every move.
+  bindDpadZone(el) {
+    const clear = () => { this.dirs.up = this.dirs.down = this.dirs.left = this.dirs.right = false; };
+    const from = (e) => {
+      const r = el.getBoundingClientRect();
+      const nx = (e.clientX - r.left) / r.width - 0.5;
+      const ny = (e.clientY - r.top) / r.height - 0.5;
+      clear();
+      if (Math.abs(nx) < 0.08 && Math.abs(ny) < 0.08) return; // dead zone at centre
+      if (Math.abs(nx) > Math.abs(ny)) this.dirs[nx < 0 ? 'left' : 'right'] = true;
+      else this.dirs[ny < 0 ? 'up' : 'down'] = true;
+    };
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      el._pressed = true;
+      sfx.click();
+      from(e);
+    });
+    el.addEventListener('pointermove', (e) => { if (el._pressed) { e.preventDefault(); from(e); } });
+    ['pointerup', 'pointercancel'].forEach((ev) => el.addEventListener(ev, () => { el._pressed = false; clear(); }));
   }
 
   bindButton(el, which) {

@@ -8,7 +8,8 @@ import { sfx } from '../sfx.js';
 import { drawCharacter, getCultistSprite, getGuruSprite } from '../spritesheet.js';
 import { TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES } from '../abbeyMap.js';
 
-const W = 208, H = 208; // screen/canvas size (unchanged)
+const W = 208, H = 208; // logical screen size (canvas backing store is RES x this)
+const RES = 2;          // must match the 2x transform main.js sets each frame
 const MAP_W = COLS * TILE, MAP_H = ROWS * TILE;
 const GIFT_POLL_MS = 4000;
 
@@ -502,6 +503,23 @@ export class CourtyardScene {
     }
   }
 
+  // The floor/walls never change, so draw the whole map into an offscreen
+  // canvas ONCE (at 2x device resolution) and blit the visible window each
+  // frame instead of redrawing hundreds of tiles live. This is purely a
+  // client-side cache in the player's browser (a few MB of their device
+  // memory, zero server/VPS cost) — the same approach Club Nile uses — and
+  // it removes per-frame tile churn so the world stays rock-steady.
+  _buildFloor() {
+    const cv = document.createElement('canvas');
+    cv.width = MAP_W * RES;
+    cv.height = MAP_H * RES;
+    const g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.setTransform(RES, 0, 0, RES, 0, 0);
+    this._drawFloor(g, 0, 0, COLS - 1, ROWS - 1);
+    this._floor = cv;
+  }
+
   _drawFloor(ctx, c0, r0, c1, r1) {
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
@@ -512,17 +530,13 @@ export class CourtyardScene {
           const shade = bhash % 3;
           ctx.fillStyle = shade === 0 ? '#8c8f92' : shade === 1 ? '#7e8184' : '#85888c';
           ctx.fillRect(x, y, TILE, TILE);
-          // beveled block edges (bright top/left, dark bottom/right) for a
-          // chunky, cartoon SNES-tile look instead of flat photographic shading
-          ctx.fillStyle = 'rgba(228,230,228,0.4)';
-          ctx.fillRect(x, y, TILE, 1.6);
-          ctx.fillRect(x, y, 1.6, TILE);
-          ctx.fillStyle = 'rgba(20,22,24,0.4)';
-          ctx.fillRect(x, y + TILE - 1.8, TILE, 1.8);
-          ctx.fillRect(x + TILE - 1.8, y, 1.8, TILE);
-          ctx.strokeStyle = 'rgba(18,19,20,0.8)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+          // flat cartoon stone: a whisper of top light + a thin seam on the
+          // bottom/right so blocks read as separate, but NO heavy emboss
+          ctx.fillStyle = 'rgba(230,232,230,0.14)';
+          ctx.fillRect(x, y, TILE, 1);
+          ctx.fillStyle = 'rgba(24,26,28,0.22)';
+          ctx.fillRect(x, y + TILE - 1, TILE, 1);
+          ctx.fillRect(x + TILE - 1, y, 1, TILE);
           // moss creeping onto wall tiles that border the garden
           const nearGarden = tileAt(c, r - 1) === 'g' || tileAt(c, r + 1) === 'g' ||
             tileAt(c - 1, r) === 'g' || tileAt(c + 1, r) === 'g';
@@ -533,17 +547,15 @@ export class CourtyardScene {
         } else if (ch === 'g') {
           ctx.fillStyle = (bhash % 3 === 0) ? '#3c5a30' : '#345028';
           ctx.fillRect(x, y, TILE, TILE);
-          if (bhash % 5 === 0) { ctx.fillStyle = 'rgba(90,140,70,0.5)'; ctx.fillRect(x + 3, y + 3, 2, 2); }
-          if (bhash % 13 === 0) { ctx.fillStyle = 'rgba(60,45,25,0.25)'; ctx.fillRect(x + 2, y + 5, 4, 2); }
-          if (bhash % 4 === 0) {
-            const sway = Math.sin(this.t * 2 + bhash) * 0.8;
-            ctx.strokeStyle = 'rgba(110,160,90,0.5)';
+          if (bhash % 5 === 0) { ctx.fillStyle = 'rgba(90,140,70,0.4)'; ctx.fillRect(x + 3, y + 3, 2, 2); }
+          if (bhash % 13 === 0) { ctx.fillStyle = 'rgba(60,45,25,0.22)'; ctx.fillRect(x + 2, y + 5, 4, 2); }
+          if (bhash % 6 === 0) {
+            // static grass tufts (no per-frame sway -> calmer, less twitchy)
+            ctx.strokeStyle = 'rgba(110,160,90,0.35)';
             ctx.lineWidth = 0.6;
             ctx.beginPath();
-            ctx.moveTo(x + 3, y + TILE - 1);
-            ctx.lineTo(x + 3 + sway, y + TILE - 5);
-            ctx.moveTo(x + 7, y + TILE - 1);
-            ctx.lineTo(x + 7 + sway * 0.7, y + TILE - 4);
+            ctx.moveTo(x + 3, y + TILE - 1); ctx.lineTo(x + 3, y + TILE - 5);
+            ctx.moveTo(x + 7, y + TILE - 1); ctx.lineTo(x + 7, y + TILE - 4);
             ctx.stroke();
           }
         } else if (ch === 'k' || ch === 'd') {
@@ -571,37 +583,32 @@ export class CourtyardScene {
           ctx.fillStyle = `rgb(${40 + shimmer * 20}, ${70 + shimmer * 30}, ${95 + shimmer * 35})`;
           ctx.fillRect(x, y, TILE, TILE);
         } else if (ch === '.') {
-          const light = (r + c) % 2 === 0;
-          ctx.fillStyle = light ? '#a3a196' : '#939186';
+          // flat limestone flagstone (English abbey): calm grey with gentle
+          // per-tile colour mottling and a single thin grout seam -- matches
+          // the flat cartoon look of the grass, NO raised-button emboss
+          const shade = bhash % 3;
+          ctx.fillStyle = shade === 0 ? '#9b998e' : shade === 1 ? '#918f85' : '#96948b';
           ctx.fillRect(x, y, TILE, TILE);
-          // beveled limestone flagstone: bright top/left, dark bottom/right,
-          // bold grout outline -- flat, saturated, cartoon-tile look, cool
-          // grey stone (English abbey flagstone, not desert sandstone)
-          ctx.fillStyle = 'rgba(224,224,216,0.5)';
-          ctx.fillRect(x, y, TILE, 1.5);
-          ctx.fillRect(x, y, 1.5, TILE);
-          ctx.fillStyle = 'rgba(38,36,32,0.4)';
-          ctx.fillRect(x, y + TILE - 1.6, TILE, 1.6);
-          ctx.fillRect(x + TILE - 1.6, y, 1.6, TILE);
-          ctx.strokeStyle = 'rgba(32,31,28,0.75)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+          if (bhash % 4 === 0) { ctx.fillStyle = 'rgba(255,255,248,0.07)'; ctx.fillRect(x + 2, y + 2, 3, 3); }
+          if (bhash % 9 === 0) { ctx.fillStyle = 'rgba(40,38,34,0.10)'; ctx.fillRect(x + 4, y + 5, 3, 2); }
+          // thin, low-contrast grout on the bottom/right edge only
+          ctx.fillStyle = 'rgba(58,56,50,0.26)';
+          ctx.fillRect(x, y + TILE - 1, TILE, 1);
+          ctx.fillRect(x + TILE - 1, y, 1, TILE);
           // worn, lighter stone either side of the aisle carpet from foot traffic
           if (c === 7 || c === 9) {
-            ctx.fillStyle = 'rgba(230,228,218,0.12)';
+            ctx.fillStyle = 'rgba(230,228,218,0.10)';
             ctx.fillRect(x, y, TILE, TILE);
           }
         } else {
           // exterior grass
           ctx.fillStyle = (bhash % 5 === 0) ? '#3d5a30' : (bhash % 7 === 0) ? '#182412' : '#2a4020';
           ctx.fillRect(x, y, TILE, TILE);
-          if (bhash % 6 === 0) {
-            const sway = Math.sin(this.t * 1.8 + bhash) * 0.7;
-            ctx.strokeStyle = 'rgba(90,130,70,0.35)';
+          if (bhash % 8 === 0) {
+            ctx.strokeStyle = 'rgba(90,130,70,0.28)';
             ctx.lineWidth = 0.6;
             ctx.beginPath();
-            ctx.moveTo(x + 4, y + TILE - 1);
-            ctx.lineTo(x + 4 + sway, y + TILE - 4);
+            ctx.moveTo(x + 4, y + TILE - 1); ctx.lineTo(x + 4, y + TILE - 4);
             ctx.stroke();
           }
         }
@@ -1180,12 +1187,10 @@ export class CourtyardScene {
     ctx.save();
     ctx.translate(-Math.round(this.cam.x), -Math.round(this.cam.y));
 
-    const c0 = Math.max(0, Math.floor(this.cam.x / TILE) - 1);
-    const r0 = Math.max(0, Math.floor(this.cam.y / TILE) - 1);
-    const c1 = Math.min(COLS - 1, Math.ceil((this.cam.x + W) / TILE) + 1);
-    const r1 = Math.min(ROWS - 1, Math.ceil((this.cam.y + H) / TILE) + 1);
-
-    this._drawFloor(ctx, c0, r0, c1, r1);
+    // blit the pre-rendered floor (built once); MAP_W/MAP_H logical maps 1:1
+    // to the cache's device pixels under the frame's 2x transform
+    if (!this._floor) this._buildFloor();
+    ctx.drawImage(this._floor, 0, 0, MAP_W, MAP_H);
     for (const item of this._collectDrawables(ctx)) item.draw();
     this._drawFireflies(ctx);
 

@@ -16,7 +16,7 @@
 
       <!-- Screen -->
       <div class="screen-bezel">
-        <canvas id="screen" width="208" height="206"></canvas>
+        <canvas id="screen" width="416" height="412"></canvas>
         <div class="scanlines"></div>
         <div class="boot-veil" id="bootVeil"></div>
 
@@ -86,19 +86,17 @@
       <!-- Mute -->
       <button type="button" class="mute-toggle" id="muteToggle" aria-label="Mute sound" aria-pressed="false">&#9834;</button>
 
-      <!-- Power slider -->
+      <!-- Power slider (Club Nile style: wood pill, ON/OFF labels, ridged knob) -->
       <button type="button" class="power-switch" id="powerSwitch" aria-label="Power" aria-pressed="false">
         <span class="power-track">
+          <span class="power-txt power-on">ON</span>
+          <span class="power-txt power-off">OFF</span>
           <span class="power-knob"></span>
         </span>
-        <span class="power-led"></span>
       </button>
 
-      <!-- D-Pad hit zones -->
-      <div class="dpad-hit" id="dpadUp" data-dir="up"></div>
-      <div class="dpad-hit" id="dpadDown" data-dir="down"></div>
-      <div class="dpad-hit" id="dpadLeft" data-dir="left"></div>
-      <div class="dpad-hit" id="dpadRight" data-dir="right"></div>
+      <!-- D-Pad: one continuous zone (press once, slide thumb to steer) -->
+      <div class="dpad-zone" id="dpad" aria-label="D-pad"></div>
 
       <!-- Face buttons -->
       <div class="btn-hit btn-a" id="btnA" aria-label="A"></div>

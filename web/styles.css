@@ -92,13 +92,13 @@ html, body {
   pointer-events: none;
 }
 
-/* ===== Power switch ===== */
+/* ===== Power switch (Club Nile style: wood pill, ON/OFF labels, ridged knob) ===== */
 .power-switch {
   position: absolute;
-  right: 2.2%;
-  bottom: 5%;
-  width: 13%;
-  height: 4.2%;
+  left: 71%;
+  top: 87.4%;
+  width: 23%;
+  height: 8%;
   background: transparent;
   border: none;
   padding: 0;
@@ -108,58 +108,70 @@ html, body {
 }
 
 .power-track {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(180deg, #1a1006, #05030100);
-  background-color: #140d05;
-  border: 1px solid #4a3618;
-  border-radius: 999px;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #7a5330 0%, #4d3220 55%, #3a2414 100%);
+  border: 0.5cqw solid #241608;
+  border-radius: 2.6cqw;
+  box-shadow: inset 0 0.5cqw 0 rgba(210, 160, 90, 0.35),
+              inset 0 -0.6cqw 0.8cqw rgba(0, 0, 0, 0.55),
+              0 0.5cqw 0.7cqw rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+/* recessed channel the knob rides in */
+.power-track::before {
+  content: '';
+  position: absolute;
+  left: 5%; right: 5%; top: 33%; height: 34%;
+  background: rgba(18, 10, 4, 0.6);
+  border-radius: 2cqw;
+  box-shadow: inset 0 0.3cqw 0.5cqw rgba(0, 0, 0, 0.7);
+}
+
+.power-txt {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  font-size: 1.7cqw;
+  letter-spacing: 0.1cqw;
+  color: #e6c877;
+  opacity: 0.85;
+  pointer-events: none;
+  text-shadow: 0 0.2cqw 0 rgba(0, 0, 0, 0.6);
+}
+.power-txt.power-off { right: 8%; }
+.power-txt.power-on  { left: 8%; }
+.power-switch[aria-pressed="true"] .power-txt.power-on {
+  color: #b6f0a0;
+  text-shadow: 0 0 1.6cqw rgba(120, 220, 120, 0.8);
 }
 
 .power-knob {
   position: absolute;
-  top: 50%;
+  top: 11%;
   left: 3%;
   width: 44%;
-  height: 82%;
-  transform: translateY(-50%);
-  border-radius: 999px;
-  background: radial-gradient(circle at 35% 30%, #f3d999, #b3873f 60%, #7c5c28 100%);
-  border: 1px solid #3a2c14;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  height: 78%;
+  border-radius: 2.2cqw;
+  background: linear-gradient(180deg, #f8e9b6 0%, #d3aa52 45%, #a97f34 100%);
+  border: 0.4cqw solid #5a4014;
+  box-shadow: inset 0 0.4cqw 0 rgba(255, 248, 214, 0.75),
+              inset 0 -0.5cqw 0.5cqw rgba(90, 64, 20, 0.6),
+              0 0.6cqw 0.9cqw rgba(0, 0, 0, 0.55);
   transition: left 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-
-.power-switch.dragging .power-knob {
-  transition: none;
-}
-
-.power-switch[aria-pressed="true"] .power-knob {
-  left: 53%;
-}
-.power-switch[aria-pressed="true"] .power-track {
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px 1px rgba(217, 178, 100, 0.45);
-}
-
-.power-led {
+/* grip ridges on the knob */
+.power-knob::after {
+  content: '';
   position: absolute;
-  left: -9px;
-  top: 50%;
-  width: 5px;
-  height: 5px;
-  transform: translateY(-50%);
-  border-radius: 50%;
-  background: #4a1010;
-  box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.8);
-  transition: background 0.25s ease, box-shadow 0.25s ease;
+  left: 32%; right: 32%; top: 24%; bottom: 24%;
+  background: repeating-linear-gradient(90deg,
+              rgba(90, 64, 20, 0.65) 0 0.4cqw, transparent 0.4cqw 1.3cqw);
 }
-.power-switch[aria-pressed="true"] .power-led {
-  background: #ffdd88;
-  box-shadow: 0 0 5px 2px rgba(255, 214, 130, 0.85);
-}
+
+.power-switch.dragging .power-knob { transition: none; }
+.power-switch[aria-pressed="true"] .power-knob { left: 53%; }
 
 /* ===== Mute toggle ===== */
 .mute-toggle {
@@ -183,18 +195,17 @@ html, body {
   text-decoration: line-through;
 }
 
-/* ===== D-pad hit zones ===== */
-.dpad-hit {
+/* ===== D-pad: single continuous zone over the whole cross ===== */
+.dpad-zone {
   position: absolute;
   z-index: 4;
   cursor: pointer;
   touch-action: none;
-  /* background: rgba(255,0,0,0.25); uncomment to debug alignment */
+  /* covers the full d-pad cross so a press anywhere on it steers, and the
+     thumb can slide to change direction without lifting */
+  left: 12%; top: 70.5%; width: 32%; height: 23%;
+  /* background: rgba(255,0,0,0.2); uncomment to debug alignment */
 }
-#dpadUp    { left: 23.03%; top: 71.79%; width: 9.9%; height: 6.7%; }
-#dpadDown  { left: 23.03%; top: 85.25%; width: 9.9%; height: 6.7%; }
-#dpadLeft  { left: 13.10%; top: 78.52%; width: 9.9%; height: 6.7%; }
-#dpadRight { left: 32.96%; top: 78.52%; width: 9.9%; height: 6.7%; }
 
 /* ===== Face buttons ===== */
 .btn-hit {
