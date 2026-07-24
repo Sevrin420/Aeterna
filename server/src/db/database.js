@@ -30,4 +30,9 @@ try {
   // column already exists
 }
 
+// Seed the fixed set of claimable Cathedral Rooms (see web/js/abbeyMap.js
+// CATHEDRAL_ALCOVES for their physical placement in the transept).
+const seedRoom = db.prepare('INSERT OR IGNORE INTO cathedral_rooms (id, owner_id, owner_name, claimed_at) VALUES (?, NULL, NULL, NULL)');
+for (const id of ['room-1', 'room-2', 'room-3', 'room-4']) seedRoom.run(id);
+
 export default db;

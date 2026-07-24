@@ -70,7 +70,7 @@ function buildGrid() {
 export const GRID = buildGrid();
 
 export const PROPS = [];
-function prop(type, col, row, solid = true) { PROPS.push({ type, col, row, solid }); }
+function prop(type, col, row, solid = true, extra = {}) { PROPS.push({ type, col, row, solid, ...extra }); }
 
 // Garden: fountain (3x3, center tile is the animated anchor), benches, corner pillars+lanterns
 prop('fountain', 23, 15);
@@ -100,6 +100,29 @@ prop('stove', 24, 29);
 // Dorms: bed rows along the west wall
 for (let r = 4; r <= 14; r += 2) prop('bed', 33, r);
 for (let r = 20; r <= 32; r += 2) prop('bed', 33, r);
+
+// Season/day bulletin, just off the dock near the gate
+prop('bulletin', 5, 34);
+
+// Ownable Cathedral Room alcoves (GDD section 11), tucked into the transept's
+// west and east arms, clear of the confession booth and torches.
+export const CATHEDRAL_ALCOVES = [
+  { id: 'room-1', col: 2, row: 15 },
+  { id: 'room-2', col: 2, row: 19 },
+  { id: 'room-3', col: 14, row: 15 },
+  { id: 'room-4', col: 14, row: 19 },
+];
+for (const a of CATHEDRAL_ALCOVES) prop('cathedral-alcove', a.col, a.row, false, { roomId: a.id });
+
+// Soul-binding altar (dormant until Season 2 unlocks Soul slots) and a
+// Bloodline nursery shrine — both season-gated systems from the GDD that
+// aren't implemented server-side yet, so these are physically present but
+// inert until then.
+prop('soul-altar', 36, 4, false);
+prop('nursery', 36, 20, false);
+
+// Mancala wager table (GDD section 10), in the kitchen's open floor
+prop('mancala-table', 20, 30);
 
 // Scattered rocks/shrubs on the open grounds (never on the dock/river band)
 for (let i = 0; i < 60; i++) {

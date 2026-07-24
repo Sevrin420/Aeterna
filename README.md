@@ -44,9 +44,16 @@ Cultist and Guru characters are generated procedurally by `web/js/pixelchar.js`,
 
 The abbey (`web/js/abbeyMap.js` for the floor plan, rendered by `web/js/scenes/courtyard.js`) is a full walkable grounds, not a single room: a cross-shaped church (nave + transept) to the west with an altar, pews, and torches; a central walled garden with a fountain, benches, and lantern-topped pillars; a kitchen to the south with a counter and stove; two dormitories to the east lined with beds; corridors connecting every room; and open grounds outside with scattered rocks/shrubs, a river along the south edge, and a dock as the main entrance. A camera follows the player and scrolls (clamped to the map edges) since the full grounds are far larger than one screen.
 
+## World systems (GDD §2, §7, §9-11)
+
+- **Season/day bulletin**, near the gate: reads live off `GET /season`, computed from a 56-active/14-break cycle (`server/src/lib/gameLogic.js` `getSeasonInfo`, `SEASON_START` overridable via env). On Day 56 it also triggers a full-screen **Final Communion** cinematic — an announcement stub, since gold reveal and the Leave/Tithe choice (GDD §7) aren't implemented yet.
+- **Cathedral Rooms**, four claimable alcoves in the transept (GDD §11 "ownable"): first Cultist to press A on an unowned alcove holds it, persisted in the `cathedral_rooms` table (`GET /cathedral`, `POST /cathedral/:id/claim`). No cost to claim — there's no Cathedral Room pricing in the GDD to implement against.
+- **Soul altar** and **Bloodline nursery**, in the dorms: physically present but inert placeholders, since Souls (GDD §9, season-gated to 0 in Season 1) and Bloodline/Children (§8) have no server-side mechanics yet.
+- **Mancala wager table** (GDD §10), in the kitchen: a real, server-authoritative 2-player Kalah implementation over Socket.io (`mancala_sit`/`mancala_move`/`mancala_leave`), 5% house rake on a win. **The "wager" moves Devotion, not ETH** — same dev-mode stand-in as everything below, not a new category of gap.
+
 ## Status
 
-Starter server + a fully playable first scene. Player identity is a **dev-mode stand-in**: the client generates a local pseudo-wallet id (`localStorage`) and `POST /register` upserts a Cultist row for it — there is no real wallet/SIWE auth yet, no on-chain mint, and `/confession`'s cost isn't verified against an actual ETH payment (see `server/README.md` for the full still-needed list: wallet-signature auth, on-chain payment verification, admin-wallet protection). Levels, Souls, Bloodline/Children, Final Communion, and the 2-player wager game (GDD §6-10) are not implemented yet — this covers the daily duty loop, physical gifts, confession, and live multiplayer presence (GDD §5, §11).
+Starter server + a fully playable first scene. Player identity is a **dev-mode stand-in**: the client generates a local pseudo-wallet id (`localStorage`) and `POST /register` upserts a Cultist row for it — there is no real wallet/SIWE auth yet, no on-chain mint, and neither `/confession`'s cost nor the Mancala table's wager is verified against an actual ETH payment (see `server/README.md` for the full still-needed list: wallet-signature auth, on-chain payment verification, admin-wallet protection). Levels, real Souls, and real Bloodline/Children (GDD §6, §8-9) are not implemented yet — see "World systems" above for what physically exists in the abbey versus what's still a stub.
 
 ## Contract deployment
 

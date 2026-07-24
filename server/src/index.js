@@ -9,7 +9,7 @@ import { Server } from 'socket.io';
 import db from './db/database.js';
 import {
   DUTY_DEVOTION, STREAK_BONUS_BASE, GIFT_DEVOTION, GIFT_DAILY_LIMITS,
-  todayStr, streakMultiplier, confessionCost, ensureFreshDay, pendingConfession,
+  todayStr, streakMultiplier, confessionCost, ensureFreshDay, pendingConfession, getSeasonInfo,
 } from './lib/gameLogic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -313,6 +313,36 @@ fastify.get('/leaderboard', async () => {
   `).all();
 });
 
+// ========== SEASON (GDD section 2: 56 active days / 14 day break) ==========
+fastify.get('/season', async () => getSeasonInfo());
+
+// ========== CATHEDRAL ROOMS (ownable alcoves, GDD section 11) ==========
+fastify.get('/cathedral', async () => {
+  return db.prepare('SELECT id, owner_id, owner_name, claimed_at FROM cathedral_rooms ORDER BY id').all();
+});
+
+fastify.post('/cathedral/:id/claim', async (req, reply) => {
+  const { id } = req.params;
+  const { wallet } = req.body || {};
+  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+
+  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
+  if (!player) return reply.code(404).send({ error: 'Player not found' });
+
+  const room = db.prepare('SELECT * FROM cathedral_rooms WHERE id = ?').get(id);
+  if (!room) return reply.code(404).send({ error: 'No such room' });
+  if (room.owner_id) {
+    if (room.owner_id === player.id) return { success: true, alreadyOwned: true, room };
+    return reply.code(400).send({ error: `Already claimed by ${room.owner_name}` });
+  }
+
+  const claimed_at = new Date().toISOString();
+  db.prepare('UPDATE cathedral_rooms SET owner_id = ?, owner_name = ?, claimed_at = ? WHERE id = ?')
+    .run(player.id, `${player.prefix} ${player.name}`, claimed_at, id);
+
+  return { success: true, room: { id, owner_id: player.id, owner_name: `${player.prefix} ${player.name}`, claimed_at } };
+});
+
 // ========== ADMIN AWARD ==========
 fastify.post('/admin/award', async (req, reply) => {
   const { wallet, amount, reason } = req.body || {};
@@ -335,6 +365,116 @@ const io = new Server(fastify.server, {
 });
 
 const online = new Map(); // socketId → player data
+
+// ========== MANCALA (2-player wager game, GDD section 10) ==========
+// One physical table. Classic Kalah rules: indices 0-5 are seat 0's pits,
+// 6 is seat 0's store; 7-12 are seat 1's pits, 13 is seat 1's store.
+// NOTE: same dev-mode stand-in as confession/save elsewhere in this file —
+// the "wager" moves real Devotion between players, not real ETH (no
+// on-chain payment verification exists yet anywhere in this server).
+const MANCALA_WAGER = 20;
+const mancalaTable = { seats: [null, null], wallets: [null, null], names: [null, null], board: null, turn: null, active: false };
+
+function mancalaNewBoard() { return [4, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 0]; }
+const mancalaOwnPits = (seat) => (seat === 0 ? [0, 1, 2, 3, 4, 5] : [7, 8, 9, 10, 11, 12]);
+const mancalaOwnStore = (seat) => (seat === 0 ? 6 : 13);
+const mancalaOppStore = (seat) => (seat === 0 ? 13 : 6);
+
+function mancalaCheckGameOver(board) {
+  const side0Empty = [0, 1, 2, 3, 4, 5].every((i) => board[i] === 0);
+  const side1Empty = [7, 8, 9, 10, 11, 12].every((i) => board[i] === 0);
+  if (!side0Empty && !side1Empty) return false;
+  const sweep = side0Empty ? [7, 8, 9, 10, 11, 12] : [0, 1, 2, 3, 4, 5];
+  const store = side0Empty ? 13 : 6;
+  for (const i of sweep) { board[store] += board[i]; board[i] = 0; }
+  return true;
+}
+
+function mancalaApplyMove(board, seat, pit) {
+  let seeds = board[pit];
+  board[pit] = 0;
+  const oppStore = mancalaOppStore(seat);
+  let idx = pit;
+  while (seeds > 0) {
+    idx = (idx + 1) % 14;
+    if (idx === oppStore) continue;
+    board[idx] += 1;
+    seeds -= 1;
+  }
+  const ownStore = mancalaOwnStore(seat);
+  const landedInOwnStore = idx === ownStore;
+  if (!landedInOwnStore && mancalaOwnPits(seat).includes(idx) && board[idx] === 1) {
+    const oppIdx = 12 - idx;
+    if (board[oppIdx] > 0) {
+      board[ownStore] += board[oppIdx] + 1;
+      board[idx] = 0;
+      board[oppIdx] = 0;
+    }
+  }
+  return { extraTurn: landedInOwnStore, gameOver: mancalaCheckGameOver(board) };
+}
+
+function mancalaResetTable() {
+  mancalaTable.seats = [null, null];
+  mancalaTable.wallets = [null, null];
+  mancalaTable.names = [null, null];
+  mancalaTable.board = null;
+  mancalaTable.turn = null;
+  mancalaTable.active = false;
+}
+
+function mancalaBroadcast() {
+  mancalaTable.seats.forEach((sid, seat) => {
+    if (!sid) return;
+    io.to(sid).emit('mancala_state', {
+      board: mancalaTable.board,
+      turn: mancalaTable.turn,
+      active: mancalaTable.active,
+      seat,
+      names: mancalaTable.names,
+      wager: MANCALA_WAGER,
+    });
+  });
+}
+
+function mancalaSettle() {
+  const [s0, s1] = [mancalaTable.board[6], mancalaTable.board[13]];
+  const winnerSeat = s0 === s1 ? null : s0 > s1 ? 0 : 1;
+  const p0 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[0]);
+  const p1 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[1]);
+  let payout = 0;
+  if (winnerSeat === null) {
+    if (p0) db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(MANCALA_WAGER, p0.id);
+    if (p1) db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(MANCALA_WAGER, p1.id);
+  } else {
+    const pot = MANCALA_WAGER * 2;
+    payout = pot - Math.floor(pot * 0.05); // 5% house rake, per GDD section 10
+    const winner = winnerSeat === 0 ? p0 : p1;
+    if (winner) db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(payout, winner.id);
+  }
+  mancalaTable.seats.forEach((sid, seat) => {
+    if (!sid) return;
+    io.to(sid).emit('mancala_end', { board: mancalaTable.board, winnerSeat, seat, payout, draw: winnerSeat === null });
+  });
+  mancalaResetTable();
+}
+
+function mancalaLeave(socket) {
+  const seat = mancalaTable.seats.indexOf(socket.id);
+  if (seat === -1) return;
+  if (mancalaTable.active) {
+    // Forfeit mid-match: refund both wagers rather than adjudicate a winner.
+    const p0 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[0]);
+    const p1 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[1]);
+    if (p0) db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(MANCALA_WAGER, p0.id);
+    if (p1) db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(MANCALA_WAGER, p1.id);
+    const otherSeat = 1 - seat;
+    if (mancalaTable.seats[otherSeat]) io.to(mancalaTable.seats[otherSeat]).emit('mancala_end', { forfeited: true, seat: otherSeat });
+  } else if (mancalaTable.seats[1 - seat]) {
+    io.to(mancalaTable.seats[1 - seat]).emit('mancala_state', { waiting: true, seat: 1 - seat });
+  }
+  mancalaResetTable();
+}
 
 io.on('connection', (socket) => {
   socket.on('join', (data) => {
@@ -430,12 +570,64 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('mancala_sit', () => {
+    const p = online.get(socket.id);
+    if (!p || mancalaTable.seats.includes(socket.id)) return;
+    const seat = mancalaTable.seats.findIndex((s) => s === null);
+    if (seat === -1) { socket.emit('mancala_full'); return; }
+
+    mancalaTable.seats[seat] = socket.id;
+    mancalaTable.wallets[seat] = String(p.tokenId || '').toLowerCase();
+    mancalaTable.names[seat] = `${p.prefix} ${p.name}`;
+
+    if (mancalaTable.seats[0] && mancalaTable.seats[1]) {
+      const p0 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[0]);
+      const p1 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[1]);
+      if (!p0 || !p1 || p0.devotion < MANCALA_WAGER || p1.devotion < MANCALA_WAGER) {
+        const lackingSeat = !p0 || p0.devotion < MANCALA_WAGER ? 0 : 1;
+        mancalaTable.seats.forEach((sid, s) => {
+          if (sid) io.to(sid).emit('mancala_error', {
+            message: s === lackingSeat
+              ? `You need ${MANCALA_WAGER} Devotion to sit at this table.`
+              : 'Your opponent lacks enough Devotion to wager. Table reset.',
+          });
+        });
+        mancalaResetTable();
+        return;
+      }
+      db.prepare('UPDATE players SET devotion = devotion - ? WHERE id = ?').run(MANCALA_WAGER, p0.id);
+      db.prepare('UPDATE players SET devotion = devotion - ? WHERE id = ?').run(MANCALA_WAGER, p1.id);
+      mancalaTable.board = mancalaNewBoard();
+      mancalaTable.turn = 0;
+      mancalaTable.active = true;
+    }
+    mancalaBroadcast();
+  });
+
+  socket.on('mancala_move', (data) => {
+    const seat = mancalaTable.seats.indexOf(socket.id);
+    if (seat === -1 || !mancalaTable.active || mancalaTable.turn !== seat) return;
+    const pit = Number(data && data.pit);
+    if (!mancalaOwnPits(seat).includes(pit) || !mancalaTable.board[pit]) return;
+
+    const { extraTurn, gameOver } = mancalaApplyMove(mancalaTable.board, seat, pit);
+    if (gameOver) {
+      mancalaSettle();
+    } else {
+      mancalaTable.turn = extraTurn ? seat : 1 - seat;
+      mancalaBroadcast();
+    }
+  });
+
+  socket.on('mancala_leave', () => mancalaLeave(socket));
+
   socket.on('disconnect', () => {
     const p = online.get(socket.id);
     if (p) {
       socket.broadcast.emit('player_left', { id: p.tokenId || socket.id });
       online.delete(socket.id);
     }
+    mancalaLeave(socket);
   });
 });
 

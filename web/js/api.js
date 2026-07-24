@@ -58,4 +58,13 @@ export const api = {
   leaderboard() {
     return req('/leaderboard');
   },
+  season() {
+    return req('/season');
+  },
+  cathedralList() {
+    return req('/cathedral');
+  },
+  cathedralClaim(roomId) {
+    return req(`/cathedral/${roomId}/claim`, { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
+  },
 };

@@ -6,7 +6,7 @@
 import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
 import { drawCharacter, getCultistSprite, getGuruSprite } from '../spritesheet.js';
-import { TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2 } from '../abbeyMap.js';
+import { TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES } from '../abbeyMap.js';
 
 const W = 208, H = 208; // screen/canvas size (unchanged)
 const MAP_W = COLS * TILE, MAP_H = ROWS * TILE;
@@ -22,17 +22,27 @@ const STATIONS = [
   { id: 'confession', kind: 'confession', label: 'Confess', x: px(4), y: px(17), r: 12 },
   { id: 'leaderboard', kind: 'leaderboard', label: 'View Leaderboard', x: px(33), y: px(9), r: 12 },
   { id: 'gate', kind: 'gate', label: 'Save & Exit [B]', x: px(8), y: px(35), r: 18 },
+  { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: px(5), y: px(34), r: 12 },
+  { id: 'soul-altar', kind: 'soul-altar', label: 'Approach the Soul Altar', x: px(36), y: px(4), r: 12 },
+  { id: 'nursery', kind: 'nursery', label: 'Approach the Nursery', x: px(36), y: px(20), r: 12 },
+  { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(20), y: px(30), r: 12 },
+  ...CATHEDRAL_ALCOVES.map((a) => ({
+    id: a.id, kind: 'cathedral', roomId: a.id, label: 'Claim this Alcove',
+    x: px(a.col), y: px(a.row), r: 10,
+  })),
 ];
 const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
 
 export class CourtyardScene {
-  constructor({ player, onPlayerUpdate, onToast, socket, onLeaderboard, onSaveExit, onChatOpen }) {
+  constructor({ player, onPlayerUpdate, onToast, socket, onLeaderboard, onSaveExit, onChatOpen, onMancala, onFinalCommunion }) {
     this.player = player;
     this.onPlayerUpdate = onPlayerUpdate || (() => {});
     this.onToast = onToast || (() => {});
     this.onLeaderboard = onLeaderboard || (() => {});
     this.onSaveExit = onSaveExit || (() => {});
     this.onChatOpen = onChatOpen || (() => {});
+    this.onMancala = onMancala || (() => {});
+    this.onFinalCommunion = onFinalCommunion || (() => {});
     this.socket = socket || null;
 
     this.t = 0;
@@ -41,6 +51,9 @@ export class CourtyardScene {
     this.giftPollTimer = 0;
     this.localEmoji = null; // { emoji, t }
     this.localChat = null; // { text, t }
+    this.seasonInfo = null; // { season, day, inBreak, daysUntilCommunion, isFinalCommunion }
+    this.cathedralRooms = new Map(); // roomId -> { owner_id, owner_name }
+    this.finalCommunionShown = false;
 
     this.remotePlayers = new Map(); // id -> { x, y, dir, name, prefix, emoji }
 
@@ -66,6 +79,8 @@ export class CourtyardScene {
   enter() {
     this.mySheet = getCultistSprite(getWalletId(), this.player.sex);
     this._refreshGifts();
+    this._refreshSeason();
+    this._refreshCathedral();
     this._bindSocket();
     this._emitJoin();
     this._onKeyDown = (e) => {
@@ -107,11 +122,19 @@ export class CourtyardScene {
       this.remotePlayers.set(p.id, { ...existing, emoji: { emoji: p.emoji, t: 1.6 } });
     };
     this._onChatMsg = (p) => this.showChat(p.id, p.text);
+    this._onMancalaState = (state) => this.onMancala({ type: 'state', ...state });
+    this._onMancalaEnd = (state) => this.onMancala({ type: 'end', ...state });
+    this._onMancalaError = (data) => this.onToast(data.message);
+    this._onMancalaFull = () => this.onToast('The table is full — wait for a seat.');
     s.on('player_joined', this._onJoined);
     s.on('player_left', this._onLeft);
     s.on('player_moved', this._onMoved);
     s.on('emoji_show', this._onEmoji);
     s.on('chat_msg', this._onChatMsg);
+    s.on('mancala_state', this._onMancalaState);
+    s.on('mancala_end', this._onMancalaEnd);
+    s.on('mancala_error', this._onMancalaError);
+    s.on('mancala_full', this._onMancalaFull);
   }
 
   _unbindSocket() {
@@ -122,11 +145,23 @@ export class CourtyardScene {
     s.off('player_moved', this._onMoved);
     s.off('emoji_show', this._onEmoji);
     s.off('chat_msg', this._onChatMsg);
+    s.off('mancala_state', this._onMancalaState);
+    s.off('mancala_end', this._onMancalaEnd);
+    s.off('mancala_error', this._onMancalaError);
+    s.off('mancala_full', this._onMancalaFull);
   }
 
   _sendEmoji(emoji) {
     this.localEmoji = { emoji, t: 1.6 };
     if (this.socket) this.socket.emit('emoji', { emoji });
+  }
+
+  sendMancalaMove(pit) {
+    if (this.socket) this.socket.emit('mancala_move', { pit });
+  }
+
+  leaveMancala() {
+    if (this.socket) this.socket.emit('mancala_leave');
   }
 
   _emitJoin() {
@@ -145,6 +180,27 @@ export class CourtyardScene {
       this.gifts = await api.giftsNearby();
     } catch {
       // non-fatal — ground gifts are cosmetic/optional
+    }
+  }
+
+  async _refreshSeason() {
+    try {
+      this.seasonInfo = await api.season();
+      if (this.seasonInfo.isFinalCommunion && !this.finalCommunionShown) {
+        this.finalCommunionShown = true;
+        this.onFinalCommunion(this.seasonInfo);
+      }
+    } catch {
+      // non-fatal — the bulletin just won't have anything to say
+    }
+  }
+
+  async _refreshCathedral() {
+    try {
+      const rooms = await api.cathedralList();
+      this.cathedralRooms = new Map(rooms.map((r) => [r.id, r]));
+    } catch {
+      // non-fatal — alcoves just render unclaimed until this succeeds
     }
   }
 
@@ -315,6 +371,52 @@ export class CourtyardScene {
     }
   }
 
+  async _handleBulletin() {
+    await this._refreshSeason();
+    const s = this.seasonInfo;
+    if (!s) { this.onToast('The bulletin is unreadable.'); return; }
+    if (s.inBreak) {
+      this.onToast(`Season ${s.season} is between cycles. The abbey rests.`);
+    } else if (s.isFinalCommunion) {
+      this.onToast(`Season ${s.season}, Day ${s.day} — Final Communion is upon us.`);
+    } else {
+      this.onToast(`Season ${s.season}, Day ${s.day}/56 — ${s.daysUntilCommunion} days until Final Communion.`);
+    }
+  }
+
+  async _handleCathedral(roomId) {
+    const room = this.cathedralRooms.get(roomId);
+    const myName = `${this.player.prefix} ${this.player.name}`;
+    if (room && room.owner_id) {
+      this.onToast(room.owner_name === myName ? 'This alcove is already yours.' : `Claimed by ${room.owner_name}.`);
+      return;
+    }
+    try {
+      const res = await api.cathedralClaim(roomId);
+      this.cathedralRooms.set(roomId, res.room);
+      sfx.dutyComplete();
+      this.onToast('You claim this Cathedral Room as your own.');
+    } catch (e) {
+      this.onToast(e.message);
+      this._refreshCathedral();
+    }
+  }
+
+  _handleSoulAltar() {
+    const season = this.seasonInfo?.season ?? 1;
+    this.onToast(season >= 2
+      ? 'The Soul Altar stirs, but binding is not yet consecrated.'
+      : 'The Soul Altar lies dormant. It will awaken in Season 2.');
+  }
+
+  _handleNursery() {
+    this.onToast('The Nursery is not yet consecrated. Bloodlines will be recognized in a future season.');
+  }
+
+  _handleMancala() {
+    if (this.socket) this.socket.emit('mancala_sit');
+  }
+
   update(dt, input) {
     this.t += dt;
     if (this.messageTimer > 0) this.messageTimer -= dt;
@@ -368,6 +470,11 @@ export class CourtyardScene {
         else if (this._activeStation.kind === 'guru') this._handleGuru();
         else if (this._activeStation.kind === 'confession') this._handleConfession();
         else if (this._activeStation.kind === 'leaderboard') this._handleLeaderboard();
+        else if (this._activeStation.kind === 'bulletin') this._handleBulletin();
+        else if (this._activeStation.kind === 'cathedral') this._handleCathedral(this._activeStation.roomId);
+        else if (this._activeStation.kind === 'soul-altar') this._handleSoulAltar();
+        else if (this._activeStation.kind === 'nursery') this._handleNursery();
+        else if (this._activeStation.kind === 'mancala') this._handleMancala();
       }
     }
     if (input.consumeBPress()) {
@@ -694,6 +801,65 @@ export class CourtyardScene {
         ctx.beginPath(); ctx.ellipse(x, y, 3.4, 2.8, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#3f6032';
         ctx.beginPath(); ctx.ellipse(x - 1, y - 1, 1.6, 1.2, 0, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'bulletin':
+        this._dropShadow(ctx, x, y + 5, 6, 2);
+        ctx.fillStyle = '#3a2c18';
+        ctx.fillRect(x - 6, y - 9, 12, 14);
+        ctx.fillStyle = '#e9dcae';
+        ctx.fillRect(x - 5, y - 8, 10, 11);
+        ctx.strokeStyle = '#a9821f';
+        ctx.lineWidth = 0.6;
+        ctx.strokeRect(x - 5, y - 8, 10, 11);
+        ctx.fillStyle = '#8a6a34';
+        for (let i = -5; i <= 3; i += 3) ctx.fillRect(x - 3, y - 6 + i, 6, 1);
+        ctx.fillStyle = '#3a2c18';
+        ctx.fillRect(x - 1, y + 5, 2, 4);
+        break;
+      case 'cathedral-alcove': {
+        const room = this.cathedralRooms.get(p.roomId);
+        const owned = !!(room && room.owner_id);
+        this._dropShadow(ctx, x, y + 4, 6, 2);
+        ctx.fillStyle = owned ? '#3a2c48' : '#2a2420';
+        ctx.fillRect(x - 6, y - 10, 12, 15);
+        ctx.fillStyle = owned ? '#7a5aa8' : '#4a4038';
+        ctx.fillRect(x - 5, y - 9, 10, 12);
+        ctx.fillStyle = owned ? '#c9a13b' : 'rgba(160,150,130,0.4)';
+        ctx.fillRect(x - 5, y - 9, 10, 1.5);
+        if (owned) {
+          ctx.font = '3.4px "Courier New", monospace';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#e9dcae';
+          const shortName = room.owner_name.split(' ').slice(-1)[0];
+          ctx.fillText(shortName.slice(0, 8), x, y - 2);
+        }
+        break;
+      }
+      case 'soul-altar': {
+        const active = (this.seasonInfo?.season ?? 1) >= 2;
+        this._dropShadow(ctx, x, y + 5, 7, 2.4);
+        ctx.fillStyle = '#241a30';
+        ctx.fillRect(x - 6, y - 3, 12, 7);
+        const glowA = active ? 0.5 + Math.sin(this.t * 2.4) * 0.3 : 0.12;
+        ctx.fillStyle = `rgba(150,110,220,${glowA})`;
+        ctx.beginPath(); ctx.arc(x, y - 5, 2.6, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      case 'nursery':
+        this._dropShadow(ctx, x, y + 4, 6, 2);
+        ctx.fillStyle = '#3a4a30';
+        ctx.fillRect(x - 5, y - 4, 10, 8);
+        ctx.fillStyle = 'rgba(150,200,140,0.4)';
+        ctx.beginPath(); ctx.ellipse(x, y - 4, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'mancala-table':
+        this._dropShadow(ctx, x, y + 4, 9, 3);
+        ctx.fillStyle = '#5c4426';
+        ctx.fillRect(x - 9, y - 3, 18, 7);
+        ctx.fillStyle = '#3a2c18';
+        for (let i = -6; i <= 6; i += 3) {
+          ctx.beginPath(); ctx.arc(x + i, y, 1.4, 0, Math.PI * 2); ctx.fill();
+        }
         break;
     }
   }

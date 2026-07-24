@@ -57,6 +57,42 @@
           <ol class="leaderboard-list" id="leaderboardList"></ol>
           <button type="button" class="naming-submit" id="leaderboardClose">Close</button>
         </div>
+
+        <!-- Mancala wager table (GDD section 10) -->
+        <div class="mancala-overlay" id="mancalaOverlay" hidden>
+          <p class="naming-title">Mancala — Wager Table</p>
+          <p class="mancala-status" id="mancalaStatus"></p>
+          <div class="mancala-board">
+            <button type="button" class="mancala-store" id="mancalaStoreB" disabled></button>
+            <div class="mancala-rows">
+              <div class="mancala-row">
+                <button type="button" class="mancala-pit" data-pit="12"></button>
+                <button type="button" class="mancala-pit" data-pit="11"></button>
+                <button type="button" class="mancala-pit" data-pit="10"></button>
+                <button type="button" class="mancala-pit" data-pit="9"></button>
+                <button type="button" class="mancala-pit" data-pit="8"></button>
+                <button type="button" class="mancala-pit" data-pit="7"></button>
+              </div>
+              <div class="mancala-row">
+                <button type="button" class="mancala-pit" data-pit="0"></button>
+                <button type="button" class="mancala-pit" data-pit="1"></button>
+                <button type="button" class="mancala-pit" data-pit="2"></button>
+                <button type="button" class="mancala-pit" data-pit="3"></button>
+                <button type="button" class="mancala-pit" data-pit="4"></button>
+                <button type="button" class="mancala-pit" data-pit="5"></button>
+              </div>
+            </div>
+            <button type="button" class="mancala-store" id="mancalaStoreA" disabled></button>
+          </div>
+          <button type="button" class="naming-submit" id="mancalaLeave">Leave Table</button>
+        </div>
+
+        <!-- Final Communion cinematic (GDD section 7, Day 56) -->
+        <div class="communion-overlay" id="communionOverlay" hidden>
+          <p class="communion-title">Final Communion</p>
+          <p class="communion-body" id="communionBody"></p>
+          <button type="button" class="naming-submit" id="communionClose">Continue</button>
+        </div>
       </div>
 
       <!-- Mute -->

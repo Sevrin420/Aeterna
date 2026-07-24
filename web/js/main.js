@@ -27,6 +27,15 @@ const leaderboardClose = document.getElementById('leaderboardClose');
 const bootVeil = document.getElementById('bootVeil');
 const powerKnob = powerSwitch.querySelector('.power-knob');
 const muteToggle = document.getElementById('muteToggle');
+const mancalaOverlay = document.getElementById('mancalaOverlay');
+const mancalaStatus = document.getElementById('mancalaStatus');
+const mancalaStoreA = document.getElementById('mancalaStoreA');
+const mancalaStoreB = document.getElementById('mancalaStoreB');
+const mancalaPits = [...document.querySelectorAll('.mancala-pit')];
+const mancalaLeaveBtn = document.getElementById('mancalaLeave');
+const communionOverlay = document.getElementById('communionOverlay');
+const communionBody = document.getElementById('communionBody');
+const communionClose = document.getElementById('communionClose');
 
 muteToggle.setAttribute('aria-pressed', String(sfx.isMuted()));
 muteToggle.addEventListener('click', () => {
@@ -84,6 +93,63 @@ function showLeaderboard(rows) {
 }
 leaderboardClose.addEventListener('click', () => { leaderboardOverlay.hidden = true; });
 
+function renderMancalaBoard(board) {
+  mancalaPits.forEach((b) => { b.textContent = board[Number(b.dataset.pit)]; });
+  mancalaStoreA.textContent = board[6];
+  mancalaStoreB.textContent = board[13];
+}
+
+function showMancala(state) {
+  mancalaOverlay.hidden = false;
+
+  if (state.type === 'end' || state.forfeited) {
+    if (state.board) renderMancalaBoard(state.board);
+    mancalaPits.forEach((b) => { b.disabled = true; });
+    mancalaStatus.textContent = state.forfeited
+      ? 'Your opponent left the table. Your wager was refunded.'
+      : state.draw
+        ? 'A draw — both wagers refunded.'
+        : state.winnerSeat === state.seat
+          ? `You win! +${state.payout} Devotion.`
+          : 'You lose the wager.';
+    if (!state.forfeited && !state.draw) sfx[state.winnerSeat === state.seat ? 'streakBonus' : 'error']?.();
+    api.me().then(updateHud).catch(() => {});
+    setTimeout(() => { mancalaOverlay.hidden = true; }, 3200);
+    return;
+  }
+
+  if (state.waiting || !state.board) {
+    mancalaStatus.textContent = 'Waiting for an opponent to sit...';
+    mancalaPits.forEach((b) => { b.textContent = ''; b.disabled = true; });
+    mancalaStoreA.textContent = '';
+    mancalaStoreB.textContent = '';
+    return;
+  }
+
+  renderMancalaBoard(state.board);
+  const yourTurn = state.turn === state.seat;
+  mancalaStatus.textContent = `${state.names[0]} vs ${state.names[1]} · Wager ${state.wager} Devotion each · ${yourTurn ? 'Your move' : "Opponent's move"}`;
+  mancalaPits.forEach((b) => {
+    const pit = Number(b.dataset.pit);
+    const ownPit = state.seat === 0 ? pit <= 5 : pit >= 7;
+    b.disabled = !(yourTurn && ownPit && state.board[pit] > 0);
+  });
+}
+
+mancalaPits.forEach((b) => b.addEventListener('click', () => {
+  if (scene && scene.sendMancalaMove) scene.sendMancalaMove(Number(b.dataset.pit));
+}));
+mancalaLeaveBtn.addEventListener('click', () => {
+  if (scene && scene.leaveMancala) scene.leaveMancala();
+  mancalaOverlay.hidden = true;
+});
+
+function showFinalCommunion(info) {
+  communionBody.textContent = `Season ${info.season}, Day ${info.day} has arrived. The abbey gathers for Final Communion — gold reveal and the choice to Leave or Tithe are not yet available in this build; the Guru will announce next steps.`;
+  communionOverlay.hidden = false;
+}
+communionClose.addEventListener('click', () => { communionOverlay.hidden = true; });
+
 function openChat() {
   chatForm.hidden = false;
   chatInput.value = '';
@@ -111,6 +177,8 @@ function enterCourtyard(player) {
     onLeaderboard: showLeaderboard,
     onSaveExit: powerOff,
     onChatOpen: openChat,
+    onMancala: showMancala,
+    onFinalCommunion: showFinalCommunion,
   });
   scene.enter();
   hint.textContent = 'D-pad/arrows to move · A to interact · B to drop, T to chat.';
@@ -197,6 +265,8 @@ function powerOff() {
   hud.hidden = true;
   toastEl.hidden = true;
   leaderboardOverlay.hidden = true;
+  mancalaOverlay.hidden = true;
+  communionOverlay.hidden = true;
   drawOff();
   hint.textContent = 'Slide the switch to power on the console.';
 }

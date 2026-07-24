@@ -32,6 +32,31 @@ export function confessionCost(confessionCount) {
   return Number((0.005 + confessionCount * 0.001).toFixed(3));
 }
 
+// Season structure from docs/Aeterna_GDD_v4.1.md section 2: 56 days active
+// play, then a 14-day break, repeating. SEASON_START is this server's
+// concrete choice for a start date (the GDD doesn't pin one) — override with
+// the SEASON_START env var to rebase it.
+export const SEASON_ACTIVE_DAYS = 56;
+export const SEASON_BREAK_DAYS = 14;
+const SEASON_CYCLE_DAYS = SEASON_ACTIVE_DAYS + SEASON_BREAK_DAYS;
+const SEASON_START = new Date(process.env.SEASON_START || '2026-06-01T00:00:00Z');
+
+export function getSeasonInfo(now = new Date()) {
+  const elapsedDays = Math.floor((now.getTime() - SEASON_START.getTime()) / 86400000);
+  const cycle = Math.floor(elapsedDays / SEASON_CYCLE_DAYS);
+  const season = cycle + 1;
+  const dayInCycle = ((elapsedDays % SEASON_CYCLE_DAYS) + SEASON_CYCLE_DAYS) % SEASON_CYCLE_DAYS;
+  const inBreak = dayInCycle >= SEASON_ACTIVE_DAYS;
+  const day = inBreak ? null : dayInCycle + 1;
+  return {
+    season,
+    day,
+    inBreak,
+    daysUntilCommunion: inBreak ? null : SEASON_ACTIVE_DAYS - day,
+    isFinalCommunion: day === SEASON_ACTIVE_DAYS,
+  };
+}
+
 // Rolls a player's per-day duty flags/counters over to "today", logging a
 // broken streak (if any) so /confession has something to forgive.
 export function ensureFreshDay(db, player) {

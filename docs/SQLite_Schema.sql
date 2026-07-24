@@ -76,6 +76,15 @@ CREATE TABLE IF NOT EXISTS souls (
   bound_at    TEXT
 );
 
+-- Ownable Cathedral Rooms (GDD section 11). A fixed small set of alcoves in
+-- the transept; first Cultist to claim an unowned one holds it.
+CREATE TABLE IF NOT EXISTS cathedral_rooms (
+  id          TEXT PRIMARY KEY,
+  owner_id    TEXT,
+  owner_name  TEXT,
+  claimed_at  TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_players_devotion ON players(devotion DESC);
 CREATE INDEX IF NOT EXISTS idx_players_wallet ON players(wallet);
 CREATE INDEX IF NOT EXISTS idx_gifts_spawned ON gifts(spawned_at);

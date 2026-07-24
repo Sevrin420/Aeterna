@@ -366,6 +366,101 @@ html, body {
 }
 .leaderboard-list .lb-devotion { color: #e9c468; }
 
+/* ===== Mancala ===== */
+.mancala-overlay[hidden] { display: none; }
+.mancala-overlay {
+  position: absolute;
+  inset: 6%;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(4px, 1.6cqw, 8px);
+  background: rgba(5, 3, 1, 0.92);
+  border: 1px solid #6b5227;
+  border-radius: 4px;
+  padding: 4%;
+  text-align: center;
+}
+.mancala-status {
+  margin: 0;
+  color: #c9a35f;
+  font-size: clamp(5.5px, 1.6cqw, 8px);
+  min-height: 2.4em;
+}
+.mancala-board {
+  display: flex;
+  align-items: stretch;
+  gap: clamp(3px, 1.2cqw, 6px);
+  width: 100%;
+}
+.mancala-rows {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(3px, 1.2cqw, 6px);
+}
+.mancala-row {
+  display: flex;
+  gap: clamp(2px, 1cqw, 5px);
+}
+.mancala-pit, .mancala-store {
+  font-family: 'Courier New', monospace;
+  font-size: clamp(7px, 2cqw, 10px);
+  background: #241a12;
+  border: 1px solid #6b5227;
+  color: #f4e5bd;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.mancala-pit {
+  flex: 1;
+  aspect-ratio: 1;
+}
+.mancala-pit:disabled { cursor: default; opacity: 0.6; }
+.mancala-pit:not(:disabled):hover { border-color: #d9b264; }
+.mancala-store {
+  width: clamp(16px, 8cqw, 26px);
+  color: #e9c468;
+  font-weight: bold;
+}
+
+/* ===== Final Communion cinematic ===== */
+.communion-overlay[hidden] { display: none; }
+.communion-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(6px, 2.4cqw, 14px);
+  background: radial-gradient(ellipse at center, rgba(40, 30, 8, 0.96), rgba(2, 1, 0, 0.98));
+  text-align: center;
+  padding: 10%;
+  animation: communion-in 1.2s ease-out;
+}
+@keyframes communion-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.communion-title {
+  margin: 0;
+  color: #f5d76e;
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  font-size: clamp(10px, 3.4cqw, 16px);
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 12px rgba(245, 215, 110, 0.6);
+}
+.communion-body {
+  margin: 0;
+  color: #e9c468;
+  font-size: clamp(6px, 2cqw, 10px);
+  line-height: 1.7;
+  max-width: 90%;
+}
+
 /* ===== Chat ===== */
 .chat-overlay[hidden] { display: none; }
 .chat-overlay {
