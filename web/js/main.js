@@ -8,9 +8,6 @@ const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');
 const powerSwitch = document.getElementById('powerSwitch');
 const hint = document.getElementById('hint');
-const namingForm = document.getElementById('namingForm');
-const namingName = document.getElementById('namingName');
-const namingHandle = document.getElementById('namingHandle');
 const chatForm = document.getElementById('chatForm');
 const chatInput = document.getElementById('chatInput');
 const hud = document.getElementById('hud');
@@ -167,7 +164,6 @@ chatInput.addEventListener('keydown', (e) => {
 });
 
 function enterCourtyard(player) {
-  namingForm.hidden = true;
   updateHud(player);
   scene = new CourtyardScene({
     player,
@@ -185,11 +181,17 @@ function enterCourtyard(player) {
   window.__aeterna = { scene, player };
 }
 
-function showNamingForm() {
-  hud.hidden = true;
-  namingForm.hidden = false;
-  namingName.focus();
-  hint.textContent = 'Enter your name to join the abbey.';
+// Dev-mode stand-in for real identity: until Cultist NFTs are attached,
+// new players get an auto-assigned name/sex instead of a naming form.
+const AUTO_NAMES = {
+  male: ['Osiris', 'Horus', 'Anubis', 'Thoth', 'Set', 'Khonsu', 'Amun', 'Ra', 'Sobek', 'Geb'],
+  female: ['Isis', 'Nefertari', 'Sekhmet', 'Bastet', 'Hathor', 'Nephthys', 'Serket', 'Mut', 'Renenutet', 'Tefnut'],
+};
+function randomIdentity() {
+  const sex = Math.random() < 0.5 ? 'male' : 'female';
+  const pool = AUTO_NAMES[sex];
+  const name = pool[Math.floor(Math.random() * pool.length)];
+  return { name, sex };
 }
 
 // A black veil instantly covers the screen, the next scene loads underneath
@@ -213,24 +215,16 @@ async function afterBoot() {
     const player = await api.me();
     revealTransition(() => enterCourtyard(player));
   } catch {
-    revealTransition(() => showNamingForm());
+    try {
+      const { name, sex } = randomIdentity();
+      await api.register(name, sex, '');
+      const player = await api.me();
+      revealTransition(() => enterCourtyard(player));
+    } catch (err) {
+      showToast(err.message);
+    }
   }
 }
-
-namingForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const name = namingName.value.trim();
-  if (!name) return;
-  const sex = namingForm.querySelector('input[name="sex"]:checked').value;
-  const xHandle = namingHandle.value.trim();
-  try {
-    await api.register(name, sex, xHandle);
-    const player = await api.me();
-    revealTransition(() => enterCourtyard(player));
-  } catch (err) {
-    showToast(err.message);
-  }
-});
 
 function startBoot() {
   scene = new BootScene({ onComplete: afterBoot });
@@ -260,7 +254,6 @@ function powerOff() {
   if (scene && scene.exit) scene.exit();
   scene = null;
   if (socket) { socket.disconnect(); socket = null; }
-  namingForm.hidden = true;
   chatForm.hidden = true;
   hud.hidden = true;
   toastEl.hidden = true;

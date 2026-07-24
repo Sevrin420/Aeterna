@@ -20,7 +20,7 @@ export class BootScene {
   constructor({ onComplete }) {
     this.onComplete = onComplete;
     this.t = 0;
-    this.fallDuration = 1.1;
+    this.fallDuration = 3.3; // slowed 200% (3x) from the original 1.1s drop
     this.landed = false;
     this.blink = 0;
     this.title = 'AETERNA';
