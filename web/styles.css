@@ -67,21 +67,6 @@ html, body {
   image-rendering: crisp-edges;
 }
 
-.scanlines {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.18) 0px,
-    rgba(0, 0, 0, 0.18) 1px,
-    transparent 2px,
-    transparent 3px
-  );
-  mix-blend-mode: multiply;
-  opacity: 0.55;
-}
-
 /* Black veil the boot sequence lifts to reveal the courtyard underneath. */
 .boot-veil {
   position: absolute;
