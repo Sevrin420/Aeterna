@@ -17,7 +17,24 @@ const webRoot = path.join(__dirname, '..', '..', 'web');
 
 const fastify = Fastify({ logger: true });
 await fastify.register(cors, { origin: true });
-await fastify.register(fastifyStatic, { root: webRoot, index: 'index.html' });
+// no-cache on the app shell + game code so a redeploy reaches returning
+// players immediately (the browser still revalidates cheaply via ETag/304).
+// Without this, phones keep running a stale cached courtyard.js after a deploy.
+await fastify.register(fastifyStatic, {
+  root: webRoot,
+  index: 'index.html',
+  cacheControl: false, // we set Cache-Control ourselves below
+  setHeaders(res, filePath) {
+    // no-cache on the app shell + game code so a redeploy reaches returning
+    // players immediately (still revalidates cheaply via ETag/304). Other
+    // assets (images/fonts) may cache normally.
+    if (/\.(html|js|css)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    }
+  },
+});
 
 // ========== HEALTH ==========
 fastify.get('/health', async () => ({ status: 'ok', service: 'aeterna' }));
