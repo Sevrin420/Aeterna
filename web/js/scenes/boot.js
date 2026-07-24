@@ -32,11 +32,20 @@ export class BootScene {
   update(dt, input) {
     this.t += dt;
     if (this.t >= this.fallDuration) this.landed = true;
-    if (this.landed) {
-      this.blink += dt;
+    if (!this.landed) {
+      // An early A-press (while the title is still falling) shouldn't sit
+      // queued and invisible until the animation happens to finish on its
+      // own -- that reads as an unresponsive button. Skip straight to the
+      // landed state instead; a second press then starts the game.
       if (input.consumeAPress()) {
-        this.onComplete();
+        this.t = this.fallDuration;
+        this.landed = true;
       }
+      return;
+    }
+    this.blink += dt;
+    if (input.consumeAPress()) {
+      this.onComplete();
     }
   }
 
