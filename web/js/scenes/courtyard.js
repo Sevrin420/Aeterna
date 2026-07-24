@@ -53,6 +53,9 @@ export class CourtyardScene {
       bob: 0,
     };
     this.cam = { x: 0, y: 0 };
+    this.footDust = []; // { x, y, t } fading dust puffs left by the player's steps
+    this._dustTimer = 0;
+    this.fireflies = this._initFireflies();
     this._updateCamera();
 
     this.entryMessage = `You stand within the abbey walls, ${player.prefix} ${player.name}.`;
@@ -145,6 +148,20 @@ export class CourtyardScene {
     }
   }
 
+  // Scatters a handful of fireflies across the open exterior grounds
+  // (tiles the map generator left untouched — not inside any room, corridor,
+  // or the river/dock band) for ambient nighttime atmosphere.
+  _initFireflies() {
+    const list = [];
+    for (let i = 0; i < 60 && list.length < 16; i++) {
+      const c = h2(i * 11, 41) % COLS;
+      const r = h2(41, i * 11) % ROWS;
+      if (tileAt(c, r) !== ' ') continue;
+      list.push({ baseX: c * TILE + TILE / 2, baseY: r * TILE + TILE / 2, seed: i });
+    }
+    return list;
+  }
+
   _tryMove(dx, dy) {
     const p = this.pc;
     const nx = p.x + dx;
@@ -160,9 +177,20 @@ export class CourtyardScene {
     if (!blockedY) p.y = ny;
   }
 
-  _updateCamera() {
-    this.cam.x = Math.max(0, Math.min(MAP_W - W, this.pc.x - W / 2));
-    this.cam.y = Math.max(0, Math.min(MAP_H - H, this.pc.y - H / 2));
+  // With a dt, eases toward the target instead of snapping — smooths out the
+  // scroll as the player moves. Called with no dt (e.g. on spawn, or by
+  // tests) to jump straight to the target.
+  _updateCamera(dt) {
+    const targetX = Math.max(0, Math.min(MAP_W - W, this.pc.x - W / 2));
+    const targetY = Math.max(0, Math.min(MAP_H - H, this.pc.y - H / 2));
+    if (dt == null) {
+      this.cam.x = targetX;
+      this.cam.y = targetY;
+    } else {
+      const k = 1 - Math.exp(-10 * dt);
+      this.cam.x += (targetX - this.cam.x) * k;
+      this.cam.y += (targetY - this.cam.y) * k;
+    }
   }
 
   _nearestStation() {
@@ -310,13 +338,24 @@ export class CourtyardScene {
       this._tryMove((dx / len) * p.speed * dt, (dy / len) * p.speed * dt);
       p.bob += dt * 10;
 
+      this._dustTimer += dt;
+      if (this._dustTimer > 0.16) {
+        this._dustTimer = 0;
+        this.footDust.push({ x: p.x, y: p.y + 4, t: 0 });
+      }
+
       this.lastEmittedMove += dt;
       if (this.socket && this.lastEmittedMove > 0.08) {
         this.lastEmittedMove = 0;
         this.socket.emit('move', { x: p.x, y: p.y, dir: p.dir });
       }
     }
-    this._updateCamera();
+    this._updateCamera(dt);
+
+    for (let i = this.footDust.length - 1; i >= 0; i--) {
+      this.footDust[i].t += dt;
+      if (this.footDust[i].t > 0.5) this.footDust.splice(i, 1);
+    }
 
     this._activeStation = this._nearestStation();
     this._activeGift = this._nearestGift();
@@ -385,6 +424,17 @@ export class CourtyardScene {
           ctx.fillRect(x, y, TILE, TILE);
           if (bhash % 5 === 0) { ctx.fillStyle = 'rgba(90,140,70,0.5)'; ctx.fillRect(x + 3, y + 3, 2, 2); }
           if (bhash % 13 === 0) { ctx.fillStyle = 'rgba(60,45,25,0.25)'; ctx.fillRect(x + 2, y + 5, 4, 2); }
+          if (bhash % 4 === 0) {
+            const sway = Math.sin(this.t * 2 + bhash) * 0.8;
+            ctx.strokeStyle = 'rgba(110,160,90,0.5)';
+            ctx.lineWidth = 0.6;
+            ctx.beginPath();
+            ctx.moveTo(x + 3, y + TILE - 1);
+            ctx.lineTo(x + 3 + sway, y + TILE - 5);
+            ctx.moveTo(x + 7, y + TILE - 1);
+            ctx.lineTo(x + 7 + sway * 0.7, y + TILE - 4);
+            ctx.stroke();
+          }
         } else if (ch === 'k' || ch === 'd') {
           ctx.fillStyle = ((r + c) % 2 === 0) ? '#7a5a38' : '#6e5030';
           ctx.fillRect(x, y, TILE, TILE);
@@ -422,6 +472,15 @@ export class CourtyardScene {
           // exterior grass
           ctx.fillStyle = (bhash % 5 === 0) ? '#3d5a30' : (bhash % 7 === 0) ? '#182412' : '#2a4020';
           ctx.fillRect(x, y, TILE, TILE);
+          if (bhash % 6 === 0) {
+            const sway = Math.sin(this.t * 1.8 + bhash) * 0.7;
+            ctx.strokeStyle = 'rgba(90,130,70,0.35)';
+            ctx.lineWidth = 0.6;
+            ctx.beginPath();
+            ctx.moveTo(x + 4, y + TILE - 1);
+            ctx.lineTo(x + 4 + sway, y + TILE - 4);
+            ctx.stroke();
+          }
         }
       }
     }
@@ -452,6 +511,18 @@ export class CourtyardScene {
     ctx.fillRect(x, y + TILE - 4, TILE, 4);
   }
 
+  // Slow-drifting dust motes rising through a light source's glow.
+  _drawDustMotes(ctx, x, y, seed) {
+    for (let i = 0; i < 2; i++) {
+      const phase = (this.t * 0.25 + seed * 0.37 + i * 0.5) % 1;
+      const mx = x + Math.sin(this.t * 0.8 + seed + i) * 3;
+      const my = y - phase * 11;
+      const a = Math.sin(phase * Math.PI) * 0.35;
+      ctx.fillStyle = `rgba(255,225,180,${a})`;
+      ctx.beginPath(); ctx.arc(mx, my, 0.6, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
   _drawLantern(ctx, col, row) {
     const x = col * TILE + TILE / 2, topY = row * TILE - TILE * 0.6;
     const flick = 0.75 + Math.sin(this.t * 9 + col * 2.7 + row * 1.4) * 0.15;
@@ -475,6 +546,7 @@ export class CourtyardScene {
     glow.addColorStop(1, 'rgba(255, 190, 100, 0)');
     ctx.fillStyle = glow;
     ctx.fillRect(x - 10, topY - 6, 20, 20);
+    this._drawDustMotes(ctx, x, topY + 4, col * 3 + row);
   }
 
   _drawTorch(ctx, col, row) {
@@ -495,6 +567,7 @@ export class CourtyardScene {
     ctx.beginPath();
     ctx.ellipse(x, y - 6, 1.4 * flick, 2.2 * flick, 0, 0, Math.PI * 2);
     ctx.fill();
+    this._drawDustMotes(ctx, x, y - 6, col * 3 + row);
   }
 
   _drawFountain(ctx, col, row) {
@@ -560,6 +633,14 @@ export class CourtyardScene {
         ctx.fillRect(x - 7, y - 4, 14, 1.5);
         ctx.fillStyle = `rgba(233,196,104,${glowA})`;
         ctx.beginPath(); ctx.arc(x, y - 6, 2.4, 0, Math.PI * 2); ctx.fill();
+        for (let i = 0; i < 2; i++) {
+          const phase = (this.t * 0.2 + i * 0.5) % 1;
+          const sx = x + Math.sin(this.t * 0.6 + i * 2) * (2 + phase * 3);
+          const sy = y - 6 - phase * 14;
+          const sa = Math.sin(phase * Math.PI) * 0.22;
+          ctx.fillStyle = `rgba(220,215,200,${sa})`;
+          ctx.beginPath(); ctx.arc(sx, sy, 1 + phase * 1.5, 0, Math.PI * 2); ctx.fill();
+        }
         break;
       }
       case 'pew':
@@ -709,11 +790,29 @@ export class CourtyardScene {
     ctx.restore();
   }
 
+  // A glow that grows with the player's current Devotion streak tier
+  // (7/14/21/28-day multiplier thresholds from the GDD), so the streak
+  // system is visible on the character, not just a HUD number.
+  _streakAura() {
+    const streak = this.player.streak || 0;
+    if (streak < 7) return null;
+    const tier = streak >= 28 ? 4 : streak >= 21 ? 3 : streak >= 14 ? 2 : 1;
+    const radii = [0, 11, 13, 16, 19];
+    const pulse = 0.6 + Math.sin(this.t * 3) * 0.25;
+    return { radius: radii[tier], alpha: (0.28 + tier * 0.06) * pulse, tier };
+  }
+
   _drawLocalPlayer(ctx) {
+    for (const d of this.footDust) {
+      const a = 1 - d.t / 0.5;
+      const r = 1.5 + d.t * 3;
+      ctx.fillStyle = `rgba(200,190,160,${a * 0.3})`;
+      ctx.beginPath(); ctx.ellipse(d.x, d.y, r, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    }
     this._drawRobedFigure(
       ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving,
       this.pc.moving ? this.pc.bob : this.t, this.mySheet, this.holdingGift,
-      null, this.localEmoji, this.localChat
+      null, this.localEmoji, this.localChat, undefined, this._streakAura()
     );
   }
 
@@ -747,6 +846,24 @@ export class CourtyardScene {
     return items;
   }
 
+  // Ambient fireflies wandering slowly over the open exterior grounds.
+  _drawFireflies(ctx) {
+    for (const f of this.fireflies) {
+      const x = f.baseX + Math.sin(this.t * 0.6 + f.seed) * 8;
+      const y = f.baseY + Math.cos(this.t * 0.5 + f.seed * 1.3) * 6;
+      const a = Math.max(0, 0.4 + Math.sin(this.t * 3 + f.seed * 2) * 0.45);
+      if (a <= 0.01) continue;
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, 4);
+      glow.addColorStop(0, `rgba(230,255,160,${a})`);
+      glow.addColorStop(0.4, `rgba(220,255,150,${a * 0.5})`);
+      glow.addColorStop(1, 'rgba(220,255,150,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(x - 4, y - 4, 8, 8);
+      ctx.fillStyle = `rgba(255,255,220,${Math.min(1, a * 1.5)})`;
+      ctx.beginPath(); ctx.arc(x, y, 0.7, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
   // A faint per-room color wash, keyed off the tile the player is standing
   // on, so each room reads with its own atmosphere (warm stone in the nave,
   // cool green in the garden, hearth-orange in the kitchen, blue at the
@@ -765,9 +882,26 @@ export class CourtyardScene {
     }
   }
 
-  _drawRobedFigure(ctx, x, y, dir, moving, animPhase, sheet, holdingGift, label, emoji, chat, targetHeight = 21) {
+  _drawRobedFigure(ctx, x, y, dir, moving, animPhase, sheet, holdingGift, label, emoji, chat, targetHeight = 21, aura = null) {
     const px_ = Math.round(x);
     const py_ = Math.round(y);
+
+    if (aura) {
+      const glow = ctx.createRadialGradient(px_, py_, 1, px_, py_, aura.radius);
+      glow.addColorStop(0, `rgba(233,196,104,${aura.alpha})`);
+      glow.addColorStop(1, 'rgba(233,196,104,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(px_ - aura.radius, py_ - aura.radius, aura.radius * 2, aura.radius * 2);
+      if (aura.tier >= 4) {
+        for (let i = 0; i < 3; i++) {
+          const ang = this.t * 2 + (i * Math.PI * 2) / 3;
+          const mx = px_ + Math.cos(ang) * (aura.radius - 3);
+          const my = py_ + Math.sin(ang) * (aura.radius - 3) * 0.6;
+          ctx.fillStyle = 'rgba(255,235,170,0.85)';
+          ctx.beginPath(); ctx.arc(mx, my, 0.9, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
 
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
@@ -871,6 +1005,7 @@ export class CourtyardScene {
 
     this._drawFloor(ctx, c0, r0, c1, r1);
     for (const item of this._collectDrawables(ctx)) item.draw();
+    this._drawFireflies(ctx);
 
     ctx.restore();
 
@@ -884,15 +1019,16 @@ export class CourtyardScene {
     ctx.fillRect(0, 0, W, H);
 
     ctx.textAlign = 'center';
+    const promptBounce = Math.sin(this.t * 6) * 1.2;
     if (this._activeGift && !this.holdingGift) {
       ctx.font = '6px "Courier New", monospace';
       ctx.fillStyle = '#f4e5bd';
-      ctx.fillText('[A] Pick up gift', W / 2, H - 16);
+      ctx.fillText('[A] Pick up gift', W / 2, H - 16 + promptBounce);
     } else if (this._activeStation) {
       ctx.font = '6px "Courier New", monospace';
       ctx.fillStyle = '#f4e5bd';
       const prefix = this._activeStation.kind === 'gate' ? '' : '[A] ';
-      ctx.fillText(`${prefix}${this._activeStation.label}`, W / 2, H - 16);
+      ctx.fillText(`${prefix}${this._activeStation.label}`, W / 2, H - 16 + promptBounce);
     }
 
     if (this.messageTimer > 0) {
