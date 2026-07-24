@@ -24,6 +24,8 @@ const toastEl = document.getElementById('toast');
 const leaderboardOverlay = document.getElementById('leaderboardOverlay');
 const leaderboardList = document.getElementById('leaderboardList');
 const leaderboardClose = document.getElementById('leaderboardClose');
+const bootVeil = document.getElementById('bootVeil');
+const powerKnob = powerSwitch.querySelector('.power-knob');
 
 const input = new Input();
 input.bindDpad(document.getElementById('dpadUp'), 'up');
@@ -115,12 +117,28 @@ function showNamingForm() {
   hint.textContent = 'Enter your name to join the abbey.';
 }
 
+// A black veil instantly covers the screen, the next scene loads underneath
+// unseen, then the veil slowly lifts — same "confirm -> darken -> reveal the
+// room" beat as Club Nile's boot sequence.
+function revealTransition(next) {
+  bootVeil.style.transition = 'none';
+  bootVeil.style.opacity = '1';
+  requestAnimationFrame(() => {
+    next();
+    requestAnimationFrame(() => {
+      bootVeil.style.transition = 'opacity 1.5s ease';
+      bootVeil.style.opacity = '0';
+    });
+  });
+}
+
 async function afterBoot() {
+  sfx.bootConfirm();
   try {
     const player = await api.me();
-    enterCourtyard(player);
+    revealTransition(() => enterCourtyard(player));
   } catch {
-    showNamingForm();
+    revealTransition(() => showNamingForm());
   }
 }
 
@@ -133,7 +151,7 @@ namingForm.addEventListener('submit', async (e) => {
   try {
     await api.register(name, sex, xHandle);
     const player = await api.me();
-    enterCourtyard(player);
+    revealTransition(() => enterCourtyard(player));
   } catch (err) {
     showToast(err.message);
   }
@@ -176,8 +194,30 @@ function powerOff() {
   hint.textContent = 'Slide the switch to power on the console.';
 }
 
-powerSwitch.addEventListener('click', () => {
-  if (powered) powerOff(); else powerOn();
+// Drag the knob across the track, or just tap the switch — either commits.
+let drag = null;
+powerSwitch.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  powerSwitch.setPointerCapture(e.pointerId);
+  powerSwitch.classList.add('dragging');
+  drag = { x0: e.clientX, w: powerSwitch.getBoundingClientRect().width * 0.5, f: powered ? 1 : 0, moved: false };
 });
+powerSwitch.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const f = Math.max(0, Math.min(1, drag.f + (e.clientX - drag.x0) / drag.w));
+  if (Math.abs(e.clientX - drag.x0) > 4) drag.moved = true;
+  powerKnob.style.left = `${3 + f * 50}%`;
+  if (powered ? f < 0.25 : f > 0.75) {
+    if (powered) powerOff(); else powerOn();
+    drag = null;
+    powerSwitch.classList.remove('dragging');
+  }
+});
+['pointerup', 'pointercancel'].forEach((ev) => powerSwitch.addEventListener(ev, () => {
+  if (drag && !drag.moved) { if (powered) powerOff(); else powerOn(); }
+  drag = null;
+  powerSwitch.classList.remove('dragging');
+  powerKnob.style.left = '';
+}));
 
 drawOff();

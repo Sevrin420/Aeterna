@@ -4,6 +4,7 @@
 
 import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
+import { getCultistSprite } from '../pixelart.js';
 
 const TILE = 13;
 const COLS = 16;
@@ -482,30 +483,15 @@ export class CourtyardScene {
           ctx.fill();
         }
       } else if (s.id === 'guru') {
-        // stationary robed NPC in pale gold, taller than the player
+        // stationary NPC in pale gold, taller than the player
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.beginPath();
         ctx.ellipse(0, 7, 6, 2.4, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = '#e9dcae';
-        ctx.beginPath();
-        ctx.moveTo(-5, 6);
-        ctx.lineTo(-6, -4);
-        ctx.quadraticCurveTo(0, -11, 6, -4);
-        ctx.lineTo(5, 6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = '#a9821f';
-        ctx.lineWidth = 0.9;
-        ctx.stroke();
-        ctx.fillStyle = '#2a2010';
-        ctx.beginPath();
-        ctx.ellipse(0, -8, 4, 4.2, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(233,196,104,0.95)';
-        ctx.beginPath();
-        ctx.ellipse(0, -8, 1.3, 1.3, 0, 0, Math.PI * 2);
-        ctx.fill();
+        const sheet = getCultistSprite('guru-npc', '#e9dcae', '#a9821f');
+        const scale = 1.3, sw = sheet.w * scale, sh = sheet.h * scale;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(sheet.down, -sw / 2, 7 - sh, sw, sh);
       } else if (s.id === 'confession') {
         ctx.fillStyle = '#241a12';
         ctx.fillRect(-7, -10, 14, 18);
@@ -545,7 +531,7 @@ export class CourtyardScene {
     }
   }
 
-  _drawRobedFigure(ctx, x, y, dir, moving, bob, robeColor, holdingGift, label, emoji, chat) {
+  _drawRobedFigure(ctx, x, y, dir, moving, bob, seed, holdingGift, label, emoji, chat, robeBase) {
     const bobOffset = moving ? Math.sin(bob) * 1 : 0;
     const px_ = Math.round(x);
     const py_ = Math.round(y + bobOffset);
@@ -555,41 +541,24 @@ export class CourtyardScene {
     ctx.ellipse(px_, py_ + 5, 5, 2, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = robeColor;
-    ctx.beginPath();
-    ctx.moveTo(px_ - 4, py_ + 5);
-    ctx.lineTo(px_ - 5, py_ - 2);
-    ctx.quadraticCurveTo(px_, py_ - 8, px_ + 5, py_ - 2);
-    ctx.lineTo(px_ + 4, py_ + 5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#d9b264';
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-
-    ctx.fillStyle = '#140d19';
-    ctx.beginPath();
-    ctx.ellipse(px_, py_ - 6, 3.4, 3.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const faceOffset = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir] || [0, 1];
-    ctx.fillStyle = 'rgba(233, 196, 104, 0.9)';
-    ctx.beginPath();
-    ctx.ellipse(px_ + faceOffset[0] * 1.2, py_ - 6 + faceOffset[1] * 1.2, 1.1, 1.1, 0, 0, Math.PI * 2);
-    ctx.fill();
+    const sheet = getCultistSprite(seed, robeBase);
+    const sw = sheet.w, sh = sheet.h;
+    const drawX = px_ - sw / 2, drawY = py_ + 6 - sh;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(sheet[dir] || sheet.down, drawX, drawY, sw, sh);
 
     if (holdingGift) {
       ctx.fillStyle = '#7a2f2f';
-      ctx.fillRect(px_ - 3, py_ - 12, 6, 5);
+      ctx.fillRect(px_ - 3, drawY - 6, 6, 5);
       ctx.fillStyle = '#e9c468';
-      ctx.fillRect(px_ - 3, py_ - 10.5, 6, 1.2);
+      ctx.fillRect(px_ - 3, drawY - 4.5, 6, 1.2);
     }
 
     if (label) {
       ctx.font = '5px "Courier New", monospace';
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(244,229,189,0.85)';
-      ctx.fillText(label, px_, py_ - 16);
+      ctx.fillText(label, px_, drawY - 3);
     }
 
     if (emoji) {
@@ -597,7 +566,7 @@ export class CourtyardScene {
       ctx.globalAlpha = Math.min(1, emoji.t);
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(emoji.emoji, px_, py_ - 14 - (1.6 - emoji.t) * 4);
+      ctx.fillText(emoji.emoji, px_, drawY - 1 - (1.6 - emoji.t) * 4);
       ctx.restore();
     }
 
@@ -606,7 +575,7 @@ export class CourtyardScene {
       ctx.globalAlpha = Math.min(1, chat.t);
       ctx.font = '6px "Courier New", monospace';
       const w = ctx.measureText(chat.text).width + 6;
-      const bx = px_, by = py_ - 22;
+      const bx = px_, by = drawY - 9;
       ctx.fillStyle = 'rgba(20,13,5,0.85)';
       ctx.fillRect(bx - w / 2, by - 6, w, 9);
       ctx.strokeStyle = '#6b5227';
@@ -635,10 +604,10 @@ export class CourtyardScene {
 
     for (const [id, rp] of this.remotePlayers) {
       if (rp.x == null) continue;
-      this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, 0, '#2e2440', false, rp.name, rp.emoji, rp.chat);
+      this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, 0, id, false, rp.name, rp.emoji, rp.chat);
     }
 
-    this._drawRobedFigure(ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving, this.pc.bob, '#241a2e', this.holdingGift, null, this.localEmoji, this.localChat);
+    this._drawRobedFigure(ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving, this.pc.bob, getWalletId(), this.holdingGift, null, this.localEmoji, this.localChat);
 
     const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.72);
     grad.addColorStop(0, 'rgba(0,0,0,0)');

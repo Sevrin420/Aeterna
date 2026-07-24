@@ -33,6 +33,10 @@ export const sfx = {
   click() {
     tone({ freq: 320, duration: 0.05, type: 'square', gain: 0.06 });
   },
+  bootConfirm() {
+    tone({ freq: 392, duration: 0.08, type: 'square', gain: 0.13 });
+    tone({ freq: 587.33, duration: 0.14, type: 'square', gain: 0.12, delay: 0.08 });
+  },
   power(on) {
     if (on) {
       tone({ freq: 220, duration: 0.18, type: 'triangle', gain: 0.12, glideTo: 660 });

@@ -32,6 +32,8 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.6));
+  container-type: inline-size;
+  container-name: console;
 }
 
 .console-art {
@@ -78,6 +80,16 @@ html, body {
   opacity: 0.55;
 }
 
+/* Black veil the boot sequence lifts to reveal the courtyard underneath. */
+.boot-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* ===== Power switch ===== */
 .power-switch {
   position: absolute;
@@ -116,6 +128,10 @@ html, body {
   border: 1px solid #3a2c14;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   transition: left 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.power-switch.dragging .power-knob {
+  transition: none;
 }
 
 .power-switch[aria-pressed="true"] .power-knob {
@@ -175,7 +191,7 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(4px, 2vw, 10px);
+  gap: clamp(4px, 2cqw, 10px);
   background: rgba(5, 3, 1, 0.86);
   border: 1px solid #6b5227;
   border-radius: 4px;
@@ -186,8 +202,10 @@ html, body {
 .naming-title {
   margin: 0;
   color: #e9c468;
-  font-size: clamp(8px, 2.6vw, 13px);
-  letter-spacing: 0.03em;
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  font-size: clamp(7px, 2.2cqw, 11px);
+  letter-spacing: 0.02em;
+  line-height: 1.6;
 }
 
 .naming-input {
@@ -197,7 +215,7 @@ html, body {
   border: 1px solid #6b5227;
   color: #f4e5bd;
   font-family: inherit;
-  font-size: clamp(8px, 2.4vw, 12px);
+  font-size: clamp(8px, 2.4cqw, 12px);
   padding: 6px 8px;
   border-radius: 2px;
   text-align: center;
@@ -207,14 +225,14 @@ html, body {
 .naming-sex {
   display: flex;
   gap: 14px;
-  font-size: clamp(7px, 2vw, 10px);
+  font-size: clamp(7px, 2cqw, 10px);
   color: #c9a35f;
 }
 .naming-sex label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
 
 .naming-submit {
   font-family: inherit;
-  font-size: clamp(7px, 2.2vw, 11px);
+  font-size: clamp(7px, 2.2cqw, 11px);
   letter-spacing: 0.04em;
   background: linear-gradient(180deg, #e9c468, #a9821f);
   border: 1px solid #6b5227;
@@ -238,7 +256,7 @@ html, body {
   justify-content: space-between;
   align-items: baseline;
   color: #f4e5bd;
-  font-size: clamp(6px, 1.8vw, 9px);
+  font-size: clamp(6px, 1.8cqw, 9px);
   letter-spacing: 0.03em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   pointer-events: none;
@@ -274,7 +292,7 @@ html, body {
   background: rgba(5, 3, 1, 0.88);
   border: 1px solid #6b5227;
   color: #f4e5bd;
-  font-size: clamp(6px, 1.8vw, 9px);
+  font-size: clamp(6px, 1.8cqw, 9px);
   padding: 4px 10px;
   border-radius: 3px;
   white-space: nowrap;
@@ -295,7 +313,7 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(4px, 1.6vw, 8px);
+  gap: clamp(4px, 1.6cqw, 8px);
   background: rgba(5, 3, 1, 0.92);
   border: 1px solid #6b5227;
   border-radius: 4px;
@@ -309,7 +327,7 @@ html, body {
   width: 100%;
   overflow-y: auto;
   flex: 1;
-  font-size: clamp(6px, 1.8vw, 9px);
+  font-size: clamp(6px, 1.8cqw, 9px);
   color: #f4e5bd;
 }
 .leaderboard-list li {
@@ -334,8 +352,9 @@ html, body {
 
 .hint {
   margin: 0;
+  font-family: 'Courier New', monospace;
   font-size: 13px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   color: #b89a5c;
   text-align: center;
   min-height: 1.4em;

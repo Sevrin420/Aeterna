@@ -36,6 +36,10 @@ Then open `http://localhost:3000/` — the Fastify server serves the `web/` fron
 
 In the courtyard: walk to the **shrine**, **garden**, or **candle rack** and press A to perform each of the three daily duties (real Devotion + streak logic server-side, per `docs/Aeterna_GDD_v4.1.md` §5); pick up a **gift** and press A near the **Guru** statue to offer it (+50 Devotion) or near another connected player to gift them (+10/+5, daily limits enforced); press B to drop a held gift; a broken streak lights up the **confession booth** with its escalating cost; check the **leaderboard** scroll for the top Cultists by Devotion; press 1/2/3 for an emoji reaction, or T to chat; and stand at the **gate** and press B for Save & Exit (calls `/save`, then powers the console off). Other players connected at the same time appear, move, chat, and react live via Socket.io — including a catch-up snapshot so joining mid-session shows everyone already there.
 
+## Visual engine
+
+The console shell (font, container-relative scaling, the black-veil boot reveal, drag-or-tap power switch) and the Cultist sprite renderer (color-ramp shading + a colored-outline pass, per-player robe color) adapt techniques from `sevrin420/members-only`'s `games/clubnile.html` — not copied wholesale (that's a different casino game with its own trait/wallet system), but the same underlying rendering approach applied to Aeterna's abbey theme.
+
 ## Status
 
 Starter server + a fully playable first scene. Player identity is a **dev-mode stand-in**: the client generates a local pseudo-wallet id (`localStorage`) and `POST /register` upserts a Cultist row for it — there is no real wallet/SIWE auth yet, no on-chain mint, and `/confession`'s cost isn't verified against an actual ETH payment (see `server/README.md` for the full still-needed list: wallet-signature auth, on-chain payment verification, admin-wallet protection). Levels, Souls, Bloodline/Children, Final Communion, and the 2-player wager game (GDD §6-10) are not implemented yet — this covers the daily duty loop, physical gifts, confession, and live multiplayer presence (GDD §5, §11).
