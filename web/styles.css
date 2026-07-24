@@ -15,6 +15,8 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
 }
 
 .stage {
@@ -101,6 +103,7 @@ html, body {
   border: none;
   padding: 0;
   cursor: pointer;
+  touch-action: none;
   z-index: 5;
 }
 
@@ -158,11 +161,34 @@ html, body {
   box-shadow: 0 0 5px 2px rgba(255, 214, 130, 0.85);
 }
 
+/* ===== Mute toggle ===== */
+.mute-toggle {
+  position: absolute;
+  right: 2.4%;
+  top: 1%;
+  width: 6%;
+  aspect-ratio: 1;
+  z-index: 5;
+  border-radius: 50%;
+  background: rgba(20, 13, 5, 0.7);
+  border: 1px solid #6b5227;
+  color: #c9a35f;
+  font-size: clamp(8px, 2.4cqw, 12px);
+  line-height: 1;
+  cursor: pointer;
+  touch-action: none;
+}
+.mute-toggle[aria-pressed="true"] {
+  color: #6b5227;
+  text-decoration: line-through;
+}
+
 /* ===== D-pad hit zones ===== */
 .dpad-hit {
   position: absolute;
   z-index: 4;
   cursor: pointer;
+  touch-action: none;
   /* background: rgba(255,0,0,0.25); uncomment to debug alignment */
 }
 #dpadUp    { left: 23.03%; top: 71.79%; width: 9.9%; height: 6.7%; }
@@ -176,6 +202,7 @@ html, body {
   z-index: 4;
   border-radius: 50%;
   cursor: pointer;
+  touch-action: none;
   /* background: rgba(0,255,0,0.25); uncomment to debug alignment */
 }
 .btn-a { left: 74.0%; top: 67.7%; width: 13.3%; height: 14.1%; }

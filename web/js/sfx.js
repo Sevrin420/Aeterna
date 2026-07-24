@@ -3,6 +3,8 @@
 // AudioContext is created lazily on first call (button presses qualify).
 
 let ctx = null;
+let muted = localStorage.getItem('aeterna_muted') === '1';
+
 function getCtx() {
   if (!ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -14,6 +16,7 @@ function getCtx() {
 }
 
 function tone({ freq = 440, duration = 0.15, type = 'sine', gain = 0.15, delay = 0, glideTo = null }) {
+  if (muted) return;
   const c = getCtx();
   if (!c) return;
   const osc = c.createOscillator();
@@ -30,6 +33,12 @@ function tone({ freq = 440, duration = 0.15, type = 'sine', gain = 0.15, delay =
 }
 
 export const sfx = {
+  isMuted() { return muted; },
+  toggleMute() {
+    muted = !muted;
+    localStorage.setItem('aeterna_muted', muted ? '1' : '0');
+    return muted;
+  },
   click() {
     tone({ freq: 320, duration: 0.05, type: 'square', gain: 0.06 });
   },

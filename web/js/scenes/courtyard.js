@@ -563,29 +563,68 @@ export class CourtyardScene {
 
     if (emoji) {
       ctx.save();
-      ctx.globalAlpha = Math.min(1, emoji.t);
+      const a = Math.min(1, emoji.t);
+      const ey = drawY - 1 - (1.6 - emoji.t) * 4;
+      ctx.globalAlpha = a * 0.5;
+      const glow = ctx.createRadialGradient(px_, ey - 2, 0, px_, ey - 2, 7);
+      glow.addColorStop(0, 'rgba(245, 215, 110, 0.9)');
+      glow.addColorStop(1, 'rgba(245, 215, 110, 0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(px_ - 7, ey - 9, 14, 14);
+      ctx.globalAlpha = a;
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(emoji.emoji, px_, drawY - 1 - (1.6 - emoji.t) * 4);
+      ctx.fillText(emoji.emoji, px_, ey);
       ctx.restore();
     }
 
     if (chat) {
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, chat.t);
-      ctx.font = '6px "Courier New", monospace';
-      const w = ctx.measureText(chat.text).width + 6;
-      const bx = px_, by = drawY - 9;
-      ctx.fillStyle = 'rgba(20,13,5,0.85)';
-      ctx.fillRect(bx - w / 2, by - 6, w, 9);
-      ctx.strokeStyle = '#6b5227';
-      ctx.lineWidth = 0.6;
-      ctx.strokeRect(bx - w / 2, by - 6, w, 9);
-      ctx.fillStyle = '#f4e5bd';
-      ctx.textAlign = 'center';
-      ctx.fillText(chat.text, bx, by);
-      ctx.restore();
+      this._drawSpeechBubble(ctx, px_, drawY - 6, chat.text, Math.min(1, chat.t));
     }
+  }
+
+  // Rounded, gold-bordered speech bubble with a small tail pointing at the
+  // speaker's head — styling adapted from Club Nile's popup-panel look.
+  _drawSpeechBubble(ctx, tipX, tipY, text, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = '6px "Courier New", monospace';
+    const padX = 4, padY = 3, tail = 3;
+    const textW = ctx.measureText(text).width;
+    const w = textW + padX * 2;
+    const h = 6 + padY * 2;
+    const bx = tipX - w / 2;
+    const by = tipY - tail - h;
+    const r = 2;
+
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(bx, by, w, h, r);
+    else ctx.rect(bx, by, w, h);
+    ctx.fillStyle = 'rgba(16, 11, 26, 0.95)';
+    ctx.fill();
+    ctx.strokeStyle = '#b98d3e';
+    ctx.lineWidth = 0.7;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(tipX - tail, by + h);
+    ctx.lineTo(tipX + tail, by + h);
+    ctx.lineTo(tipX, tipY);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(16, 11, 26, 0.95)';
+    ctx.fill();
+    ctx.strokeStyle = '#b98d3e';
+    ctx.lineWidth = 0.7;
+    ctx.stroke();
+    // paint over the shared edge so the tail reads as part of the bubble
+    ctx.fillStyle = 'rgba(16, 11, 26, 0.95)';
+    ctx.fillRect(tipX - tail + 0.5, by + h - 1, tail * 2 - 1, 1.5);
+
+    ctx.fillStyle = '#f5d76e';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, tipX, by + h / 2 + 0.5);
+    ctx.restore();
   }
 
   render(ctx) {

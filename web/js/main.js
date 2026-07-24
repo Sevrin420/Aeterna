@@ -26,6 +26,13 @@ const leaderboardList = document.getElementById('leaderboardList');
 const leaderboardClose = document.getElementById('leaderboardClose');
 const bootVeil = document.getElementById('bootVeil');
 const powerKnob = powerSwitch.querySelector('.power-knob');
+const muteToggle = document.getElementById('muteToggle');
+
+muteToggle.setAttribute('aria-pressed', String(sfx.isMuted()));
+muteToggle.addEventListener('click', () => {
+  const nowMuted = sfx.toggleMute();
+  muteToggle.setAttribute('aria-pressed', String(nowMuted));
+});
 
 const input = new Input();
 input.bindDpad(document.getElementById('dpadUp'), 'up');
