@@ -509,21 +509,25 @@ export class CourtyardScene {
         const x = c * TILE, y = r * TILE;
         const bhash = h2(c, r);
         if (ch === '#') {
-          const shade = bhash % 5;
-          ctx.fillStyle = shade === 0 ? '#44444c' : shade === 1 ? '#38383f' : '#3d3d45';
+          const shade = bhash % 3;
+          ctx.fillStyle = shade === 0 ? '#8b98b8' : shade === 1 ? '#7d8bac' : '#8492b0';
           ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = 'rgba(255,255,255,0.05)';
-          ctx.fillRect(x, y, TILE, 1);
-          ctx.fillStyle = 'rgba(0,0,0,0.30)';
-          ctx.fillRect(x, y + TILE / 2 - 1, TILE, 1.2);
-          ctx.fillRect(x, y + TILE - 2, TILE, 2);
-          ctx.strokeStyle = 'rgba(20,20,24,0.6)';
+          // beveled block edges (bright top/left, dark bottom/right) for a
+          // chunky, cartoon SNES-tile look instead of flat photographic shading
+          ctx.fillStyle = 'rgba(232,240,255,0.4)';
+          ctx.fillRect(x, y, TILE, 1.6);
+          ctx.fillRect(x, y, 1.6, TILE);
+          ctx.fillStyle = 'rgba(18,22,38,0.4)';
+          ctx.fillRect(x, y + TILE - 1.8, TILE, 1.8);
+          ctx.fillRect(x + TILE - 1.8, y, 1.8, TILE);
+          ctx.strokeStyle = 'rgba(16,18,30,0.8)';
+          ctx.lineWidth = 1;
           ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
           // moss creeping onto wall tiles that border the garden
           const nearGarden = tileAt(c, r - 1) === 'g' || tileAt(c, r + 1) === 'g' ||
             tileAt(c - 1, r) === 'g' || tileAt(c + 1, r) === 'g';
           if (nearGarden && bhash % 3 !== 0) {
-            ctx.fillStyle = 'rgba(70,110,55,0.22)';
+            ctx.fillStyle = 'rgba(70,150,60,0.35)';
             ctx.fillRect(x, y + TILE - 3, TILE, 3);
           }
         } else if (ch === 'g') {
@@ -543,37 +547,48 @@ export class CourtyardScene {
             ctx.stroke();
           }
         } else if (ch === 'k' || ch === 'd') {
-          ctx.fillStyle = ((r + c) % 2 === 0) ? '#7a5a38' : '#6e5030';
+          ctx.fillStyle = ((r + c) % 2 === 0) ? '#a87840' : '#9a6c38';
           ctx.fillRect(x, y, TILE, TILE);
-          ctx.strokeStyle = 'rgba(40,26,12,0.4)';
+          ctx.fillStyle = 'rgba(255,220,160,0.4)';
+          ctx.fillRect(x, y, TILE, 1.4);
+          ctx.fillStyle = 'rgba(60,36,14,0.4)';
+          ctx.fillRect(x, y + TILE - 1.5, TILE, 1.5);
+          ctx.strokeStyle = 'rgba(48,28,10,0.7)';
+          ctx.lineWidth = 1;
           ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
         } else if (ch === 'w') {
-          ctx.fillStyle = ((r + c) % 2 === 0) ? '#9a7a48' : '#8c6e40';
+          ctx.fillStyle = ((r + c) % 2 === 0) ? '#c99a54' : '#bb8c48';
           ctx.fillRect(x, y, TILE, TILE);
-          ctx.strokeStyle = 'rgba(40,26,12,0.35)';
-          ctx.fillRect(x, y + 1, TILE, 0.8);
+          ctx.fillStyle = 'rgba(255,230,180,0.4)';
+          ctx.fillRect(x, y, TILE, 1.3);
+          ctx.fillStyle = 'rgba(60,36,14,0.35)';
+          ctx.fillRect(x, y + TILE - 1.4, TILE, 1.4);
+          ctx.strokeStyle = 'rgba(58,36,14,0.55)';
+          ctx.lineWidth = 0.8;
+          ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
         } else if (ch === '~') {
           const shimmer = (Math.sin(this.t * 2 + c * 0.4 + r * 0.3) + 1) / 2;
           ctx.fillStyle = `rgb(${40 + shimmer * 20}, ${70 + shimmer * 30}, ${95 + shimmer * 35})`;
           ctx.fillRect(x, y, TILE, TILE);
         } else if (ch === '.') {
           const light = (r + c) % 2 === 0;
-          ctx.fillStyle = light ? '#87878e' : '#7a7a81';
+          ctx.fillStyle = light ? '#dcc384' : '#cdb173';
           ctx.fillRect(x, y, TILE, TILE);
+          // beveled sandstone block: bright top/left, dark bottom/right, bold
+          // grout outline -- flat, saturated, cartoon-tile look
+          ctx.fillStyle = 'rgba(255,244,208,0.55)';
+          ctx.fillRect(x, y, TILE, 1.5);
+          ctx.fillRect(x, y, 1.5, TILE);
+          ctx.fillStyle = 'rgba(96,68,30,0.4)';
+          ctx.fillRect(x, y + TILE - 1.6, TILE, 1.6);
+          ctx.fillRect(x + TILE - 1.6, y, 1.6, TILE);
+          ctx.strokeStyle = 'rgba(58,40,16,0.75)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
           // worn, lighter stone either side of the aisle carpet from foot traffic
           if (c === 7 || c === 9) {
-            ctx.fillStyle = 'rgba(205,198,180,0.08)';
+            ctx.fillStyle = 'rgba(255,248,220,0.12)';
             ctx.fillRect(x, y, TILE, TILE);
-          }
-          ctx.strokeStyle = 'rgba(35,35,40,0.55)';
-          ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
-          if (bhash % 11 === 0) {
-            ctx.strokeStyle = 'rgba(20,20,24,0.4)';
-            ctx.lineWidth = 0.5;
-            ctx.beginPath();
-            ctx.moveTo(x + 2, y + 1);
-            ctx.lineTo(x + 6, y + 8);
-            ctx.stroke();
           }
         } else {
           // exterior grass
