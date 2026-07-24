@@ -1,97 +1,44 @@
-// Loads Club Nile's actual speakeasy character sprite frames
-// (web/assets/sprites/<character>/<N|S|E|W>_<idle|walk><n>.png, copied from
-// sevrin420/members-only's games/speakeasy asset set) and renders them with
-// a light unifying tint so the cast reads as one torch-lit abbey cast rather
-// than a literal 1920s speakeasy roster.
+// Builds and caches Cultist sprite sheets using Aeterna's ported Club Nile
+// character generator (web/js/pixelchar.js) and draws/animates them.
 
-const DIR_TO_FACE = { up: 'N', down: 'S', left: 'W', right: 'E' };
+import { makeCharacterHD, traitsForSeed, traitsForGuru } from './pixelchar.js';
 
-export const MALE_CHARS = ['m03_bartender', 'm06_pianist', 'm07_bootlegger', 'm10_gentleman'];
-export const FEMALE_CHARS = ['f02_singer', 'f04_socialite', 'f06_waitress', 'f08_madame'];
-export const GURU_CHAR = 'm01_mobboss';
+const cache = new Map(); // seed -> {down:[c0,c1], up:[c0,c1], left:[c0,c1], right:[c0,c1]}
 
-function hashSeed(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = (Math.imul(h, 31) + str.charCodeAt(i)) | 0;
-  return h >>> 0;
-}
-
-export function pickCharacter(seed, sex) {
-  const list = sex === 'female' ? FEMALE_CHARS : MALE_CHARS;
-  return list[hashSeed(seed) % list.length];
-}
-
-const rawImages = new Map(); // src -> HTMLImageElement
-const tinted = new Map(); // `${src}|${tint}` -> canvas
-
-function getRawImage(src) {
-  let img = rawImages.get(src);
-  if (!img) {
-    img = new Image();
-    img.src = src;
-    rawImages.set(src, img);
+export function getCultistSprite(seed, sex) {
+  const key = `${seed}|${sex || ''}`;
+  let sheet = cache.get(key);
+  if (!sheet) {
+    sheet = makeCharacterHD(traitsForSeed(seed, sex));
+    cache.set(key, sheet);
   }
-  return img;
+  return sheet;
 }
 
-// Preload every frame for a character so its first appearance isn't blank.
-export function preloadCharacter(char) {
-  const dirs = ['N', 'S', 'E', 'W'];
-  const promises = [];
-  for (const d of dirs) {
-    for (const f of [`${d}_idle0.png`, `${d}_idle1.png`, `${d}_walk0.png`, `${d}_walk1.png`, `${d}_walk2.png`, `${d}_walk3.png`]) {
-      const src = `assets/sprites/${char}/${f}`;
-      const img = getRawImage(src);
-      if (!img.complete) {
-        promises.push(new Promise((res) => { img.onload = res; img.onerror = res; }));
-      }
-    }
+export function getGuruSprite() {
+  const key = '__guru__';
+  let sheet = cache.get(key);
+  if (!sheet) {
+    sheet = makeCharacterHD(traitsForGuru());
+    cache.set(key, sheet);
   }
-  return Promise.all(promises);
+  return sheet;
 }
 
-function getTinted(src, tint) {
-  const key = `${src}|${tint}`;
-  let canvas = tinted.get(key);
-  if (canvas) return canvas;
-  const img = getRawImage(src);
-  if (!img.complete || !img.naturalWidth) return null;
-
-  canvas = document.createElement('canvas');
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  const g = canvas.getContext('2d');
-  g.drawImage(img, 0, 0);
-  if (tint) {
-    g.globalCompositeOperation = 'source-atop';
-    g.fillStyle = tint;
-    g.fillRect(0, 0, canvas.width, canvas.height);
-    g.globalCompositeOperation = 'source-over';
-  }
-  tinted.set(key, canvas);
-  return canvas;
+// Warms the cache synchronously (generation is cheap canvas drawing, no
+// network) so the first frame a character appears isn't blank.
+export function preloadCharacter(seed, sex) {
+  getCultistSprite(seed, sex);
 }
 
-// Subtle shared wash (warm torchlight) rather than a full repaint, so each
-// character's own palette still reads clearly.
-const ABBEY_TINT = 'rgba(120, 80, 30, 0.16)';
+export function drawCharacter(ctx, { sheet, dir, moving, animPhase, x, groundY, targetHeight }) {
+  const frames = sheet[dir] || sheet.down;
+  const idx = moving ? Math.floor(animPhase / 6) % 2 : Math.floor(animPhase / 1.4) % 2;
+  const canvas = frames[idx] || frames[0];
+  if (!canvas) return null;
 
-export function drawCharacter(ctx, { char, dir, moving, animPhase, x, groundY, targetHeight, tint }) {
-  const face = DIR_TO_FACE[dir] || 'S';
-  let src;
-  if (moving) {
-    const idx = Math.floor(animPhase) % 4;
-    src = `assets/sprites/${char}/${face}_walk${idx}.png`;
-  } else {
-    const idx = Math.floor(animPhase / 1.4) % 2;
-    src = `assets/sprites/${char}/${face}_idle${idx}.png`;
-  }
-
-  const canvas = getTinted(src, tint || ABBEY_TINT);
-  if (!canvas) { preloadCharacter(char); return; }
-
-  const scale = targetHeight / canvas.height;
-  const w = canvas.width * scale, h = canvas.height * scale;
+  const scale = targetHeight / canvas.lh;
+  const w = canvas.lw * scale, h = canvas.lh * scale;
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(canvas, x - w / 2, groundY - h, w, h);
   return { w, h };
