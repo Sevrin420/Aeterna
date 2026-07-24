@@ -373,10 +373,18 @@ export class CourtyardScene {
           ctx.fillRect(x, y + TILE - 2, TILE, 2);
           ctx.strokeStyle = 'rgba(20,20,24,0.6)';
           ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+          // moss creeping onto wall tiles that border the garden
+          const nearGarden = tileAt(c, r - 1) === 'g' || tileAt(c, r + 1) === 'g' ||
+            tileAt(c - 1, r) === 'g' || tileAt(c + 1, r) === 'g';
+          if (nearGarden && bhash % 3 !== 0) {
+            ctx.fillStyle = 'rgba(70,110,55,0.22)';
+            ctx.fillRect(x, y + TILE - 3, TILE, 3);
+          }
         } else if (ch === 'g') {
           ctx.fillStyle = (bhash % 3 === 0) ? '#3c5a30' : '#345028';
           ctx.fillRect(x, y, TILE, TILE);
           if (bhash % 5 === 0) { ctx.fillStyle = 'rgba(90,140,70,0.5)'; ctx.fillRect(x + 3, y + 3, 2, 2); }
+          if (bhash % 13 === 0) { ctx.fillStyle = 'rgba(60,45,25,0.25)'; ctx.fillRect(x + 2, y + 5, 4, 2); }
         } else if (ch === 'k' || ch === 'd') {
           ctx.fillStyle = ((r + c) % 2 === 0) ? '#7a5a38' : '#6e5030';
           ctx.fillRect(x, y, TILE, TILE);
@@ -395,8 +403,21 @@ export class CourtyardScene {
           const light = (r + c) % 2 === 0;
           ctx.fillStyle = light ? '#87878e' : '#7a7a81';
           ctx.fillRect(x, y, TILE, TILE);
+          // worn, lighter stone either side of the aisle carpet from foot traffic
+          if (c === 7 || c === 9) {
+            ctx.fillStyle = 'rgba(205,198,180,0.08)';
+            ctx.fillRect(x, y, TILE, TILE);
+          }
           ctx.strokeStyle = 'rgba(35,35,40,0.55)';
           ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+          if (bhash % 11 === 0) {
+            ctx.strokeStyle = 'rgba(20,20,24,0.4)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x + 2, y + 1);
+            ctx.lineTo(x + 6, y + 8);
+            ctx.stroke();
+          }
         } else {
           // exterior grass
           ctx.fillStyle = (bhash % 5 === 0) ? '#3d5a30' : (bhash % 7 === 0) ? '#182412' : '#2a4020';
@@ -409,8 +430,18 @@ export class CourtyardScene {
     ctx.fillRect(px(8) - 2, 3 * TILE, 4, 30 * TILE);
   }
 
+  // Soft ellipse shadow, offset down-right to imply one consistent light
+  // angle (upper-left) across every solid prop in the abbey.
+  _dropShadow(ctx, x, y, rx, ry) {
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.beginPath();
+    ctx.ellipse(x + 1.3, y + 1, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   _drawPillar(ctx, col, row) {
     const x = col * TILE, y = row * TILE;
+    this._dropShadow(ctx, x + TILE / 2, y + TILE - 1, 5.5, 2.2);
     ctx.fillStyle = '#3d3d44';
     ctx.fillRect(x, y - TILE * 0.6, TILE, TILE * 1.6);
     ctx.fillStyle = '#57575f';
@@ -423,7 +454,14 @@ export class CourtyardScene {
 
   _drawLantern(ctx, col, row) {
     const x = col * TILE + TILE / 2, topY = row * TILE - TILE * 0.6;
-    const flick = 0.75 + Math.sin(this.t * 9 + col * 3) * 0.15;
+    const flick = 0.75 + Math.sin(this.t * 9 + col * 2.7 + row * 1.4) * 0.15;
+    // light pool on the floor beneath the lantern
+    const poolY = row * TILE + TILE * 0.6;
+    const pool = ctx.createRadialGradient(x, poolY, 1, x, poolY, 13);
+    pool.addColorStop(0, `rgba(255, 195, 110, ${0.14 + flick * 0.08})`);
+    pool.addColorStop(1, 'rgba(255, 195, 110, 0)');
+    ctx.fillStyle = pool;
+    ctx.fillRect(x - 13, poolY - 13, 26, 26);
     ctx.fillStyle = '#2a2418';
     ctx.fillRect(x - 3, topY, 6, 2);
     ctx.fillStyle = `rgba(255, 200, 110, ${0.55 + flick * 0.25})`;
@@ -441,7 +479,12 @@ export class CourtyardScene {
 
   _drawTorch(ctx, col, row) {
     const x = col * TILE + TILE / 2, y = row * TILE + 2;
-    const flick = 0.7 + Math.sin(this.t * 14 + col) * 0.15;
+    const flick = 0.7 + Math.sin(this.t * 14 + col * 2.3 + row * 1.7) * 0.15;
+    const pool = ctx.createRadialGradient(x, y + 3, 1, x, y + 3, 11);
+    pool.addColorStop(0, `rgba(255, 170, 80, ${0.13 + flick * 0.07})`);
+    pool.addColorStop(1, 'rgba(255, 170, 80, 0)');
+    ctx.fillStyle = pool;
+    ctx.fillRect(x - 11, y - 8, 22, 22);
     ctx.fillStyle = '#3a2a18';
     ctx.fillRect(x - 2, y - 2, 4, 8);
     ctx.fillStyle = `rgba(255, ${Math.floor(140 + flick * 60)}, 60, 0.85)`;
@@ -456,6 +499,8 @@ export class CourtyardScene {
 
   _drawFountain(ctx, col, row) {
     const x = (col - 1) * TILE, y = (row - 1) * TILE, s = TILE * 3;
+    const cx = col * TILE + TILE / 2, cy = row * TILE + TILE / 2;
+    this._dropShadow(ctx, cx, y + s - 2, s / 2 - 1, 3);
     ctx.fillStyle = '#3a4a52';
     ctx.fillRect(x, y, s, s);
     ctx.fillStyle = '#5b7580';
@@ -463,154 +508,260 @@ export class CourtyardScene {
     const shimmer = (Math.sin(this.t * 3) + 1) / 2;
     ctx.fillStyle = `rgba(180, 220, 230, ${0.35 + shimmer * 0.35})`;
     ctx.fillRect(x + 6, y + 6, s - 12, s - 12);
-  }
-
-  _drawProps(ctx) {
-    for (const p of PROPS) {
-      const x = p.col * TILE + TILE / 2, y = p.row * TILE + TILE / 2;
-      switch (p.type) {
-        case 'fountain': this._drawFountain(ctx, p.col, p.row); break;
-        case 'fountain-block': break; // covered by the fountain draw above
-        case 'pillar': this._drawPillar(ctx, p.col, p.row); this._drawLantern(ctx, p.col, p.row); break;
-        case 'torch': this._drawTorch(ctx, p.col, p.row); break;
-        case 'bench':
-          ctx.fillStyle = '#5c4426';
-          ctx.fillRect(x - 6, y - 2, 12, 4);
-          ctx.fillStyle = '#3a2c18';
-          ctx.fillRect(x - 5, y + 2, 1.5, 2);
-          ctx.fillRect(x + 3.5, y + 2, 1.5, 2);
-          break;
-        case 'altar':
-          ctx.fillStyle = '#3a2c18';
-          ctx.fillRect(x - 7, y - 4, 14, 8);
-          ctx.fillStyle = '#c9a13b';
-          ctx.fillRect(x - 7, y - 4, 14, 1.5);
-          ctx.fillStyle = `rgba(233,196,104,${0.5 + Math.sin(this.t * 2) * 0.25})`;
-          ctx.beginPath(); ctx.arc(x, y - 6, 2.4, 0, Math.PI * 2); ctx.fill();
-          break;
-        case 'pew':
-          ctx.fillStyle = '#4a3420';
-          ctx.fillRect(x - 4, y - 3, 8, 6);
-          ctx.fillStyle = '#5c4426';
-          ctx.fillRect(x - 4, y - 3, 8, 1.5);
-          break;
-        case 'counter':
-          ctx.fillStyle = '#6e4a28';
-          ctx.fillRect(x - 5, y - 4, 10, 8);
-          ctx.fillStyle = '#8a6238';
-          ctx.fillRect(x - 5, y - 4, 10, 1.5);
-          break;
-        case 'stove':
-          ctx.fillStyle = '#3a3a3e';
-          ctx.fillRect(x - 5, y - 4, 10, 8);
-          ctx.fillStyle = `rgba(255,120,60,${0.5 + Math.sin(this.t * 6) * 0.2})`;
-          ctx.fillRect(x - 3, y - 2, 2.4, 2.4);
-          ctx.fillRect(x + 0.6, y - 2, 2.4, 2.4);
-          break;
-        case 'bed':
-          ctx.fillStyle = '#5c4426';
-          ctx.fillRect(x - 5, y - 4, 10, 9);
-          ctx.fillStyle = '#7a3a3a';
-          ctx.fillRect(x - 4, y - 3, 8, 6);
-          ctx.fillStyle = '#e9dcae';
-          ctx.fillRect(x - 4, y - 3, 3, 2.4);
-          break;
-        case 'rock':
-          ctx.fillStyle = '#5a5a58';
-          ctx.beginPath(); ctx.ellipse(x, y, 3.6, 2.6, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = 'rgba(255,255,255,0.15)';
-          ctx.beginPath(); ctx.ellipse(x - 1, y - 1, 1.4, 0.9, 0, 0, Math.PI * 2); ctx.fill();
-          break;
-        case 'bush':
-          ctx.fillStyle = '#2f4a26';
-          ctx.beginPath(); ctx.ellipse(x, y, 3.4, 2.8, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#3f6032';
-          ctx.beginPath(); ctx.ellipse(x - 1, y - 1, 1.6, 1.2, 0, 0, Math.PI * 2); ctx.fill();
-          break;
-      }
+    // ripple rings expanding out from center and fading
+    for (let i = 0; i < 3; i++) {
+      const phase = (this.t * 0.6 + i / 3) % 1;
+      const r = phase * (s / 2 - 4);
+      ctx.strokeStyle = `rgba(220, 240, 245, ${(1 - phase) * 0.35})`;
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r, r * 0.55, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // an occasional sparkle catching the light
+    const sparkPhase = (this.t * 1.3) % 1;
+    if (sparkPhase < 0.5) {
+      const sa = (h2(Math.floor(this.t * 2), 5) / 97) * Math.PI * 2;
+      const sx = cx + Math.cos(sa) * (s / 2 - 5);
+      const sy = cy + Math.sin(sa) * (s / 2 - 5) * 0.5;
+      ctx.fillStyle = `rgba(255,255,255,${(0.5 - sparkPhase) * 1.6})`;
+      ctx.beginPath(); ctx.arc(sx, sy, 1, 0, Math.PI * 2); ctx.fill();
     }
   }
 
-  _drawStations(ctx) {
-    for (const s of STATIONS) {
-      ctx.save();
-      ctx.translate(s.x, s.y);
-      if (s.id === 'garden') {
+  _drawProp(ctx, p) {
+    const x = p.col * TILE + TILE / 2, y = p.row * TILE + TILE / 2;
+    switch (p.type) {
+      case 'fountain': this._drawFountain(ctx, p.col, p.row); break;
+      case 'fountain-block': break; // covered by the fountain draw above
+      case 'pillar': this._drawPillar(ctx, p.col, p.row); this._drawLantern(ctx, p.col, p.row); break;
+      case 'torch': this._drawTorch(ctx, p.col, p.row); break;
+      case 'bench':
+        this._dropShadow(ctx, x, y + 3, 7, 2.2);
+        ctx.fillStyle = '#5c4426';
+        ctx.fillRect(x - 6, y - 2, 12, 4);
+        ctx.fillStyle = '#6e5230';
+        ctx.fillRect(x - 6, y - 2, 12, 1.2);
         ctx.fillStyle = '#3a2c18';
-        ctx.fillRect(-8, -3, 16, 8);
-        const leafColor = this.player.garden_today ? '#7fd68a' : '#4f8b52';
-        ctx.fillStyle = leafColor;
-        for (let i = -6; i <= 6; i += 4) {
-          ctx.beginPath();
-          ctx.ellipse(i, -3 + Math.sin(this.t * 2 + i) * 0.6, 2, 3.4, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else if (s.id === 'candles') {
+        ctx.fillRect(x - 5, y + 2, 1.5, 2);
+        ctx.fillRect(x + 3.5, y + 2, 1.5, 2);
+        break;
+      case 'altar': {
+        this._dropShadow(ctx, x, y + 5, 8, 2.6);
+        const glowA = 0.5 + Math.sin(this.t * 2) * 0.25;
+        const pool = ctx.createRadialGradient(x, y - 4, 1, x, y - 4, 12);
+        pool.addColorStop(0, `rgba(233,196,104,${0.18 + glowA * 0.08})`);
+        pool.addColorStop(1, 'rgba(233,196,104,0)');
+        ctx.fillStyle = pool;
+        ctx.fillRect(x - 12, y - 16, 24, 24);
         ctx.fillStyle = '#3a2c18';
-        ctx.fillRect(-2, -8, 4, 16);
-        for (const off of [-6, 0, 6]) {
-          const lit = this.player.candles_today;
-          const flick = 0.7 + Math.sin(this.t * 12 + off) * 0.2;
-          ctx.fillStyle = '#8a6a34';
-          ctx.fillRect(off - 1, 4, 2, 4);
-          ctx.fillStyle = lit ? `rgba(255,200,110,${flick})` : 'rgba(120,110,90,0.5)';
-          ctx.beginPath();
-          ctx.ellipse(off, 2, 1.4, 2.4, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else if (s.id === 'guru') {
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.beginPath();
-        ctx.ellipse(0, 7, 6, 2.4, 0, 0, Math.PI * 2);
-        ctx.fill();
-        drawCharacter(ctx, {
-          sheet: getGuruSprite(), dir: 'down', moving: false, animPhase: this.t,
-          x: 0, groundY: 7, targetHeight: 22.4,
-        });
-      } else if (s.id === 'confession') {
-        ctx.fillStyle = '#241a12';
-        ctx.fillRect(-7, -10, 14, 18);
-        ctx.fillStyle = '#4a3a22';
-        ctx.fillRect(-7, -10, 14, 3);
-        ctx.fillStyle = this.player.needsConfession ? 'rgba(220,80,60,0.85)' : 'rgba(90,70,40,0.6)';
-        ctx.beginPath();
-        ctx.arc(0, -2, 2, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (s.id === 'leaderboard') {
-        ctx.fillStyle = '#4a3a22';
-        ctx.fillRect(-5, 0, 10, 6);
+        ctx.fillRect(x - 7, y - 4, 14, 8);
+        ctx.fillStyle = '#c9a13b';
+        ctx.fillRect(x - 7, y - 4, 14, 1.5);
+        ctx.fillStyle = `rgba(233,196,104,${glowA})`;
+        ctx.beginPath(); ctx.arc(x, y - 6, 2.4, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      case 'pew':
+        this._dropShadow(ctx, x, y + 2, 5, 1.8);
+        ctx.fillStyle = '#4a3420';
+        ctx.fillRect(x - 4, y - 3, 8, 6);
+        ctx.fillStyle = '#5c4426';
+        ctx.fillRect(x - 4, y - 3, 8, 1.5);
+        break;
+      case 'counter':
+        this._dropShadow(ctx, x, y + 3, 6, 2);
+        ctx.fillStyle = '#6e4a28';
+        ctx.fillRect(x - 5, y - 4, 10, 8);
+        ctx.fillStyle = '#8a6238';
+        ctx.fillRect(x - 5, y - 4, 10, 1.5);
+        break;
+      case 'stove': {
+        this._dropShadow(ctx, x, y + 3, 6, 2);
+        const flick = 0.5 + Math.sin(this.t * 6) * 0.2;
+        const pool = ctx.createRadialGradient(x, y, 1, x, y, 10);
+        pool.addColorStop(0, `rgba(255,120,60,${0.12 + flick * 0.06})`);
+        pool.addColorStop(1, 'rgba(255,120,60,0)');
+        ctx.fillStyle = pool;
+        ctx.fillRect(x - 10, y - 10, 20, 20);
+        ctx.fillStyle = '#3a3a3e';
+        ctx.fillRect(x - 5, y - 4, 10, 8);
+        ctx.fillStyle = `rgba(255,120,60,${flick})`;
+        ctx.fillRect(x - 3, y - 2, 2.4, 2.4);
+        ctx.fillRect(x + 0.6, y - 2, 2.4, 2.4);
+        break;
+      }
+      case 'bed':
+        this._dropShadow(ctx, x, y + 4, 6, 2.2);
+        ctx.fillStyle = '#5c4426';
+        ctx.fillRect(x - 5, y - 4, 10, 9);
+        ctx.fillStyle = '#7a3a3a';
+        ctx.fillRect(x - 4, y - 3, 8, 6);
         ctx.fillStyle = '#e9dcae';
-        ctx.fillRect(-6, -6, 12, 8);
-        ctx.strokeStyle = '#a9821f';
-        ctx.lineWidth = 0.7;
-        ctx.strokeRect(-6, -6, 12, 8);
-        ctx.fillStyle = '#8a6a34';
-        for (let i = -3; i <= 3; i += 3) ctx.fillRect(-4, i, 8, 1);
-      } else if (s.id === 'pray') {
-        ctx.fillStyle = this.player.pray_today ? '#8fe0c8' : '#e9c468';
-        const glow = 0.6 + Math.sin(this.t * 4) * 0.25;
-        ctx.globalAlpha = glow;
-        ctx.beginPath();
-        ctx.arc(0, -10, 2.6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-      ctx.restore();
+        ctx.fillRect(x - 4, y - 3, 3, 2.4);
+        break;
+      case 'rock':
+        this._dropShadow(ctx, x, y + 1, 4, 1.6);
+        ctx.fillStyle = '#5a5a58';
+        ctx.beginPath(); ctx.ellipse(x, y, 3.6, 2.6, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.beginPath(); ctx.ellipse(x - 1, y - 1, 1.4, 0.9, 0, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'bush':
+        this._dropShadow(ctx, x, y + 1.5, 3.8, 1.6);
+        ctx.fillStyle = '#2f4a26';
+        ctx.beginPath(); ctx.ellipse(x, y, 3.4, 2.8, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#3f6032';
+        ctx.beginPath(); ctx.ellipse(x - 1, y - 1, 1.6, 1.2, 0, 0, Math.PI * 2); ctx.fill();
+        break;
     }
   }
 
-  _drawGifts(ctx) {
+  _drawStation(ctx, s) {
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    if (s.id === 'garden') {
+      this._dropShadow(ctx, 0, 5, 9, 2.4);
+      ctx.fillStyle = '#3a2c18';
+      ctx.fillRect(-8, -3, 16, 8);
+      const leafColor = this.player.garden_today ? '#7fd68a' : '#4f8b52';
+      ctx.fillStyle = leafColor;
+      for (let i = -6; i <= 6; i += 4) {
+        ctx.beginPath();
+        ctx.ellipse(i, -3 + Math.sin(this.t * 2 + i) * 0.6, 2, 3.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (s.id === 'candles') {
+      this._dropShadow(ctx, 0, 7, 3, 1.6);
+      ctx.fillStyle = '#3a2c18';
+      ctx.fillRect(-2, -8, 4, 16);
+      for (const off of [-6, 0, 6]) {
+        const lit = this.player.candles_today;
+        const flick = 0.7 + Math.sin(this.t * 12 + off) * 0.2;
+        if (lit) {
+          const pool = ctx.createRadialGradient(off, 3, 0.5, off, 3, 7);
+          pool.addColorStop(0, `rgba(255,200,110,${0.15 + flick * 0.08})`);
+          pool.addColorStop(1, 'rgba(255,200,110,0)');
+          ctx.fillStyle = pool;
+          ctx.fillRect(off - 7, -4, 14, 14);
+        }
+        ctx.fillStyle = '#8a6a34';
+        ctx.fillRect(off - 1, 4, 2, 4);
+        ctx.fillStyle = lit ? `rgba(255,200,110,${flick})` : 'rgba(120,110,90,0.5)';
+        ctx.beginPath();
+        ctx.ellipse(off, 2, 1.4, 2.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (s.id === 'guru') {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath();
+      ctx.ellipse(0, 7, 6, 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      drawCharacter(ctx, {
+        sheet: getGuruSprite(), dir: 'down', moving: false, animPhase: this.t,
+        x: 0, groundY: 7, targetHeight: 22.4,
+      });
+    } else if (s.id === 'confession') {
+      this._dropShadow(ctx, 0, 9, 8, 2.4);
+      ctx.fillStyle = '#241a12';
+      ctx.fillRect(-7, -10, 14, 18);
+      ctx.fillStyle = '#4a3a22';
+      ctx.fillRect(-7, -10, 14, 3);
+      ctx.fillStyle = this.player.needsConfession ? 'rgba(220,80,60,0.85)' : 'rgba(90,70,40,0.6)';
+      ctx.beginPath();
+      ctx.arc(0, -2, 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (s.id === 'leaderboard') {
+      this._dropShadow(ctx, 0, 6, 7, 2);
+      ctx.fillStyle = '#4a3a22';
+      ctx.fillRect(-5, 0, 10, 6);
+      ctx.fillStyle = '#e9dcae';
+      ctx.fillRect(-6, -6, 12, 8);
+      ctx.strokeStyle = '#a9821f';
+      ctx.lineWidth = 0.7;
+      ctx.strokeRect(-6, -6, 12, 8);
+      ctx.fillStyle = '#8a6a34';
+      for (let i = -3; i <= 3; i += 3) ctx.fillRect(-4, i, 8, 1);
+    } else if (s.id === 'pray') {
+      ctx.fillStyle = this.player.pray_today ? '#8fe0c8' : '#e9c468';
+      const glow = 0.6 + Math.sin(this.t * 4) * 0.25;
+      ctx.globalAlpha = glow;
+      ctx.beginPath();
+      ctx.arc(0, -10, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+
+  _drawGift(ctx, g) {
+    const x = px(g.loc_x), y = px(g.loc_y);
+    const bob = Math.sin(this.t * 3 + g.loc_x) * 1.2;
+    ctx.save();
+    ctx.translate(x, y + bob);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath(); ctx.ellipse(0, 4, 4, 1.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#7a2f2f';
+    ctx.fillRect(-4, -3, 8, 7);
+    ctx.fillStyle = '#e9c468';
+    ctx.fillRect(-4, -0.5, 8, 1.5);
+    ctx.fillRect(-0.75, -3, 1.5, 7);
+    ctx.restore();
+  }
+
+  _drawLocalPlayer(ctx) {
+    this._drawRobedFigure(
+      ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving,
+      this.pc.moving ? this.pc.bob : this.t, this.mySheet, this.holdingGift,
+      null, this.localEmoji, this.localChat
+    );
+  }
+
+  _drawRemotePlayer(ctx, id, rp) {
+    const rpSheet = getCultistSprite(id, rp.prefix === 'Sister' ? 'female' : 'male');
+    this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, this.t, rpSheet, false, rp.name, rp.emoji, rp.chat);
+  }
+
+  // Collects every prop, station, gift, and character into one list and
+  // sorts by ground (y) position so a player standing "in front of" a
+  // pillar/pew/bed draws over it, and one standing "behind" it is hidden —
+  // a simple top-down painter's-algorithm depth sort.
+  _collectDrawables(ctx) {
+    const items = [];
+    for (const p of PROPS) {
+      if (p.type === 'fountain-block') continue;
+      items.push({ y: p.row * TILE + TILE, draw: () => this._drawProp(ctx, p) });
+    }
+    for (const s of STATIONS) {
+      items.push({ y: s.y + 6, draw: () => this._drawStation(ctx, s) });
+    }
     for (const g of this.gifts) {
-      const x = px(g.loc_x), y = px(g.loc_y);
-      const bob = Math.sin(this.t * 3 + g.loc_x) * 1.2;
-      ctx.save();
-      ctx.translate(x, y + bob);
-      ctx.fillStyle = '#7a2f2f';
-      ctx.fillRect(-4, -3, 8, 7);
-      ctx.fillStyle = '#e9c468';
-      ctx.fillRect(-4, -0.5, 8, 1.5);
-      ctx.fillRect(-0.75, -3, 1.5, 7);
-      ctx.restore();
+      items.push({ y: px(g.loc_y), draw: () => this._drawGift(ctx, g) });
+    }
+    for (const [id, rp] of this.remotePlayers) {
+      if (rp.x == null) continue;
+      items.push({ y: rp.y, draw: () => this._drawRemotePlayer(ctx, id, rp) });
+    }
+    items.push({ y: this.pc.y, draw: () => this._drawLocalPlayer(ctx) });
+    items.sort((a, b) => a.y - b.y);
+    return items;
+  }
+
+  // A faint per-room color wash, keyed off the tile the player is standing
+  // on, so each room reads with its own atmosphere (warm stone in the nave,
+  // cool green in the garden, hearth-orange in the kitchen, blue at the
+  // river) instead of one flat vignette everywhere.
+  _roomTint() {
+    const ch = tileAt(Math.floor(this.pc.x / TILE), Math.floor(this.pc.y / TILE));
+    switch (ch) {
+      case '.': return 'rgba(120, 80, 30, 0.045)';
+      case 'g': return 'rgba(60, 140, 80, 0.05)';
+      case 'k': return 'rgba(220, 110, 40, 0.05)';
+      case 'd': return 'rgba(120, 90, 150, 0.04)';
+      case 'w': return 'rgba(80, 130, 160, 0.06)';
+      case '~': return 'rgba(50, 90, 140, 0.08)';
+      case '#': return 'rgba(90, 70, 40, 0.05)';
+      default: return 'rgba(40, 70, 30, 0.04)';
     }
   }
 
@@ -719,17 +870,7 @@ export class CourtyardScene {
     const r1 = Math.min(ROWS - 1, Math.ceil((this.cam.y + H) / TILE) + 1);
 
     this._drawFloor(ctx, c0, r0, c1, r1);
-    this._drawProps(ctx);
-    this._drawStations(ctx);
-    this._drawGifts(ctx);
-
-    for (const [id, rp] of this.remotePlayers) {
-      if (rp.x == null) continue;
-      const rpSheet = getCultistSprite(id, rp.prefix === 'Sister' ? 'female' : 'male');
-      this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, this.t, rpSheet, false, rp.name, rp.emoji, rp.chat);
-    }
-
-    this._drawRobedFigure(ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving, this.pc.moving ? this.pc.bob : this.t, this.mySheet, this.holdingGift, null, this.localEmoji, this.localChat);
+    for (const item of this._collectDrawables(ctx)) item.draw();
 
     ctx.restore();
 
@@ -737,6 +878,9 @@ export class CourtyardScene {
     grad.addColorStop(0, 'rgba(0,0,0,0)');
     grad.addColorStop(1, 'rgba(0,0,0,0.4)');
     ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = this._roomTint();
     ctx.fillRect(0, 0, W, H);
 
     ctx.textAlign = 'center';
