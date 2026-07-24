@@ -11,6 +11,10 @@ const COLS = 16;
 const ROWS = 16;
 const W = COLS * TILE;
 const H = ROWS * TILE;
+const MARGIN = 14; // border of grass rendered outside the walls
+const WORLD_SCALE = (W - MARGIN * 2) / W;
+
+function h2(x, y) { return (((x * 73856093) ^ (y * 19349663)) >>> 0) % 97; }
 
 // # wall  .  floor  P pillar  F fountain  (blank cols/rows outside are never read)
 const MAP = [
@@ -381,40 +385,111 @@ export class CourtyardScene {
     }
   }
 
+  // Outside the walls: a strip of torchlit grass the abbey sits on.
+  _drawSurrounds(ctx) {
+    ctx.fillStyle = '#20301c';
+    ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 260; i++) {
+      const gx = h2(i * 3, 11) / 97 * W;
+      const gy = h2(11, i * 3) / 97 * H;
+      // skip the region the scaled-down abbey will cover
+      if (gx > MARGIN * 0.6 && gx < W - MARGIN * 0.6 && gy > MARGIN * 0.6 && gy < H - MARGIN * 0.6) continue;
+      const light = (i % 5 === 0) ? '#3d5a30' : (i % 7 === 0) ? '#182412' : '#2a4020';
+      ctx.fillStyle = light;
+      ctx.fillRect(gx, gy, 1.4, 1.4);
+    }
+  }
+
   _drawFloor(ctx) {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const ch = MAP[r][c];
         const x = c * TILE, y = r * TILE;
+        const bhash = h2(c, r);
         if (ch === '#') {
-          ctx.fillStyle = '#2c2013';
+          const shade = bhash % 5;
+          ctx.fillStyle = shade === 0 ? '#44444c' : shade === 1 ? '#38383f' : '#3d3d45';
           ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = 'rgba(0,0,0,0.35)';
-          ctx.fillRect(x, y + TILE - 3, TILE, 3);
-          ctx.strokeStyle = 'rgba(80,60,30,0.5)';
+          // two stacked courses per block, with a mortar seam between
+          ctx.fillStyle = 'rgba(255,255,255,0.05)';
+          ctx.fillRect(x, y, TILE, 1);
+          ctx.fillStyle = 'rgba(0,0,0,0.30)';
+          ctx.fillRect(x, y + TILE / 2 - 1, TILE, 1.4);
+          ctx.fillRect(x, y + TILE - 2, TILE, 2);
+          ctx.strokeStyle = 'rgba(20,20,24,0.6)';
           ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+          if (bhash % 9 === 0) {
+            ctx.fillStyle = 'rgba(0,0,0,0.25)';
+            ctx.fillRect(x + 3 + (bhash % 4), y + 3, 1, 3);
+          }
         } else {
-          ctx.fillStyle = ((r + c) % 2 === 0) ? '#c9a35f' : '#bd9752';
+          const light = (r + c) % 2 === 0;
+          ctx.fillStyle = light ? '#87878e' : '#7a7a81';
           ctx.fillRect(x, y, TILE, TILE);
-          if ((r * 7 + c * 13) % 11 === 0) {
-            ctx.fillStyle = 'rgba(90,60,20,0.25)';
-            ctx.fillRect(x + 3, y + 4, 2, 2);
+          // grout seam
+          ctx.strokeStyle = 'rgba(35,35,40,0.55)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+          if (bhash % 11 === 0) {
+            ctx.fillStyle = 'rgba(255,255,255,0.10)';
+            ctx.fillRect(x + 3, y + 4, 2, 1);
+          }
+          if (bhash % 13 === 0) {
+            ctx.fillStyle = 'rgba(20,20,24,0.30)';
+            ctx.fillRect(x + 7, y + 8, 2, 1.4);
           }
         }
       }
     }
-    ctx.fillStyle = 'rgba(233, 196, 104, 0.18)';
+    // worn sandstone path from the gate up to the fountain
+    ctx.fillStyle = 'rgba(201, 163, 95, 0.14)';
+    ctx.fillRect(7 * TILE, 9 * TILE, 2 * TILE, 5 * TILE);
+    ctx.fillStyle = 'rgba(233, 196, 104, 0.20)';
     ctx.fillRect(7 * TILE, 15 * TILE, 2 * TILE, TILE);
   }
 
   _drawPillar(ctx, col, row) {
     const x = col * TILE, y = row * TILE;
-    ctx.fillStyle = '#4a3a22';
+    ctx.fillStyle = '#3d3d44';
     ctx.fillRect(x, y - TILE * 0.6, TILE, TILE * 1.6);
-    ctx.fillStyle = '#6b552f';
+    ctx.fillStyle = '#57575f';
     ctx.fillRect(x + 2, y - TILE * 0.6, 3, TILE * 1.6);
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = 'rgba(20,20,24,0.4)';
+      ctx.fillRect(x, y - TILE * 0.6 + i * (TILE * 1.6 / 3), TILE, 1);
+    }
+    ctx.fillStyle = '#c9a13b';
+    ctx.fillRect(x, y - TILE * 0.6, TILE, 1.5);
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.fillRect(x, y + TILE - 4, TILE, 4);
+  }
+
+  _drawLantern(ctx, col, row, hangOffset) {
+    const x = col * TILE + TILE / 2, topY = row * TILE - TILE * 0.6 - (hangOffset || 0);
+    const flick = 0.75 + Math.sin(this.t * 9 + col * 3) * 0.15;
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(x, topY - 4);
+    ctx.lineTo(x, topY);
+    ctx.stroke();
+    ctx.fillStyle = '#2a2418';
+    ctx.fillRect(x - 3, topY, 6, 2);
+    ctx.fillStyle = `rgba(255, 200, 110, ${0.55 + flick * 0.25})`;
+    ctx.fillRect(x - 2.3, topY + 2, 4.6, 5);
+    ctx.fillStyle = '#2a2418';
+    ctx.fillRect(x - 2.6, topY + 1.6, 0.7, 5.4);
+    ctx.fillRect(x + 1.9, topY + 1.6, 0.7, 5.4);
+    ctx.fillRect(x - 3, topY + 7, 6, 1.4);
+    ctx.fillStyle = `rgba(255, 225, 150, ${0.6 + flick * 0.3})`;
+    ctx.beginPath();
+    ctx.ellipse(x, topY + 4.5, 1.1, 1.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const glow = ctx.createRadialGradient(x, topY + 4, 1, x, topY + 4, 10);
+    glow.addColorStop(0, `rgba(255, 190, 100, ${0.16 + flick * 0.08})`);
+    glow.addColorStop(1, 'rgba(255, 190, 100, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - 10, topY - 6, 20, 20);
   }
 
   _drawFountain(ctx) {
@@ -626,8 +701,11 @@ export class CourtyardScene {
   }
 
   render(ctx) {
-    ctx.fillStyle = '#050301';
-    ctx.fillRect(0, 0, W, H);
+    this._drawSurrounds(ctx);
+
+    ctx.save();
+    ctx.translate(MARGIN, MARGIN);
+    ctx.scale(WORLD_SCALE, WORLD_SCALE);
 
     this._drawFloor(ctx);
     this._drawFountain(ctx);
@@ -637,6 +715,10 @@ export class CourtyardScene {
     this._drawPillar(ctx, 14, 1);
     this._drawPillar(ctx, 1, 14);
     this._drawPillar(ctx, 14, 14);
+    this._drawLantern(ctx, 1, 1);
+    this._drawLantern(ctx, 14, 1);
+    this._drawLantern(ctx, 1, 14);
+    this._drawLantern(ctx, 14, 14);
     this._drawTorches(ctx);
 
     for (const [id, rp] of this.remotePlayers) {
@@ -652,6 +734,8 @@ export class CourtyardScene {
     grad.addColorStop(1, 'rgba(0,0,0,0.45)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
+
+    ctx.restore();
 
     ctx.textAlign = 'center';
     if (this._activeGift && !this.holdingGift) {

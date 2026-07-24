@@ -40,7 +40,9 @@ In the courtyard: walk to the **shrine**, **garden**, or **candle rack** and pre
 
 The console shell (font, container-relative scaling, the black-veil boot reveal, drag-or-tap power switch) adapts the boot sequence from `sevrin420/members-only`'s `games/clubnile.html`, which turns out to reuse the exact same console artwork.
 
-Cultist and Guru characters (`web/assets/sprites/`) are real character sprites copied from that same repo's `assets/membersonly/speakeasy/frames/` set (its playable in-game cast — full N/S/E/W walk+idle animation per character), downscaled and given a light shared torchlight tint (`web/js/spritesheet.js`) rather than hand-authored pixel art. Each player is deterministically assigned one of 8 characters by wallet id + registered sex; the Guru NPC uses a 9th, larger and gold-tinted. Source characters are a 1920s-speakeasy cast, not abbey monks — used for their animation/art quality per the project owner's direction rather than for thematic fit.
+Cultist and Guru characters are generated procedurally by `web/js/pixelchar.js`, a direct port of that same repo's actual character generator (the code that renders its real NFT art — HD_HEADS/HD_BODIES/HD_LEGS row data, color-ramp shading, the colored-outline pass, full N/S/E/W walk+idle animation), not an approximation of it. `traitsForSeed()`/`traitsForGuru()` swap the source's 1920s hat/jewel-tone trait pool for an Egyptian one (fez/turban/nemes headwear, an always-on cloak) so the generated cast reads as a hooded cult rather than a speakeasy crowd. Each player is deterministically assigned traits from their wallet id + registered sex; the Guru NPC gets a bespoke nemes-and-tiara look.
+
+The courtyard itself (`web/js/scenes/courtyard.js`) renders gray flagstone (with mortar-line grout), stone-block walls, hanging lanterns at each corner alongside the existing wall torches, and a strip of grass visible beyond the walls (the whole abbey is drawn scaled down slightly within the screen so that border has room to show).
 
 ## Status
 
