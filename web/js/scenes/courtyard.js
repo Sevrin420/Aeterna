@@ -88,7 +88,7 @@ export class CourtyardScene {
     this.pc = {
       x: px(21), y: px(32), // just inside the door, at the foot of the cross
       w: 7, h: 7,
-      speed: 46,
+      speed: 60, // +30% walk speed (was 46)
       dir: 'up',
       moving: false,
       bob: 0,
