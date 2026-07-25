@@ -26,13 +26,25 @@
 
         <!-- HUD overlay -->
         <div class="hud" id="hud" hidden>
-          <div class="hud-name" id="hudName"></div>
-          <div class="hud-duties" id="hudDuties">
-            <span class="duty-pip" id="pipPray" title="Pray">P</span>
-            <span class="duty-pip" id="pipGarden" title="Tend Garden">G</span>
-            <span class="duty-pip" id="pipCandles" title="Light Candles">C</span>
+          <div class="hud-bar">
+            <span class="hud-lvl" id="hudLevel">LV 1</span>
+            <div class="hud-xp">
+              <div class="hud-xp-fill" id="hudXpFill"></div>
+              <span class="hud-xp-txt" id="hudXpTxt"></span>
+            </div>
+            <span class="hud-dev" id="hudDevotion">0</span>
           </div>
-          <div class="hud-row"><span id="hudDevotion"></span><span id="hudStreak"></span></div>
+          <div class="hud-sub">
+            <span class="hud-name" id="hudName"></span>
+            <span class="hud-subright">
+              <span class="hud-streak" id="hudStreak"></span>
+              <span class="hud-duties" id="hudDuties">
+                <span class="duty-pip" id="pipPray" title="Pray">P</span>
+                <span class="duty-pip" id="pipGarden" title="Tend Garden">G</span>
+                <span class="duty-pip" id="pipCandles" title="Light Candles">C</span>
+              </span>
+            </span>
+          </div>
         </div>
 
         <!-- Toast -->
@@ -71,7 +83,10 @@
             </div>
             <button type="button" class="mancala-store" id="mancalaStoreA" disabled></button>
           </div>
-          <button type="button" class="naming-submit" id="mancalaLeave">Leave Table</button>
+          <div class="mancala-actions">
+            <button type="button" class="naming-submit" id="mancalaSolo" hidden>Play the Abbot</button>
+            <button type="button" class="naming-submit" id="mancalaLeave">Leave Table</button>
+          </div>
         </div>
 
         <!-- Entrance: Doctrine (DOCS table) -->

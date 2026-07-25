@@ -223,6 +223,10 @@ export class CourtyardScene {
     if (this.socket) this.socket.emit('mancala_move', { pit });
   }
 
+  startMancalaSolo() {
+    if (this.socket) this.socket.emit('mancala_solo_start');
+  }
+
   leaveMancala() {
     if (this.socket) this.socket.emit('mancala_leave');
   }

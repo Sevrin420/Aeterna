@@ -511,7 +511,59 @@ function mancalaSettle() {
   mancalaResetTable();
 }
 
+// ---- Single-player: play the Abbot (a greedy Kalah AI) ----
+// Solo games are per-socket and independent of the shared 2-player table, so
+// practising against the Abbot never occupies the wager table for others.
+const soloGames = new Map(); // socketId -> { board, turn (0=you,1=Abbot), active }
+const SOLO_NAMES = ['You', 'The Abbot'];
+
+function soloEmit(socket, g, extra = {}) {
+  socket.emit('mancala_state', {
+    solo: true, board: g.board, turn: g.turn, active: g.active,
+    seat: 0, names: SOLO_NAMES, wager: 0, ...extra,
+  });
+}
+
+// Greedy heuristic for seat 1: prefer an extra turn, then seeds banked, then a
+// capture; light random tie-break so the Abbot isn't perfectly predictable.
+function mancalaAiPick(board) {
+  const pits = [7, 8, 9, 10, 11, 12].filter((p) => board[p] > 0);
+  if (!pits.length) return null;
+  let best = pits[0], bestScore = -Infinity;
+  for (const p of pits) {
+    const b = board.slice();
+    const before = b[13];
+    const { extraTurn } = mancalaApplyMove(b, 1, p);
+    let score = (b[13] - before) * 2 + (extraTurn ? 6 : 0) + Math.random();
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  return best;
+}
+
+function soloSettle(socket, g) {
+  g.active = false;
+  const [s0, s1] = [g.board[6], g.board[13]];
+  const winnerSeat = s0 === s1 ? null : s0 > s1 ? 0 : 1;
+  socket.emit('mancala_end', { solo: true, board: g.board, winnerSeat, seat: 0, payout: 0, draw: winnerSeat === null });
+  soloGames.delete(socket.id);
+}
+
+// The Abbot takes one move; if it earns an extra turn, it keeps going (with a
+// short delay so the player can watch each move land).
+function soloAiStep(socket) {
+  const g = soloGames.get(socket.id);
+  if (!g || !g.active || g.turn !== 1) return;
+  const pit = mancalaAiPick(g.board);
+  if (pit == null) return soloSettle(socket, g);
+  const { extraTurn, gameOver } = mancalaApplyMove(g.board, 1, pit);
+  if (gameOver) return soloSettle(socket, g);
+  g.turn = extraTurn ? 1 : 0;
+  soloEmit(socket, g);
+  if (g.turn === 1) setTimeout(() => soloAiStep(socket), 650);
+}
+
 function mancalaLeave(socket) {
+  soloGames.delete(socket.id);
   const seat = mancalaTable.seats.indexOf(socket.id);
   if (seat === -1) return;
   if (mancalaTable.active) {
@@ -655,10 +707,34 @@ io.on('connection', (socket) => {
     mancalaBroadcast();
   });
 
+  socket.on('mancala_solo_start', () => {
+    const p = online.get(socket.id);
+    if (!p) return;
+    // step off the shared wager table if seated there (but not mid-match)
+    const seat = mancalaTable.seats.indexOf(socket.id);
+    if (seat !== -1) { if (mancalaTable.active) return; mancalaLeave(socket); }
+    soloGames.set(socket.id, { board: mancalaNewBoard(), turn: 0, active: true });
+    soloEmit(socket, soloGames.get(socket.id));
+  });
+
   socket.on('mancala_move', (data) => {
+    const pit = Number(data && data.pit);
+
+    // solo game (vs the Abbot) takes priority if this socket has one
+    const g = soloGames.get(socket.id);
+    if (g) {
+      if (!g.active || g.turn !== 0) return;
+      if (!mancalaOwnPits(0).includes(pit) || !g.board[pit]) return;
+      const { extraTurn, gameOver } = mancalaApplyMove(g.board, 0, pit);
+      if (gameOver) return soloSettle(socket, g);
+      g.turn = extraTurn ? 0 : 1;
+      soloEmit(socket, g);
+      if (g.turn === 1) setTimeout(() => soloAiStep(socket), 650);
+      return;
+    }
+
     const seat = mancalaTable.seats.indexOf(socket.id);
     if (seat === -1 || !mancalaTable.active || mancalaTable.turn !== seat) return;
-    const pit = Number(data && data.pit);
     if (!mancalaOwnPits(seat).includes(pit) || !mancalaTable.board[pit]) return;
 
     const { extraTurn, gameOver } = mancalaApplyMove(mancalaTable.board, seat, pit);

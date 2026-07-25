@@ -14,6 +14,9 @@ const chatForm = document.getElementById('chatForm');
 const chatInput = document.getElementById('chatInput');
 const hud = document.getElementById('hud');
 const hudName = document.getElementById('hudName');
+const hudLevel = document.getElementById('hudLevel');
+const hudXpFill = document.getElementById('hudXpFill');
+const hudXpTxt = document.getElementById('hudXpTxt');
 const hudDevotion = document.getElementById('hudDevotion');
 const hudStreak = document.getElementById('hudStreak');
 const pipPray = document.getElementById('pipPray');
@@ -32,6 +35,7 @@ const mancalaStoreA = document.getElementById('mancalaStoreA');
 const mancalaStoreB = document.getElementById('mancalaStoreB');
 const mancalaPits = [...document.querySelectorAll('.mancala-pit')];
 const mancalaLeaveBtn = document.getElementById('mancalaLeave');
+const mancalaSoloBtn = document.getElementById('mancalaSolo');
 const communionOverlay = document.getElementById('communionOverlay');
 const communionBody = document.getElementById('communionBody');
 const communionClose = document.getElementById('communionClose');
@@ -73,10 +77,25 @@ function showToast(msg) {
   toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2400);
 }
 
+// Character level is derived from total Devotion (Devotion *is* the XP). Each
+// level costs a bit more than the last, so the bar keeps its meaning as you
+// climb. Shared by the HUD and anywhere else that wants to show a level.
+function levelInfo(devotion) {
+  let level = 1, acc = 0, need = 100;
+  while (devotion >= acc + need) { acc += need; level += 1; need = 100 + (level - 1) * 50; }
+  const cur = devotion - acc;
+  return { level, cur, need, pct: Math.max(0, Math.min(1, cur / need)) };
+}
+
 function updateHud(player) {
+  const dev = player.devotion || 0;
+  const li = levelInfo(dev);
+  hudLevel.textContent = `LV ${li.level}`;
+  hudXpFill.style.width = `${li.pct * 100}%`;
+  hudXpTxt.textContent = `${li.cur} / ${li.need} XP`;
+  hudDevotion.textContent = `✦ ${dev}`;
   hudName.textContent = `${player.prefix} ${player.name}`;
-  hudDevotion.textContent = `Devotion ${player.devotion}`;
-  hudStreak.textContent = player.streak > 0 ? ` · Streak ${player.streak}d (${player.multiplier}x)` : '';
+  hudStreak.textContent = player.streak > 0 ? `${player.streak}d ×${player.multiplier}` : '';
   pipPray.classList.toggle('done', !!player.pray_today);
   pipGarden.classList.toggle('done', !!player.garden_today);
   pipCandles.classList.toggle('done', !!player.candles_today);
@@ -109,14 +128,16 @@ function showMancala(state) {
   if (state.type === 'end' || state.forfeited) {
     if (state.board) renderMancalaBoard(state.board);
     mancalaPits.forEach((b) => { b.disabled = true; });
+    mancalaSoloBtn.hidden = true;
+    const won = state.winnerSeat === state.seat;
     mancalaStatus.textContent = state.forfeited
       ? 'Your opponent left the table. Your wager was refunded.'
-      : state.draw
-        ? 'A draw — both wagers refunded.'
-        : state.winnerSeat === state.seat
-          ? `You win! +${state.payout} Devotion.`
-          : 'You lose the wager.';
-    if (!state.forfeited && !state.draw) sfx[state.winnerSeat === state.seat ? 'streakBonus' : 'error']?.();
+      : state.solo
+        ? (state.draw ? 'A stalemate with the Abbot.' : won ? 'You beat the Abbot! The order takes note.' : 'The Abbot bests you.')
+        : state.draw
+          ? 'A draw — both wagers refunded.'
+          : won ? `You win! +${state.payout} Devotion.` : 'You lose the wager.';
+    if (!state.forfeited && !state.draw) sfx[won ? 'streakBonus' : 'error']?.();
     api.me().then(updateHud).catch(() => {});
     setTimeout(() => { mancalaOverlay.hidden = true; }, 3200);
     return;
@@ -127,12 +148,18 @@ function showMancala(state) {
     mancalaPits.forEach((b) => { b.textContent = ''; b.disabled = true; });
     mancalaStoreA.textContent = '';
     mancalaStoreB.textContent = '';
+    mancalaSoloBtn.hidden = false; // offer a solo game against the Abbot
     return;
   }
 
   renderMancalaBoard(state.board);
+  mancalaSoloBtn.hidden = true;
   const yourTurn = state.turn === state.seat;
-  mancalaStatus.textContent = `${state.names[0]} vs ${state.names[1]} · Wager ${state.wager} Devotion each · ${yourTurn ? 'Your move' : "Opponent's move"}`;
+  if (state.solo) {
+    mancalaStatus.textContent = yourTurn ? 'You vs the Abbot · Your move' : 'The Abbot contemplates…';
+  } else {
+    mancalaStatus.textContent = `${state.names[0]} vs ${state.names[1]} · Wager ${state.wager} Devotion each · ${yourTurn ? 'Your move' : "Opponent's move"}`;
+  }
   mancalaPits.forEach((b) => {
     const pit = Number(b.dataset.pit);
     const ownPit = state.seat === 0 ? pit <= 5 : pit >= 7;
@@ -143,6 +170,9 @@ function showMancala(state) {
 mancalaPits.forEach((b) => b.addEventListener('click', () => {
   if (scene && scene.sendMancalaMove) scene.sendMancalaMove(Number(b.dataset.pit));
 }));
+mancalaSoloBtn.addEventListener('click', () => {
+  if (scene && scene.startMancalaSolo) scene.startMancalaSolo();
+});
 mancalaLeaveBtn.addEventListener('click', () => {
   if (scene && scene.leaveMancala) scene.leaveMancala();
   mancalaOverlay.hidden = true;
@@ -431,5 +461,42 @@ powerSwitch.addEventListener('pointermove', (e) => {
   powerSwitch.classList.remove('dragging');
   powerKnob.style.left = '';
 }));
+
+// ---- B always backs out ----
+// Whatever overlay is open, B (the console button or the keyboard B keys)
+// closes the topmost one. We listen in the capture phase, ABOVE the button /
+// window, so this runs before the engine's own B handling and can swallow the
+// press — the scene underneath never sees it, so B won't also drop a gift etc.
+const backableOverlays = () => [
+  communionOverlay, mancalaOverlay, leaderboardOverlay,
+  walletOverlay, docsOverlay, mintOverlay, chatForm,
+];
+function anyOverlayOpen() { return backableOverlays().some((o) => o && !o.hidden); }
+function backOut() {
+  if (!communionOverlay.hidden) { communionOverlay.hidden = true; return true; }
+  if (!mancalaOverlay.hidden) { if (scene && scene.leaveMancala) scene.leaveMancala(); mancalaOverlay.hidden = true; return true; }
+  if (!leaderboardOverlay.hidden) { leaderboardOverlay.hidden = true; return true; }
+  if (!walletOverlay.hidden) { walletOverlay.hidden = true; if (scene && scene.resume) scene.resume(); return true; }
+  if (!docsOverlay.hidden) { docsOverlay.hidden = true; return true; }
+  if (!mintOverlay.hidden) { mintOverlay.hidden = true; return true; }
+  if (!chatForm.hidden) { chatForm.hidden = true; return true; }
+  return false;
+}
+
+const btnBEl = document.getElementById('btnB');
+document.addEventListener('pointerdown', (e) => {
+  if (!anyOverlayOpen()) return;
+  if (e.target === btnBEl || (btnBEl && btnBEl.contains(e.target))) {
+    e.stopImmediatePropagation(); e.preventDefault();
+    sfx.click(); backOut();
+  }
+}, true);
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyX' && e.code !== 'ShiftLeft') return;
+  const typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
+  if (typing || !anyOverlayOpen()) return;
+  e.stopImmediatePropagation(); e.preventDefault();
+  backOut();
+}, true);
 
 drawOff();
