@@ -13,6 +13,12 @@ function easeOutBounce(t) {
   if (t < 2.5 / d1) return n1 * (t -= 2.25 / d1) * t + 0.9375;
   return n1 * (t -= 2.625 / d1) * t + 0.984375;
 }
+function easeOutQuad(t) { return 1 - (1 - t) * (1 - t); }
+// Bounce, but with the bounce wiggle damped toward a smooth landing.
+function easeSoftBounce(t, damp = 0.5) {
+  const smooth = easeOutQuad(t);
+  return smooth + (easeOutBounce(t) - smooth) * damp;
+}
 
 function loadImage(src) {
   const img = new Image();
@@ -25,7 +31,7 @@ export class BootScene {
     this.onComplete = onComplete;
     this.t = 0;
     this.fadeIn = 2.0;        // background art fades up from black
-    this.fallDuration = 1.6;  // then the logo drops and bounces to rest
+    this.fallDuration = 4.8;  // then the logo drops slowly and settles to rest
     this.landed = false;
     this.blink = 0;
 
@@ -73,8 +79,11 @@ export class BootScene {
       const lh = lw * (this.logo.naturalHeight / this.logo.naturalWidth);
       const restCy = H * 0.46;                     // centre it over the castle
       const startCy = -lh * 0.5;
-      const cy = startCy + (restCy - startCy) * easeOutBounce(progress);
+      const cy = startCy + (restCy - startCy) * easeSoftBounce(progress, 0.5); // 50% less bounce
+      ctx.save();
+      ctx.filter = 'brightness(1.18)';             // a touch brighter than the source art
       ctx.drawImage(this.logo, (W - lw) / 2, cy - lh / 2, lw, lh);
+      ctx.restore();
     }
 
     ctx.imageSmoothingEnabled = smooth;
