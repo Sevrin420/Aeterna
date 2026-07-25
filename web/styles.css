@@ -464,3 +464,78 @@ html, body {
   text-align: center;
   min-height: 1.4em;
 }
+
+/* ===== Entrance overlays: Doctrine / Mint / Wallet ===== */
+.lore-overlay[hidden], .wallet-overlay[hidden] { display: none; }
+.lore-overlay, .wallet-overlay {
+  position: absolute;
+  inset: 6%;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(4px, 1.6cqw, 8px);
+  background: rgba(6, 4, 8, 0.94);
+  border: 1px solid #3a2c3e;
+  border-radius: 4px;
+  padding: 5% 5% 4%;
+  text-align: center;
+}
+.lore-body {
+  flex: 1;
+  overflow-y: auto;
+  color: #d8cbe0;
+  font-family: 'Courier New', monospace;
+  font-size: clamp(6px, 1.8cqw, 9px);
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7em;
+}
+.lore-body b { color: #d24b4b; }
+.wallet-msg {
+  margin: 0;
+  color: #b7a7c4;
+  font-size: clamp(6px, 1.8cqw, 9px);
+  line-height: 1.6;
+  min-height: 3.2em;
+}
+.wallet-msg .addr { color: #8ef06e; }
+.cultist-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-content: start;
+  gap: clamp(3px, 1.4cqw, 7px);
+  width: 100%;
+  overflow-y: auto;
+  max-height: 62%;
+}
+.cultist-card {
+  aspect-ratio: 1;
+  background: #1a1620;
+  border: 1px solid #3a2c3e;
+  border-radius: 3px;
+  color: #d8cbe0;
+  font-size: clamp(5px, 1.5cqw, 7px);
+  cursor: pointer;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 3px;
+}
+.cultist-card.sel { border-color: #d24b4b; box-shadow: 0 0 6px rgba(210,75,75,0.6); }
+.wallet-back {
+  background: none;
+  border: none;
+  color: #7a6a86;
+  font-family: 'Courier New', monospace;
+  font-size: clamp(6px, 1.7cqw, 9px);
+  cursor: pointer;
+  text-decoration: underline;
+}
+/* the entrance's Enter/Connect buttons in the cult's blood-red, not gold */
+.wallet-overlay .naming-submit {
+  background: linear-gradient(180deg, #7a1f26, #4a1016);
+  border: 1px solid #3a2c3e;
+  color: #f0dcdc;
+}

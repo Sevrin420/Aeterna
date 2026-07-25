@@ -1,8 +1,10 @@
 import { Input, makeLoop } from './engine.js';
 import { BootScene } from './scenes/boot.js';
+import { EntranceScene } from './scenes/entrance.js';
 import { CourtyardScene } from './scenes/courtyard.js';
 import { api } from './api.js';
 import { sfx } from './sfx.js';
+import { connectWallet, fetchCultists, shortAddr, hasInjectedWallet } from './wallet.js';
 
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');
@@ -216,20 +218,139 @@ function revealTransition(next) {
   });
 }
 
+// ---- Entrance lobby (ghost -> Docs/Mint tables -> north arch -> wallet) ----
+const docsOverlay = document.getElementById('docsOverlay');
+const docsClose = document.getElementById('docsClose');
+const mintOverlay = document.getElementById('mintOverlay');
+const mintClose = document.getElementById('mintClose');
+const walletOverlay = document.getElementById('walletOverlay');
+const walletTitle = document.getElementById('walletTitle');
+const walletMsg = document.getElementById('walletMsg');
+const cultistGrid = document.getElementById('cultistGrid');
+const walletConnectBtn = document.getElementById('walletConnect');
+const walletEnterBtn = document.getElementById('walletEnter');
+const walletBackBtn = document.getElementById('walletBack');
+
+function entranceOverlaysOpen() {
+  return !docsOverlay.hidden || !mintOverlay.hidden || !walletOverlay.hidden;
+}
+
+docsClose.addEventListener('click', () => { docsOverlay.hidden = true; });
+mintClose.addEventListener('click', () => { mintOverlay.hidden = true; });
+
+let entrancePlayer = null;
+let chosenCultist = null;
+
+function enterEntrance(player) {
+  entrancePlayer = player;
+  scene = new EntranceScene({
+    player,
+    onDocs: () => { docsOverlay.hidden = false; },
+    onMint: () => { mintOverlay.hidden = false; },
+    onWallet: openWalletFlow,
+    isBusy: entranceOverlaysOpen,
+  });
+  scene.enter();
+  hint.textContent = 'D-pad to move · A at a table · walk north to enter.';
+  window.__aeterna = { scene, player };
+}
+
+function openWalletFlow() {
+  walletOverlay.hidden = false;
+  cultistGrid.hidden = true;
+  cultistGrid.innerHTML = '';
+  walletEnterBtn.hidden = true;
+  walletConnectBtn.hidden = false;
+  chosenCultist = null;
+  walletTitle.textContent = 'Enter the Sanctum';
+  if (hasInjectedWallet()) {
+    walletConnectBtn.textContent = 'Connect Wallet';
+    walletMsg.innerHTML = 'Connect your wallet to choose your Cultist.';
+  } else {
+    // no injected provider (e.g. a normal desktop browser) — let them in
+    walletConnectBtn.textContent = 'Connect Wallet';
+    walletMsg.innerHTML = 'Open <span class="addr">membersonly.cc</span> inside your wallet’s browser to connect — or enter as a spirit.';
+    walletEnterBtn.hidden = false;
+  }
+}
+
+function proceedIntoGame() {
+  walletOverlay.hidden = true;
+  if (scene && scene.exit) scene.exit();
+  const chosen = chosenCultist;
+  revealTransition(() => {
+    enterCourtyard(entrancePlayer);
+    if (chosen) showToast(`You enter as ${chosen.name}.`);
+  });
+}
+
+walletConnectBtn.addEventListener('click', async () => {
+  walletConnectBtn.disabled = true;
+  walletMsg.textContent = 'Requesting wallet…';
+  try {
+    const addr = await connectWallet();
+    walletMsg.innerHTML = `Connected <span class="addr">${shortAddr(addr)}</span>. Seeking your Cultists…`;
+    const cultists = await fetchCultists(addr);
+    if (!cultists.length) {
+      walletMsg.innerHTML = `Connected <span class="addr">${shortAddr(addr)}</span>. No Cultist NFTs found in this wallet.`;
+      walletConnectBtn.hidden = true;
+      walletEnterBtn.hidden = false;
+    } else {
+      renderCultistChoices(cultists);
+    }
+  } catch (err) {
+    const m = err && err.message === 'NO_WALLET'
+      ? 'No wallet found. Open membersonly.cc in your wallet’s browser — or enter as a spirit.'
+      : 'Wallet not connected. You can still enter as a spirit.';
+    walletMsg.textContent = m;
+    walletEnterBtn.hidden = false;
+  } finally {
+    walletConnectBtn.disabled = false;
+  }
+});
+
+function renderCultistChoices(cultists) {
+  walletTitle.textContent = 'Choose your Cultist';
+  walletConnectBtn.hidden = true;
+  cultistGrid.hidden = false;
+  cultistGrid.innerHTML = '';
+  cultists.forEach((c) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'cultist-card';
+    card.textContent = c.name || `#${c.id}`;
+    card.addEventListener('click', () => {
+      chosenCultist = c;
+      [...cultistGrid.children].forEach((el) => el.classList.remove('sel'));
+      card.classList.add('sel');
+      walletEnterBtn.hidden = false;
+      walletEnterBtn.textContent = 'Enter the Sanctum';
+    });
+    cultistGrid.appendChild(card);
+  });
+  // (the chosen Cultist's NFT will drive the player's on-chain name/face once
+  // the collection is live; for now selecting it just carries the name in.)
+}
+
+walletEnterBtn.addEventListener('click', proceedIntoGame);
+walletBackBtn.addEventListener('click', () => {
+  walletOverlay.hidden = true;
+  if (scene && scene.resume) scene.resume();
+});
+
 async function afterBoot() {
   sfx.bootConfirm();
   try {
-    const player = await api.me();
-    revealTransition(() => enterCourtyard(player));
-  } catch {
-    try {
+    let player;
+    try { player = await api.me(); }
+    catch {
       const { name, sex } = randomIdentity();
       await api.register(name, sex, '');
-      const player = await api.me();
-      revealTransition(() => enterCourtyard(player));
-    } catch (err) {
-      showToast(err.message);
+      player = await api.me();
     }
+    revealTransition(() => enterEntrance(player));
+  } catch (err) {
+    showToast(err.message);
   }
 }
 
@@ -275,6 +396,9 @@ function powerOff() {
   leaderboardOverlay.hidden = true;
   mancalaOverlay.hidden = true;
   communionOverlay.hidden = true;
+  docsOverlay.hidden = true;
+  mintOverlay.hidden = true;
+  walletOverlay.hidden = true;
   drawOff();
   hint.textContent = 'Slide the switch to power on the console.';
 }
