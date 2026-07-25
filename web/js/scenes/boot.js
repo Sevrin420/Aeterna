@@ -20,6 +20,7 @@ export class BootScene {
   constructor({ onComplete }) {
     this.onComplete = onComplete;
     this.t = 0;
+    this.fadeIn = 2.0;       // screen fades up from black before the title drops
     this.fallDuration = 3.3; // slowed 200% (3x) from the original 1.1s drop
     this.landed = false;
     this.blink = 0;
@@ -31,14 +32,14 @@ export class BootScene {
 
   update(dt, input) {
     this.t += dt;
-    if (this.t >= this.fallDuration) this.landed = true;
+    if (this.t >= this.fadeIn + this.fallDuration) this.landed = true;
     if (!this.landed) {
-      // An early A-press (while the title is still falling) shouldn't sit
-      // queued and invisible until the animation happens to finish on its
-      // own -- that reads as an unresponsive button. Skip straight to the
+      // An early A-press (during the fade-in or while the title is still
+      // falling) shouldn't sit queued and invisible until the animation
+      // finishes -- that reads as an unresponsive button. Skip straight to the
       // landed state instead; a second press then starts the game.
       if (input.consumeAPress()) {
-        this.t = this.fallDuration;
+        this.t = this.fadeIn + this.fallDuration;
         this.landed = true;
       }
       return;
@@ -135,7 +136,8 @@ export class BootScene {
 
     const targetY = H * 0.42;
     const startY = -30;
-    const progress = Math.min(this.t / this.fallDuration, 1);
+    // the title only begins to fall once the 2s fade-in has elapsed
+    const progress = Math.min(Math.max((this.t - this.fadeIn) / this.fallDuration, 0), 1);
     const eased = easeOutBounce(progress);
     const y = startY + (targetY - startY) * eased;
 
@@ -169,6 +171,12 @@ export class BootScene {
       }
     }
     ctx.restore();
+
+    // fade the whole screen up from black over the first `fadeIn` seconds
+    if (this.t < this.fadeIn) {
+      ctx.fillStyle = `rgba(0,0,0,${1 - this.t / this.fadeIn})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 
   exit() {}

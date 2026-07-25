@@ -289,7 +289,45 @@ export class CourtyardScene {
         tc: c, tr: r, wait: Math.random() * 2,
       });
     }
+    for (const n of list) this._bakeCultist(n);
     return list;
+  }
+
+  // Pre-bake each NPC's character + regalia into 2x offscreen sprites (per
+  // direction and walk frame) ONCE at spawn. The crowd then costs a single
+  // drawImage per NPC per frame — no per-frame bezier/gradient work, which is
+  // what tanked the frame rate (and made input feel dead) at ?crowd=30.
+  _bakeCultist(n) {
+    const dirs = ['down', 'up', 'left', 'right'];
+    const targetH = 21;
+    const dims = {};
+    let maxW = 0, maxH = 0;
+    for (const dir of dirs) {
+      const frames = n.sheet[dir] || n.sheet.down;
+      dims[dir] = frames.map((fr) => {
+        const s = targetH / fr.lh, w = fr.lw * s, h = fr.lh * s;
+        maxW = Math.max(maxW, w); maxH = Math.max(maxH, h);
+        return { fr, w, h };
+      });
+    }
+    const padX = 22, padTop = 20, padBot = 8;
+    const BW = Math.ceil(maxW) + padX * 2, BH = Math.ceil(maxH) + padTop + padBot;
+    const ax = BW / 2, ay = BH - padBot;
+    n.bake = { BW, BH, ax, ay };
+    n.baked = {};
+    for (const dir of dirs) {
+      n.baked[dir] = dims[dir].map(({ fr, w, h }) => {
+        const cvs = document.createElement('canvas');
+        cvs.width = BW * RES; cvs.height = BH * RES;
+        const g = cvs.getContext('2d');
+        g.imageSmoothingEnabled = false; g.setTransform(RES, 0, 0, RES, 0, 0);
+        const top = ay - h;
+        drawRegaliaBack(g, ax, top, w, h, n.traits);
+        g.drawImage(fr, ax - w / 2, top, w, h);
+        drawRegaliaFront(g, ax, top, w, h, n.traits);
+        return cvs;
+      });
+    }
   }
 
   _updateCrowd(dt) {
@@ -319,17 +357,14 @@ export class CourtyardScene {
 
   _drawCultist(ctx, n) {
     const x = Math.round(n.x), groundY = Math.round(n.y) + 6;
-    const frames = n.sheet[n.dir] || n.sheet.down;
-    const idx = n.moving ? Math.floor(n.bob / 6) % 2 : Math.floor(this.t / 1.4) % 2;
-    const frame = frames[idx] || frames[0];
-    const targetH = 21, scale = targetH / frame.lh, w = frame.lw * scale, h = frame.lh * scale;
-    const top = groundY - h;
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath(); ctx.ellipse(x, groundY - 1, 5, 2, 0, 0, Math.PI * 2); ctx.fill();
-    drawRegaliaBack(ctx, x, top, w, h, n.traits);
+    const frames = n.baked[n.dir] || n.baked.down;
+    const idx = n.moving ? Math.floor(n.bob / 6) % 2 : Math.floor(this.t / 1.4) % 2;
+    const cvs = frames[idx] || frames[0];
+    const { BW, BH, ax, ay } = n.bake;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(frame, x - w / 2, top, w, h);
-    drawRegaliaFront(ctx, x, top, w, h, n.traits);
+    ctx.drawImage(cvs, x - ax, groundY - ay, BW, BH);
   }
 
   // Stepping onto a staircase tile drops (or raises) the player to the tile
@@ -393,14 +428,17 @@ export class CourtyardScene {
 
   async _handleGuru() {
     if (!this.holdingGift) { this.onToast('You have nothing to offer the Abbot.'); return; }
+    // optimistic: the gift leaves your hand instantly; reconcile the Devotion
+    // (and revert) once the server responds, so it doesn't feel laggy.
+    this.holdingGift = false;
+    sfx.gift();
     try {
       const res = await api.giftGive({ toGuru: true });
-      this.holdingGift = false;
       this.player.devotion += res.devotionGained;
       this.onPlayerUpdate(this.player);
-      sfx.gift();
       this.onToast(`The Abbot accepts your gift. +${res.devotionGained} Devotion`);
     } catch (e) {
+      this.holdingGift = true;
       sfx.error();
       this.onToast(e.message);
     }
@@ -423,14 +461,19 @@ export class CourtyardScene {
   }
 
   async _handlePickup(gift) {
+    if (this.holdingGift) return;
+    // optimistic: grab it instantly so there's no round-trip lag; revert if
+    // the server rejects (e.g. someone else already took it).
+    this.holdingGift = true;
+    this.gifts = this.gifts.filter((g) => g.id !== gift.id);
+    sfx.gift();
+    this.onToast('You pick up the gift.');
     try {
       await api.giftPickup(gift.id);
-      this.holdingGift = true;
-      this.gifts = this.gifts.filter((g) => g.id !== gift.id);
       if (this.socket) this.socket.emit('pickup_gift', { giftId: gift.id });
-      sfx.gift();
-      this.onToast('You pick up the gift.');
     } catch (e) {
+      this.holdingGift = false;
+      this._refreshGifts();
       sfx.error();
       this.onToast(e.message);
     }
@@ -438,13 +481,14 @@ export class CourtyardScene {
 
   async _handleDrop() {
     if (!this.holdingGift) return;
+    this.holdingGift = false; // optimistic
+    this.onToast('You set the gift down.');
     try {
       await api.giftDrop(this.pc.x / TILE, this.pc.y / TILE);
-      this.holdingGift = false;
       if (this.socket) this.socket.emit('drop_gift');
-      this.onToast('You set the gift down.');
       this._refreshGifts();
     } catch (e) {
+      this.holdingGift = true;
       sfx.error();
       this.onToast(e.message);
     }
@@ -1237,19 +1281,28 @@ export class CourtyardScene {
 
   // Ambient fireflies wandering slowly over the open exterior grounds.
   _drawFireflies(ctx) {
+    // one baked ember glow, reused for every mote (was a fresh radial gradient
+    // per mote per frame — needless allocation/GC churn every frame)
+    if (!this._ember) {
+      const s = 8, cv = document.createElement('canvas'); cv.width = cv.height = s;
+      const g = cv.getContext('2d');
+      const gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+      gr.addColorStop(0, 'rgba(210,70,40,1)');
+      gr.addColorStop(0.5, 'rgba(150,40,30,0.5)');
+      gr.addColorStop(1, 'rgba(150,40,30,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, s, s);
+      this._ember = cv;
+    }
     for (const f of this.fireflies) {
       const x = f.baseX + Math.sin(this.t * 0.4 + f.seed) * 6;
       const y = f.baseY - ((this.t * 3 + f.seed * 7) % 22); // embers drift upward
       const a = Math.max(0, 0.28 + Math.sin(this.t * 2 + f.seed * 2) * 0.28);
       if (a <= 0.01) continue;
-      const glow = ctx.createRadialGradient(x, y, 0, x, y, 3);
-      glow.addColorStop(0, `rgba(210,70,40,${a})`);
-      glow.addColorStop(0.5, `rgba(150,40,30,${a * 0.5})`);
-      glow.addColorStop(1, 'rgba(150,40,30,0)');
-      ctx.fillStyle = glow;
-      ctx.fillRect(x - 3, y - 3, 6, 6);
+      ctx.globalAlpha = a;
+      ctx.drawImage(this._ember, x - 3, y - 3, 6, 6);
+      ctx.globalAlpha = 1;
       ctx.fillStyle = `rgba(255,150,90,${Math.min(1, a * 1.3)})`;
-      ctx.beginPath(); ctx.arc(x, y, 0.6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(x - 0.5, y - 0.5, 1, 1);
     }
   }
 
