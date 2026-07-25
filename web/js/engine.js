@@ -3,6 +3,17 @@
 
 import { sfx } from './sfx.js';
 
+// On touch devices we drive the on-screen controls with Touch Events rather
+// than Pointer Events. Touch events are the most consistent virtual-control API
+// across mobile browsers (including privacy/in-app browsers like DuckDuckGo,
+// where Pointer Events + setPointerCapture and touch-action are unreliable and
+// a stray `pointercancel` kills a held press). Touch events are also implicitly
+// captured to the element the touch began on, so a finger that drifts off the
+// control keeps working without setPointerCapture. Desktop/mouse falls back to
+// pointer events.
+const HAS_TOUCH = typeof window !== 'undefined'
+  && ('ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0);
+
 export class Input {
   constructor() {
     this.dirs = { up: false, down: false, left: false, right: false };
@@ -43,25 +54,34 @@ export class Input {
   // centre, recomputed on every move.
   bindDpadZone(el) {
     const clear = () => { this.dirs.up = this.dirs.down = this.dirs.left = this.dirs.right = false; };
-    const from = (e) => {
+    // Steer from a screen point: direction is the dominant axis of the thumb's
+    // offset from the zone centre.
+    const from = (cx, cy) => {
       const r = el.getBoundingClientRect();
-      const nx = (e.clientX - r.left) / r.width - 0.5;
-      const ny = (e.clientY - r.top) / r.height - 0.5;
+      const nx = (cx - r.left) / r.width - 0.5;
+      const ny = (cy - r.top) / r.height - 0.5;
       clear();
       if (Math.abs(nx) < 0.08 && Math.abs(ny) < 0.08) return; // dead zone at centre
       if (Math.abs(nx) > Math.abs(ny)) this.dirs[nx < 0 ? 'left' : 'right'] = true;
       else this.dirs[ny < 0 ? 'up' : 'down'] = true;
     };
-    el.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-      el._pressed = true;
-      el.classList.add('is-down');
-      sfx.click();
-      from(e);
-    });
-    el.addEventListener('pointermove', (e) => { if (el._pressed) { e.preventDefault(); from(e); } });
-    ['pointerup', 'pointercancel'].forEach((ev) => el.addEventListener(ev, () => { el._pressed = false; el.classList.remove('is-down'); clear(); }));
+    const down = (cx, cy) => { el._pressed = true; el.classList.add('is-down'); sfx.click(); from(cx, cy); };
+    const up = () => { el._pressed = false; el.classList.remove('is-down'); clear(); };
+
+    if (HAS_TOUCH) {
+      el.addEventListener('touchstart', (e) => { e.preventDefault(); const t = e.changedTouches[0]; down(t.clientX, t.clientY); }, { passive: false });
+      el.addEventListener('touchmove', (e) => { if (!el._pressed) return; e.preventDefault(); const t = e.touches[0]; if (t) from(t.clientX, t.clientY); }, { passive: false });
+      el.addEventListener('touchend', (e) => { e.preventDefault(); up(); }, { passive: false });
+      el.addEventListener('touchcancel', up, { passive: false });
+    } else {
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        down(e.clientX, e.clientY);
+      });
+      el.addEventListener('pointermove', (e) => { if (el._pressed) { e.preventDefault(); from(e.clientX, e.clientY); } });
+      ['pointerup', 'pointercancel'].forEach((ev) => el.addEventListener(ev, up));
+    }
   }
 
   bindButton(el, which) {
@@ -76,20 +96,24 @@ export class Input {
       sfx.click();
     };
     const release = () => { el.classList.remove('is-down'); return which === 'a' ? (this.a = false) : (this.b = false); };
-    el.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      // Capture the pointer (the d-pad already does this): once the finger
-      // lands on the button, its events stay bound to the button even if the
-      // touch drifts a few px off the small hit circle, so the tap can't be
-      // silently retargeted to the console art behind it and lost.
-      try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-      press();
-    });
-    el.addEventListener('pointerup', release);
-    el.addEventListener('pointercancel', release);
-    // With capture held, pointerleave won't fire mid-press (so a drifting thumb
-    // no longer releases early); it only matters as a fallback if capture threw.
-    el.addEventListener('pointerleave', release);
+
+    if (HAS_TOUCH) {
+      // Touch events are implicitly captured to the touchstart target, so a
+      // finger drifting off the small button still fires touchend on it — the
+      // same robustness setPointerCapture gave us, but reliable everywhere.
+      el.addEventListener('touchstart', (e) => { e.preventDefault(); press(); }, { passive: false });
+      el.addEventListener('touchend', (e) => { e.preventDefault(); release(); }, { passive: false });
+      el.addEventListener('touchcancel', release, { passive: false });
+    } else {
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        press();
+      });
+      el.addEventListener('pointerup', release);
+      el.addEventListener('pointercancel', release);
+      el.addEventListener('pointerleave', release);
+    }
   }
 
   // Call once per frame after update() has consumed the "just pressed" edge.
