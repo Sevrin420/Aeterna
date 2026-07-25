@@ -1,10 +1,10 @@
 name: Deploy Aeterna Server
 
 on:
+  # any push to main ships: syncs code, restarts the server, keeps HTTPS up.
+  # (No path filter — web/ changes deploy too, not just server/.)
   push:
     branches: [main]
-    paths:
-      - 'server/**'
   workflow_dispatch: {}
 
 concurrency:
