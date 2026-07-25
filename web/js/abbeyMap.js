@@ -1,20 +1,19 @@
-// Procedurally-built abbey floor plan: cross-shaped church (west), a walled
-// garden (center) with a fountain, a kitchen (south of the garden), two
-// dormitories (east), connected by corridors, all sitting on open grounds
-// with a river along the south edge and a dock as the main entrance.
+// The unhallowed church — a death-cult sanctuary. No exterior at all: the
+// whole world is a dimly-lit stone church laid out as an INVERTED CROSS (a
+// long nave with a low transept and a short foot below it), surrounded by
+// pitch-black void. Two staircases descend to two separate basement crypts.
 //
-// Layout (room placement, not artwork) is inspired by a riverside-abbey
-// battle map the project owner shared — a licensed "Unbound Atlas" asset —
-// but every tile here is drawn in Aeterna's own procedural pixel style in
-// web/js/scenes/courtyard.js, not copied from that image.
+// Everything is drawn in Aeterna's own procedural pixel style in
+// web/js/scenes/courtyard.js from the tile grid + prop list below.
 
 export const TILE = 10;
 export const COLS = 46;
-export const ROWS = 42;
+export const ROWS = 58;
 
 export function h2(x, y) { return (((x * 73856093) ^ (y * 19349663)) >>> 0) % 97; }
 
 function blank() {
+  // fill the whole world with void; rooms are carved out of it
   return Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
 }
 
@@ -22,10 +21,8 @@ function fillRect(grid, x0, y0, x1, y1, ch) {
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) grid[y][x] = ch;
 }
 
-// Draws a wall ring around a room's outer footprint, but only on cells not
-// already claimed as floor by an overlapping room/corridor — this is what
-// lets two overlapping rectangles (nave + transept) merge into one open
-// cross-shaped interior, and lets corridors punch doors through walls.
+// Wall ring around a footprint, but only on cells still void — so an
+// overlapping rectangle (nave + transept) merges into one open interior.
 function wallRing(grid, x0, y0, x1, y1) {
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
@@ -38,31 +35,20 @@ function wallRing(grid, x0, y0, x1, y1) {
 function buildGrid() {
   const grid = blank();
 
-  // --- interiors first (order controls which room "wins" an overlap) ---
-  fillRect(grid, 5, 3, 11, 32, '.');    // church nave
-  fillRect(grid, 2, 15, 14, 19, '.');   // church transept (crosses the nave)
-  fillRect(grid, 18, 8, 28, 22, 'g');   // garden
-  fillRect(grid, 18, 25, 28, 31, 'k');  // kitchen
-  fillRect(grid, 32, 3, 43, 15, 'd');   // dorm north
-  fillRect(grid, 32, 19, 43, 32, 'd');  // dorm south
-  fillRect(grid, 15, 16, 17, 18, '.');  // corridor: church <-> garden
-  fillRect(grid, 29, 8, 31, 10, '.');   // corridor: garden <-> dorm north
-  fillRect(grid, 29, 25, 31, 27, '.');  // corridor: kitchen <-> dorm south
-  fillRect(grid, 22, 22, 24, 25, '.');  // corridor: garden <-> kitchen
+  // --- INVERTED CROSS church (floors first) ---
+  fillRect(grid, 18, 4, 25, 34, '.');   // long nave (vertical stem, altar at top)
+  fillRect(grid, 7, 23, 36, 28, '.');   // transept (crossbar), set LOW -> inverted cross
+  // (rows 28-34 of the nave form the short foot below the crossbar)
 
-  // --- wall rings (doors appear automatically where a corridor already floored the seam) ---
-  wallRing(grid, 4, 2, 12, 33);   // nave
-  wallRing(grid, 1, 14, 15, 20);  // transept
-  wallRing(grid, 17, 7, 29, 23);  // garden
-  wallRing(grid, 17, 24, 29, 32); // kitchen
-  wallRing(grid, 31, 2, 44, 16);  // dorm north
-  wallRing(grid, 31, 18, 44, 33); // dorm south
+  // --- two basement crypts, isolated boxes in the void (reached by stairs) ---
+  fillRect(grid, 5, 43, 19, 54, 'c');   // west crypt (the ossuary)
+  fillRect(grid, 26, 43, 40, 54, 'c');  // east crypt (the ritual chamber)
 
-  // main entrance: south end of the nave, onto a dock leading to the river
-  fillRect(grid, 7, 33, 9, 33, '.');
-  fillRect(grid, 7, 34, 9, 40, 'w');
-  fillRect(grid, 0, 38, COLS - 1, ROWS - 1, '~');
-  fillRect(grid, 7, 38, 9, 40, 'w'); // dock continues as a short pier
+  // --- wall rings ---
+  wallRing(grid, 17, 3, 26, 35);   // nave
+  wallRing(grid, 6, 22, 37, 29);   // transept
+  wallRing(grid, 4, 42, 20, 55);   // west crypt
+  wallRing(grid, 25, 42, 41, 55);  // east crypt
 
   return grid.map((row) => row.join(''));
 }
@@ -72,74 +58,47 @@ export const GRID = buildGrid();
 export const PROPS = [];
 function prop(type, col, row, solid = true, extra = {}) { PROPS.push({ type, col, row, solid, ...extra }); }
 
-// Garden: fountain (3x3, center tile is the animated anchor), benches, corner pillars+lanterns
-prop('fountain', 23, 15);
-for (let y = 14; y <= 16; y++) for (let x = 22; x <= 24; x++) {
-  if (x === 23 && y === 15) continue;
-  prop('fountain-block', x, y);
-}
-prop('bench', 20, 11);
-prop('bench', 26, 19);
-prop('pillar', 19, 9);
-prop('pillar', 27, 9);
-prop('pillar', 19, 21);
-prop('pillar', 27, 21);
+// --- CHURCH ---
+prop('altar', 21, 4);                       // altar with an inverted cross behind it
+prop('torch', 18, 4); prop('torch', 24, 4); // flanking the altar
+prop('torch', 7, 26); prop('torch', 36, 26);// transept arm ends
+prop('bulletin', 18, 6);
+// black votive candles lining the nave (the church's dim light)
+for (const [c, r] of [[18, 9], [25, 9], [18, 16], [25, 16], [19, 30], [23, 30]]) prop('candle', c, r, false);
+// a couple of pews down in the foot of the cross
+prop('pew', 19, 32); prop('pew', 23, 32);
+// staircases DOWN into the two crypts (walkable — step on to descend)
+prop('stair-down', 8, 25, false, { dest: { col: 7, row: 45 } });   // -> west crypt
+prop('stair-down', 35, 25, false, { dest: { col: 38, row: 45 } }); // -> east crypt
+// the way out, at the foot of the cross
+prop('door', 21, 34, false);
 
-// Church: altar + a few large pews flanking the nave (aisle stays clear at
-// col 8). Just three rows a side — sparse and readable, not a sea of benches.
-prop('altar', 8, 4);
-for (const r of [8, 14, 20]) { prop('pew', 6, r); prop('pew', 10, r); }
-prop('torch', 6, 3);
-prop('torch', 10, 3);
-
-// Kitchen: one big hearth/stove (the counter row is gone — one strong item)
-prop('stove', 23, 28);
-
-// Dorms: two big beds per dormitory along the west wall
-prop('bed', 33, 5);
-prop('bed', 33, 12);
-prop('bed', 33, 22);
-prop('bed', 33, 29);
-
-// Season/day bulletin, just off the dock near the gate
-prop('bulletin', 5, 34);
-
-// Ownable Cathedral Room alcoves (GDD section 11), tucked into the transept's
-// west and east arms, clear of the confession booth and torches.
+// Ownable Cathedral Room alcoves, set into the nave walls.
 export const CATHEDRAL_ALCOVES = [
-  { id: 'room-1', col: 2, row: 15 },
-  { id: 'room-2', col: 2, row: 19 },
-  { id: 'room-3', col: 14, row: 15 },
-  { id: 'room-4', col: 14, row: 19 },
+  { id: 'room-1', col: 18, row: 12 },
+  { id: 'room-2', col: 25, row: 12 },
+  { id: 'room-3', col: 18, row: 19 },
+  { id: 'room-4', col: 25, row: 19 },
 ];
 for (const a of CATHEDRAL_ALCOVES) prop('cathedral-alcove', a.col, a.row, false, { roomId: a.id });
 
-// Soul-binding altar (dormant until Season 2 unlocks Soul slots) and a
-// Bloodline nursery shrine — both season-gated systems from the GDD that
-// aren't implemented server-side yet, so these are physically present but
-// inert until then.
-prop('soul-altar', 36, 4, false);
-prop('nursery', 36, 20, false);
+// --- WEST CRYPT (the ossuary) ---
+prop('stair-up', 7, 45, false, { dest: { col: 8, row: 26 } });
+prop('ossuary', 6, 44); prop('ossuary', 17, 44); prop('ossuary', 15, 53);
+prop('candle', 18, 47, false); prop('candle', 6, 51, false);
+prop('nursery', 16, 51);
 
-// Mancala wager table (GDD section 10), in the kitchen's open floor
-prop('mancala-table', 20, 30);
+// --- EAST CRYPT (the ritual chamber) ---
+prop('stair-up', 38, 45, false, { dest: { col: 35, row: 26 } });
+prop('ritual-circle', 32, 51, false);       // glowing sigil on the floor
+prop('soul-altar', 32, 47, false);
+prop('mancala-table', 36, 52);
+for (const [c, r] of [[28, 45], [40, 45], [28, 53], [40, 53]]) prop('candle', c, r, false);
 
-// A handful of large rocks/shrubs on the open grounds for a little life —
-// deliberately sparse (was dozens of tiny specks; now ~8 bigger ones).
-{
-  let placed = 0;
-  for (let i = 0; i < 60 && placed < 8; i++) {
-    const c = h2(i * 7, 3) % COLS;
-    const r = h2(3, i * 7) % ROWS;
-    if (GRID[r][c] !== ' ') continue;
-    if (r >= 33) continue;
-    if (h2(i, i) % 2 === 0) prop('rock', c, r, true);
-    else prop('bush', c, r, false);
-    placed++;
-  }
-}
+// Stairs the player can step onto to teleport between the church and crypts.
+export const STAIRS = PROPS.filter((p) => p.type === 'stair-down' || p.type === 'stair-up');
 
-const SOLID_CHARS = new Set(['#', '~']);
+const SOLID_CHARS = new Set(['#', ' ']); // walls and the surrounding void block movement
 const solidProps = new Set();
 for (const p of PROPS) if (p.solid) solidProps.add(`${p.col},${p.row}`);
 

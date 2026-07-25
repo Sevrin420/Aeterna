@@ -6,7 +6,7 @@
 import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
 import { drawCharacter, getCultistSprite, getGuruSprite } from '../spritesheet.js';
-import { TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES } from '../abbeyMap.js';
+import { TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS } from '../abbeyMap.js';
 
 const W = 208, H = 208; // logical screen size (canvas backing store is RES x this)
 const RES = 2;          // must match the 2x transform main.js sets each frame
@@ -30,17 +30,20 @@ function drawGrass(ctx, x, y, c, r) {
 }
 
 const STATIONS = [
-  { id: 'pray', kind: 'duty', label: 'Pray', x: px(8), y: px(3), r: 13 },
-  { id: 'garden', kind: 'duty', label: 'Tend Garden', x: px(20), y: px(9), r: 12 },
-  { id: 'candles', kind: 'duty', label: 'Light Candles', x: px(8), y: px(30), r: 13 },
-  { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: px(23), y: px(18), r: 14 },
-  { id: 'confession', kind: 'confession', label: 'Confess', x: px(4), y: px(17), r: 12 },
-  { id: 'leaderboard', kind: 'leaderboard', label: 'View Leaderboard', x: px(33), y: px(9), r: 12 },
-  { id: 'gate', kind: 'gate', label: 'Save & Exit [B]', x: px(8), y: px(35), r: 18 },
-  { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: px(5), y: px(34), r: 12 },
-  { id: 'soul-altar', kind: 'soul-altar', label: 'Approach the Soul Altar', x: px(36), y: px(4), r: 12 },
-  { id: 'nursery', kind: 'nursery', label: 'Approach the Nursery', x: px(36), y: px(20), r: 12 },
-  { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(20), y: px(30), r: 12 },
+  // church (inverted-cross nave + transept)
+  { id: 'pray', kind: 'duty', label: 'Kneel & Pray', x: px(21), y: px(5), r: 13 },
+  { id: 'candles', kind: 'duty', label: 'Light the Black Candles', x: px(23), y: px(16), r: 13 },
+  { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: px(21), y: px(9), r: 14 },
+  { id: 'confession', kind: 'confession', label: 'Confess', x: px(11), y: px(25), r: 12 },
+  { id: 'leaderboard', kind: 'leaderboard', label: 'View the Devout', x: px(31), y: px(25), r: 12 },
+  { id: 'gate', kind: 'gate', label: 'Save & Exit [B]', x: px(21), y: px(33), r: 16 },
+  { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: px(18), y: px(6), r: 12 },
+  // west crypt (the ossuary)
+  { id: 'garden', kind: 'duty', label: 'Tend the Ossuary', x: px(13), y: px(48), r: 12 },
+  { id: 'nursery', kind: 'nursery', label: 'Approach the Nursery', x: px(16), y: px(51), r: 12 },
+  // east crypt (the ritual chamber)
+  { id: 'soul-altar', kind: 'soul-altar', label: 'Approach the Soul Altar', x: px(32), y: px(47), r: 12 },
+  { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(36), y: px(52), r: 12 },
   ...CATHEDRAL_ALCOVES.map((a) => ({
     id: a.id, kind: 'cathedral', roomId: a.id, label: 'Claim this Alcove',
     x: px(a.col), y: px(a.row), r: 10,
@@ -73,20 +76,21 @@ export class CourtyardScene {
     this.remotePlayers = new Map(); // id -> { x, y, dir, name, prefix, emoji }
 
     this.pc = {
-      x: px(8), y: px(36),
+      x: px(21), y: px(32), // just inside the door, at the foot of the cross
       w: 7, h: 7,
       speed: 46,
       dir: 'up',
       moving: false,
       bob: 0,
     };
+    this._stairLock = false; // true while standing on the stair we just used
     this.cam = { x: 0, y: 0 };
     this.footDust = []; // { x, y, t } fading dust puffs left by the player's steps
     this._dustTimer = 0;
     this.fireflies = this._initFireflies();
     this._updateCamera();
 
-    this.entryMessage = `You stand within the abbey walls, ${player.prefix} ${player.name}.`;
+    this.entryMessage = `The candles gutter. You enter the unhallowed nave, ${player.prefix} ${player.name}.`;
     this.messageTimer = 4;
     this.lastEmittedMove = 0;
   }
@@ -220,14 +224,15 @@ export class CourtyardScene {
   }
 
   // Scatters a handful of fireflies across the open exterior grounds
-  // (tiles the map generator left untouched — not inside any room, corridor,
-  // or the river/dock band) for ambient nighttime atmosphere.
+  // A few dim embers/ash motes drifting over the church & crypt floors for a
+  // heavy, sacred-dread atmosphere (replaces the old outdoor fireflies).
   _initFireflies() {
     const list = [];
-    for (let i = 0; i < 60 && list.length < 16; i++) {
+    for (let i = 0; i < 120 && list.length < 12; i++) {
       const c = h2(i * 11, 41) % COLS;
       const r = h2(41, i * 11) % ROWS;
-      if (tileAt(c, r) !== ' ') continue;
+      const ch = tileAt(c, r);
+      if (ch !== '.' && ch !== 'c') continue;
       list.push({ baseX: c * TILE + TILE / 2, baseY: r * TILE + TILE / 2, seed: i });
     }
     return list;
@@ -256,6 +261,22 @@ export class CourtyardScene {
   _updateCamera() {
     this.cam.x = Math.max(0, Math.min(MAP_W - W, this.pc.x - W / 2));
     this.cam.y = Math.max(0, Math.min(MAP_H - H, this.pc.y - H / 2));
+  }
+
+  // Stepping onto a staircase tile drops (or raises) the player to the tile
+  // it connects to — this is how the church and the two basement crypts link.
+  // A lock keeps you from bouncing straight back: it clears only once you walk
+  // off the destination stair.
+  _checkStairs() {
+    const pcol = Math.floor(this.pc.x / TILE), prow = Math.floor(this.pc.y / TILE);
+    const onStair = STAIRS.find((s) => s.col === pcol && s.row === prow);
+    if (!onStair) { this._stairLock = false; return; }
+    if (this._stairLock) return;
+    this.pc.x = px(onStair.dest.col);
+    this.pc.y = px(onStair.dest.row);
+    this._stairLock = true; // don't re-trigger the stair we just landed on
+    this._updateCamera();
+    sfx.click();
   }
 
   _nearestStation() {
@@ -461,6 +482,7 @@ export class CourtyardScene {
         this.socket.emit('move', { x: p.x, y: p.y, dir: p.dir });
       }
     }
+    this._checkStairs();
     this._updateCamera(dt);
 
     for (let i = this.footDust.length - 1; i >= 0; i--) {
@@ -535,74 +557,45 @@ export class CourtyardScene {
         const x = c * TILE, y = r * TILE;
         const bhash = h2(c, r);
         if (ch === '#') {
+          // near-black stone wall — the dim church swallows most of the light
           const shade = bhash % 3;
-          // dark masonry — deliberately much darker than the light floor so a
-          // player can tell at a glance what's a solid wall vs. walkable stone
-          ctx.fillStyle = shade === 0 ? '#565a5f' : shade === 1 ? '#4d5156' : '#515559';
+          ctx.fillStyle = shade === 0 ? '#211f28' : shade === 1 ? '#1b1a22' : '#1e1d26';
           ctx.fillRect(x, y, TILE, TILE);
-          // lit top face (the cap of the wall catching light) reads as height
-          ctx.fillStyle = 'rgba(150,156,158,0.55)';
-          ctx.fillRect(x, y, TILE, 3);
-          // deep shadow where the wall base meets the floor
-          ctx.fillStyle = 'rgba(10,11,13,0.5)';
+          // a whisper of a cold top edge so blocks still read as masonry
+          ctx.fillStyle = 'rgba(90,92,110,0.22)';
+          ctx.fillRect(x, y, TILE, 1.4);
+          ctx.fillStyle = 'rgba(0,0,0,0.55)';
           ctx.fillRect(x, y + TILE - 2, TILE, 2);
-          // faint mortar seam between blocks
-          ctx.fillStyle = 'rgba(18,19,21,0.3)';
           ctx.fillRect(x + TILE - 1, y, 1, TILE);
-          // moss creeping onto wall tiles that border the garden
-          const nearGarden = tileAt(c, r - 1) === 'g' || tileAt(c, r + 1) === 'g' ||
-            tileAt(c - 1, r) === 'g' || tileAt(c + 1, r) === 'g';
-          if (nearGarden && bhash % 3 !== 0) {
-            ctx.fillStyle = 'rgba(70,150,60,0.35)';
-            ctx.fillRect(x, y + TILE - 3, TILE, 3);
-          }
-        } else if (ch === 'g') {
-          drawGrass(ctx, x, y, c, r);
-        } else if (ch === 'k' || ch === 'd') {
-          // calm single-tone timber (kitchen/dorm) — muted, low contrast so it
-          // doesn't add a loud orange to the palette; a single soft plank seam
-          ctx.fillStyle = ((r + c) % 2 === 0) ? '#8a6a44' : '#82633e';
-          ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = 'rgba(20,12,6,0.18)';
-          ctx.fillRect(x, y + TILE - 1, TILE, 1);
-        } else if (ch === 'w') {
-          // dock timber — same muted family, a touch lighter than interior wood
-          ctx.fillStyle = ((r + c) % 2 === 0) ? '#9a774c' : '#8f6e45';
-          ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = 'rgba(20,12,6,0.16)';
-          ctx.fillRect(x, y + TILE - 1, TILE, 1);
-        } else if (ch === '~') {
-          const shimmer = (Math.sin(this.t * 2 + c * 0.4 + r * 0.3) + 1) / 2;
-          ctx.fillStyle = `rgb(${40 + shimmer * 20}, ${70 + shimmer * 30}, ${95 + shimmer * 35})`;
-          ctx.fillRect(x, y, TILE, TILE);
         } else if (ch === '.') {
-          // flat limestone flagstone (English abbey): calm grey with gentle
-          // per-tile colour mottling and a single thin grout seam -- matches
-          // the flat cartoon look of the grass, NO raised-button emboss
+          // cold, dark church flagstone — walkable but shadowed
           const shade = bhash % 3;
-          ctx.fillStyle = shade === 0 ? '#9b998e' : shade === 1 ? '#918f85' : '#96948b';
+          ctx.fillStyle = shade === 0 ? '#3b3944' : shade === 1 ? '#34323d' : '#38363f';
           ctx.fillRect(x, y, TILE, TILE);
-          if (bhash % 4 === 0) { ctx.fillStyle = 'rgba(255,255,248,0.07)'; ctx.fillRect(x + 2, y + 2, 3, 3); }
-          if (bhash % 9 === 0) { ctx.fillStyle = 'rgba(40,38,34,0.10)'; ctx.fillRect(x + 4, y + 5, 3, 2); }
-          // thin, low-contrast grout on the bottom/right edge only
-          ctx.fillStyle = 'rgba(58,56,50,0.26)';
+          if (bhash % 7 === 0) { ctx.fillStyle = 'rgba(120,120,140,0.05)'; ctx.fillRect(x + 2, y + 2, 3, 3); }
+          if (bhash % 11 === 0) { ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(x + 4, y + 5, 3, 2); }
+          ctx.fillStyle = 'rgba(0,0,0,0.32)'; // grout
           ctx.fillRect(x, y + TILE - 1, TILE, 1);
           ctx.fillRect(x + TILE - 1, y, 1, TILE);
-          // worn, lighter stone either side of the aisle carpet from foot traffic
-          if (c === 7 || c === 9) {
-            ctx.fillStyle = 'rgba(230,228,218,0.10)';
-            ctx.fillRect(x, y, TILE, TILE);
-          }
+        } else if (ch === 'c') {
+          // basement crypt floor — earthen, even darker than the church stone
+          const shade = bhash % 3;
+          ctx.fillStyle = shade === 0 ? '#2a2621' : shade === 1 ? '#24211c' : '#272420';
+          ctx.fillRect(x, y, TILE, TILE);
+          if (bhash % 6 === 0) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(x + 3, y + 4, 3, 2); }
+          if (bhash % 13 === 0) { ctx.fillStyle = 'rgba(90,70,50,0.10)'; ctx.fillRect(x + 5, y + 2, 2, 2); }
+          ctx.fillStyle = 'rgba(0,0,0,0.30)';
+          ctx.fillRect(x, y + TILE - 1, TILE, 1);
         } else {
-          // exterior grass — identical to the garden so the whole outdoors
-          // reads as one calm surface (no competing greens)
-          drawGrass(ctx, x, y, c, r);
+          // the void beyond the walls — pure black
+          ctx.fillStyle = '#050506';
+          ctx.fillRect(x, y, TILE, TILE);
         }
       }
     }
-    // aisle carpet down the nave
-    ctx.fillStyle = 'rgba(122, 30, 30, 0.55)';
-    ctx.fillRect(px(8) - 2, 3 * TILE, 4, 30 * TILE);
+    // blood-red aisle runner down the nave of the inverted cross
+    ctx.fillStyle = 'rgba(96, 16, 20, 0.6)';
+    ctx.fillRect(px(21) - 2, 4 * TILE, 4, 30 * TILE);
   }
 
   // Soft ellipse shadow, offset down-right to imply one consistent light
@@ -743,39 +736,40 @@ export class CourtyardScene {
         break;
       }
       case 'altar': {
-        // large stone altar: draped white cloth, gold hem, standing cross
+        // dark death-cult altar: black slab, blood-red glow, INVERTED cross
         this._dropShadow(ctx, x, y + 7, 12, 3.2);
         const glowA = 0.5 + Math.sin(this.t * 2) * 0.25;
-        const pool = ctx.createRadialGradient(x, y - 8, 1, x, y - 8, 20);
-        pool.addColorStop(0, `rgba(233,196,104,${0.16 + glowA * 0.08})`);
-        pool.addColorStop(1, 'rgba(233,196,104,0)');
+        const pool = ctx.createRadialGradient(x, y - 8, 1, x, y - 8, 22);
+        pool.addColorStop(0, `rgba(200,30,30,${0.16 + glowA * 0.10})`);
+        pool.addColorStop(1, 'rgba(200,30,30,0)');
         ctx.fillStyle = pool;
-        ctx.fillRect(x - 20, y - 26, 40, 34);
-        ctx.fillStyle = '#6f6a60';                 // stone body
+        ctx.fillRect(x - 22, y - 28, 44, 36);
+        ctx.fillStyle = '#26232a';                 // black stone body
         ctx.fillRect(x - 10, y - 2, 20, 10);
-        ctx.fillStyle = '#847e73';
+        ctx.fillStyle = '#332f38';
         ctx.fillRect(x - 10, y - 2, 20, 2);
-        ctx.fillStyle = '#494539';
+        ctx.fillStyle = '#141217';
         ctx.fillRect(x - 10, y + 6, 20, 2);
-        ctx.fillStyle = '#ece6d4';                 // white cloth
+        ctx.fillStyle = '#3a1116';                 // dark blood-red cloth
         ctx.fillRect(x - 11, y - 5, 22, 4);
-        ctx.fillStyle = '#d7cfb8';
-        ctx.fillRect(x - 11, y - 1.4, 22, 1.2);
-        ctx.fillStyle = '#c9a13b';                 // gold hem
+        ctx.fillStyle = '#551820';
+        ctx.fillRect(x - 11, y - 5, 22, 1.2);
+        ctx.fillStyle = '#7a1f26';
         ctx.fillRect(x - 11, y - 0.4, 22, 1);
-        ctx.fillStyle = '#c9a13b';                 // standing cross
-        ctx.fillRect(x - 1, y - 18, 2, 13);
-        ctx.fillRect(x - 4.5, y - 14, 9, 2);
-        ctx.fillStyle = '#e6c766';
-        ctx.fillRect(x - 1, y - 18, 1, 13);
-        ctx.fillStyle = `rgba(233,196,104,${glowA})`;
-        ctx.beginPath(); ctx.arc(x, y - 5, 2.2, 0, Math.PI * 2); ctx.fill();
+        // INVERTED cross (crossbar low on the stem), tarnished iron
+        ctx.fillStyle = '#8f8a97';
+        ctx.fillRect(x - 1, y - 20, 2, 15);
+        ctx.fillRect(x - 4.5, y - 9, 9, 2);
+        ctx.fillStyle = 'rgba(210,40,40,0.5)';     // faint red edge-light
+        ctx.fillRect(x - 1, y - 20, 1, 15);
+        ctx.fillStyle = `rgba(210,40,40,${glowA})`; // ember at its foot
+        ctx.beginPath(); ctx.arc(x, y - 4, 2.2, 0, Math.PI * 2); ctx.fill();
         for (let i = 0; i < 2; i++) {
           const phase = (this.t * 0.2 + i * 0.5) % 1;
           const sx = x + Math.sin(this.t * 0.6 + i * 2) * (2 + phase * 3);
-          const sy = y - 6 - phase * 16;
-          const sa = Math.sin(phase * Math.PI) * 0.2;
-          ctx.fillStyle = `rgba(220,215,200,${sa})`;
+          const sy = y - 6 - phase * 18;
+          const sa = Math.sin(phase * Math.PI) * 0.22;
+          ctx.fillStyle = `rgba(200,60,50,${sa})`;
           ctx.beginPath(); ctx.arc(sx, sy, 1 + phase * 1.5, 0, Math.PI * 2); ctx.fill();
         }
         break;
@@ -916,6 +910,102 @@ export class CourtyardScene {
           ctx.beginPath(); ctx.arc(x + i, y, 1.4, 0, Math.PI * 2); ctx.fill();
         }
         break;
+      case 'candle': {
+        // a black votive candle with a small warm flame + floor light pool
+        const flick = 0.7 + Math.sin(this.t * 11 + p.col * 2.3 + p.row) * 0.2;
+        const pool = ctx.createRadialGradient(x, y + 2, 0.5, x, y + 2, 12);
+        pool.addColorStop(0, `rgba(255,170,80,${0.12 + flick * 0.08})`);
+        pool.addColorStop(1, 'rgba(255,170,80,0)');
+        ctx.fillStyle = pool;
+        ctx.fillRect(x - 12, y - 10, 24, 24);
+        ctx.fillStyle = '#161318';                 // wax stick
+        ctx.fillRect(x - 1.2, y - 4, 2.4, 7);
+        ctx.fillStyle = '#0d0b10';                 // base
+        ctx.fillRect(x - 2.4, y + 3, 4.8, 1.6);
+        ctx.fillStyle = `rgba(255,190,110,${flick})`; // flame
+        ctx.beginPath(); ctx.ellipse(x, y - 6, 1.1 * flick, 2.3 * flick, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(255,240,200,${flick})`;
+        ctx.beginPath(); ctx.arc(x, y - 5.5, 0.6, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      case 'stair-down': {
+        // dark stone steps descending into the crypt
+        this._dropShadow(ctx, x, y + 5, 7, 2.2);
+        ctx.fillStyle = '#0a090c';                 // mouth of the stairwell
+        ctx.fillRect(x - 6, y - 5, 12, 12);
+        for (let i = 0; i < 4; i++) {              // receding lit step edges
+          const a = 0.5 - i * 0.11;
+          ctx.fillStyle = `rgba(120,120,140,${a})`;
+          ctx.fillRect(x - 6 + i, y - 5 + i * 2.4, 12 - i * 2, 1.2);
+        }
+        ctx.fillStyle = 'rgba(200,40,40,0.10)';    // faint red glow from below
+        ctx.fillRect(x - 5, y + 3, 10, 3);
+        break;
+      }
+      case 'stair-up': {
+        // stone steps rising back toward the church
+        this._dropShadow(ctx, x, y + 5, 7, 2.2);
+        ctx.fillStyle = '#14121a';
+        ctx.fillRect(x - 6, y - 5, 12, 12);
+        for (let i = 0; i < 4; i++) {
+          const a = 0.25 + i * 0.10;
+          ctx.fillStyle = `rgba(150,150,170,${a})`;
+          ctx.fillRect(x - 6 + i, y + 4 - i * 2.4, 12 - i * 2, 1.2);
+        }
+        break;
+      }
+      case 'door': {
+        // the way out — a heavy arched door at the foot of the cross
+        this._dropShadow(ctx, x, y + 6, 8, 2.4);
+        ctx.fillStyle = '#0c0a10';                 // dark doorway
+        ctx.fillRect(x - 7, y - 12, 14, 18);
+        ctx.beginPath(); ctx.arc(x, y - 12, 7, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = '#2c1d12';                 // door planks
+        ctx.fillRect(x - 5, y - 9, 10, 14);
+        ctx.beginPath(); ctx.arc(x, y - 9, 5, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = 'rgba(20,14,9,0.9)';       // plank seams
+        ctx.fillRect(x - 1.5, y - 12, 0.8, 17);
+        ctx.fillRect(x + 1.5, y - 12, 0.8, 17);
+        ctx.fillStyle = '#6a5230';                 // iron ring handle
+        ctx.beginPath(); ctx.arc(x + 3, y - 1, 1.1, 0, Math.PI * 2); ctx.stroke();
+        break;
+      }
+      case 'ossuary': {
+        // a pile of skulls & bones
+        this._dropShadow(ctx, x, y + 3, 7, 2.2);
+        ctx.fillStyle = '#c9c2ad';
+        for (const [sx, sy, rr] of [[-4, 1, 2.3], [3, 1, 2.3], [-1, -2, 2.6], [0, 3, 2.1]]) {
+          ctx.beginPath(); ctx.arc(x + sx, y + sy, rr, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.fillStyle = '#2a251c';                 // eye sockets
+        for (const [sx, sy] of [[-4.7, 1], [-3.2, 1], [2.3, 1], [3.8, 1], [-1.7, -2], [-0.3, -2]]) {
+          ctx.fillRect(x + sx, y + sy - 0.4, 1, 1.2);
+        }
+        ctx.fillStyle = '#a89f88';                 // a couple of long bones
+        ctx.fillRect(x - 6, y + 4, 12, 1.4);
+        break;
+      }
+      case 'ritual-circle': {
+        // a glowing red sigil inscribed on the crypt floor
+        const puls = 0.4 + Math.sin(this.t * 1.6) * 0.25;
+        ctx.strokeStyle = `rgba(200,40,40,${0.5 + puls * 0.4})`;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.stroke();
+        // inverted five-point star
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const a = -Math.PI / 2 + Math.PI + (i * 4 * Math.PI) / 5; // point-down
+          const px2 = x + Math.cos(a) * 8, py2 = y + Math.sin(a) * 8;
+          if (i === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+        }
+        ctx.closePath(); ctx.stroke();
+        const pool = ctx.createRadialGradient(x, y, 1, x, y, 12);
+        pool.addColorStop(0, `rgba(200,30,30,${0.10 + puls * 0.08})`);
+        pool.addColorStop(1, 'rgba(200,30,30,0)');
+        ctx.fillStyle = pool; ctx.fillRect(x - 12, y - 12, 24, 24);
+        break;
+      }
     }
   }
 
@@ -923,15 +1013,22 @@ export class CourtyardScene {
     ctx.save();
     ctx.translate(s.x, s.y);
     if (s.id === 'garden') {
+      // the ossuary reliquary you tend: a stone trough of skulls, lit red
+      // when tended today
       this._dropShadow(ctx, 0, 5, 9, 2.4);
-      ctx.fillStyle = '#3a2c18';
+      ctx.fillStyle = '#201d18';
       ctx.fillRect(-8, -3, 16, 8);
-      const leafColor = this.player.garden_today ? '#7fd68a' : '#4f8b52';
-      ctx.fillStyle = leafColor;
-      for (let i = -6; i <= 6; i += 4) {
-        ctx.beginPath();
-        ctx.ellipse(i, -3 + Math.sin(this.t * 2 + i) * 0.6, 2, 3.4, 0, 0, Math.PI * 2);
-        ctx.fill();
+      ctx.fillStyle = '#141210';
+      ctx.fillRect(-8, -3, 16, 1.4);
+      const tended = this.player.garden_today;
+      ctx.fillStyle = tended ? '#e6ddc6' : '#8f8874';
+      for (let i = -5; i <= 5; i += 3.4) {
+        ctx.beginPath(); ctx.arc(i, -2, 1.8, 0, Math.PI * 2); ctx.fill();
+      }
+      if (tended) {
+        const g = 0.4 + Math.sin(this.t * 3) * 0.25;
+        ctx.fillStyle = `rgba(200,40,40,${g})`;
+        ctx.fillRect(-8, 3, 16, 1.4);
       }
     } else if (s.id === 'candles') {
       this._dropShadow(ctx, 0, 7, 3, 1.6);
@@ -985,7 +1082,7 @@ export class CourtyardScene {
       ctx.fillStyle = '#8a6a34';
       for (let i = -3; i <= 3; i += 3) ctx.fillRect(-4, i, 8, 1);
     } else if (s.id === 'pray') {
-      ctx.fillStyle = this.player.pray_today ? '#8fe0c8' : '#e9c468';
+      ctx.fillStyle = this.player.pray_today ? '#d24b4b' : '#7a1f26';
       const glow = 0.6 + Math.sin(this.t * 4) * 0.25;
       ctx.globalAlpha = glow;
       ctx.beginPath();
@@ -1070,18 +1167,18 @@ export class CourtyardScene {
   // Ambient fireflies wandering slowly over the open exterior grounds.
   _drawFireflies(ctx) {
     for (const f of this.fireflies) {
-      const x = f.baseX + Math.sin(this.t * 0.6 + f.seed) * 8;
-      const y = f.baseY + Math.cos(this.t * 0.5 + f.seed * 1.3) * 6;
-      const a = Math.max(0, 0.4 + Math.sin(this.t * 3 + f.seed * 2) * 0.45);
+      const x = f.baseX + Math.sin(this.t * 0.4 + f.seed) * 6;
+      const y = f.baseY - ((this.t * 3 + f.seed * 7) % 22); // embers drift upward
+      const a = Math.max(0, 0.28 + Math.sin(this.t * 2 + f.seed * 2) * 0.28);
       if (a <= 0.01) continue;
-      const glow = ctx.createRadialGradient(x, y, 0, x, y, 4);
-      glow.addColorStop(0, `rgba(230,255,160,${a})`);
-      glow.addColorStop(0.4, `rgba(220,255,150,${a * 0.5})`);
-      glow.addColorStop(1, 'rgba(220,255,150,0)');
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, 3);
+      glow.addColorStop(0, `rgba(210,70,40,${a})`);
+      glow.addColorStop(0.5, `rgba(150,40,30,${a * 0.5})`);
+      glow.addColorStop(1, 'rgba(150,40,30,0)');
       ctx.fillStyle = glow;
-      ctx.fillRect(x - 4, y - 4, 8, 8);
-      ctx.fillStyle = `rgba(255,255,220,${Math.min(1, a * 1.5)})`;
-      ctx.beginPath(); ctx.arc(x, y, 0.7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(x - 3, y - 3, 6, 6);
+      ctx.fillStyle = `rgba(255,150,90,${Math.min(1, a * 1.3)})`;
+      ctx.beginPath(); ctx.arc(x, y, 0.6, 0, Math.PI * 2); ctx.fill();
     }
   }
 
@@ -1092,14 +1189,9 @@ export class CourtyardScene {
   _roomTint() {
     const ch = tileAt(Math.floor(this.pc.x / TILE), Math.floor(this.pc.y / TILE));
     switch (ch) {
-      case '.': return 'rgba(120, 80, 30, 0.045)';
-      case 'g': return 'rgba(60, 140, 80, 0.05)';
-      case 'k': return 'rgba(220, 110, 40, 0.05)';
-      case 'd': return 'rgba(120, 90, 150, 0.04)';
-      case 'w': return 'rgba(80, 130, 160, 0.06)';
-      case '~': return 'rgba(50, 90, 140, 0.08)';
-      case '#': return 'rgba(90, 70, 40, 0.05)';
-      default: return 'rgba(40, 70, 30, 0.04)';
+      case '.': return 'rgba(70, 12, 16, 0.14)';   // church: cold blood-red gloom
+      case 'c': return 'rgba(48, 8, 34, 0.20)';    // crypt: deeper, sickly violet dark
+      default: return 'rgba(6, 4, 8, 0.22)';       // walls/void: near-black
     }
   }
 
@@ -1228,9 +1320,11 @@ export class CourtyardScene {
 
     ctx.restore();
 
-    const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.72);
+    // heavy vignette — the dim church only reveals what's close to the player
+    const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.22, W / 2, H / 2, H * 0.62);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.4)');
+    grad.addColorStop(0.7, 'rgba(0,0,0,0.45)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.82)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
