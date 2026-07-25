@@ -426,10 +426,15 @@ export class CourtyardScene {
   }
 
   _nearestStation() {
+    // +6px of slack on every station radius: A used to feel dead because the
+    // trigger zones were barely a tile wide, so a step too far registered the
+    // press but had nothing bound. This widens the sweet spot (and, since the
+    // on-screen "[A] …" prompt reads the same result, the prompt appears sooner
+    // too, so the player can see exactly when A is armed).
     let best = null, bestD = Infinity;
     for (const s of STATIONS) {
       const d = Math.hypot(this.pc.x - s.x, this.pc.y - s.y);
-      if (d < s.r && d < bestD) { best = s; bestD = d; }
+      if (d < s.r + 6 && d < bestD) { best = s; bestD = d; }
     }
     return best;
   }
@@ -439,9 +444,19 @@ export class CourtyardScene {
     for (const g of this.gifts) {
       const gx = px(g.loc_x), gy = px(g.loc_y);
       const d = Math.hypot(this.pc.x - gx, this.pc.y - gy);
-      if (d < 12 && d < bestD) { best = g; bestD = d; }
+      if (d < 20 && d < bestD) { best = g; bestD = d; } // was 12 (barely one tile)
     }
     return best;
+  }
+
+  // Feedback for a face-button press that had nothing bound where the player is
+  // standing — so a stray A/B tap reads as "nothing here", not "button broken".
+  _noActionHint() {
+    const now = performance.now();
+    if (this._lastNoHint && now - this._lastNoHint < 2500) return; // rate-limit
+    this._lastNoHint = now;
+    sfx.error();
+    this.onToast('Nothing to do here — stand on a station.');
   }
 
   async _handleDuty(id) {
@@ -662,11 +677,16 @@ export class CourtyardScene {
         else if (this._activeStation.kind === 'soul-altar') this._handleSoulAltar();
         else if (this._activeStation.kind === 'nursery') this._handleNursery();
         else if (this._activeStation.kind === 'mancala') this._handleMancala();
+      } else {
+        // A pressed with nothing in range: it DID register — give feedback so it
+        // never feels dead. Rate-limited so tapping while walking isn't spammy.
+        this._noActionHint(dt);
       }
     }
     if (input.consumeBPress()) {
       if (this.holdingGift) this._handleDrop();
       else if (this._activeStation && this._activeStation.kind === 'gate') this._handleSaveExit();
+      else this._noActionHint(dt);
     }
 
     if (this.localEmoji) {

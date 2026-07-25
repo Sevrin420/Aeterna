@@ -76,10 +76,20 @@ export class Input {
       sfx.click();
     };
     const release = () => { el.classList.remove('is-down'); return which === 'a' ? (this.a = false) : (this.b = false); };
-    el.addEventListener('pointerdown', (e) => { e.preventDefault(); press(); });
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      // Capture the pointer (the d-pad already does this): once the finger
+      // lands on the button, its events stay bound to the button even if the
+      // touch drifts a few px off the small hit circle, so the tap can't be
+      // silently retargeted to the console art behind it and lost.
+      try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      press();
+    });
     el.addEventListener('pointerup', release);
-    el.addEventListener('pointerleave', release);
     el.addEventListener('pointercancel', release);
+    // With capture held, pointerleave won't fire mid-press (so a drifting thumb
+    // no longer releases early); it only matters as a fallback if capture threw.
+    el.addEventListener('pointerleave', release);
   }
 
   // Call once per frame after update() has consumed the "just pressed" edge.
