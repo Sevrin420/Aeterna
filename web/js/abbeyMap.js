@@ -3,12 +3,17 @@
 // long nave with a low transept and a short foot below it), surrounded by
 // pitch-black void. Two staircases descend to two separate basement crypts.
 //
+// The whole cross is authored at a base scale and then multiplied by S, so the
+// entire map (nave, transept, crypts and every prop) can be grown or shrunk
+// from one knob. S = 3 makes the cross three times wider/taller/longer.
+//
 // Everything is drawn in Aeterna's own procedural pixel style in
 // web/js/scenes/courtyard.js from the tile grid + prop list below.
 
+export const S = 3;              // map scale (3 = triple-size cross)
 export const TILE = 10;
-export const COLS = 46;
-export const ROWS = 58;
+export const COLS = 125;         // sized to fit the tripled cross + both crypts
+export const ROWS = 167;
 
 export function h2(x, y) { return (((x * 73856093) ^ (y * 19349663)) >>> 0) % 97; }
 
@@ -34,21 +39,25 @@ function wallRing(grid, x0, y0, x1, y1) {
 
 function buildGrid() {
   const grid = blank();
+  // A base-scale tile (x0..x1) covers scaled cells x0*S .. x1*S+S-1.
+  const floor = (x0, y0, x1, y1, ch) => fillRect(grid, x0 * S, y0 * S, x1 * S + S - 1, y1 * S + S - 1, ch);
+  // Wall hugs the scaled floor one tile out on every side.
+  const wall = (x0, y0, x1, y1) => wallRing(grid, x0 * S - 1, y0 * S - 1, x1 * S + S, y1 * S + S);
 
   // --- INVERTED CROSS church (floors first) ---
-  fillRect(grid, 18, 4, 25, 34, '.');   // long nave (vertical stem, altar at top)
-  fillRect(grid, 7, 23, 36, 28, '.');   // transept (crossbar), set LOW -> inverted cross
-  // (rows 28-34 of the nave form the short foot below the crossbar)
+  floor(18, 4, 25, 34, '.');   // long nave (vertical stem, altar at top)
+  floor(7, 23, 36, 28, '.');   // transept (crossbar), set LOW -> inverted cross
+  // (the nave rows below the transept form the short foot below it)
 
   // --- two basement crypts, isolated boxes in the void (reached by stairs) ---
-  fillRect(grid, 5, 43, 19, 54, 'c');   // west crypt (the ossuary)
-  fillRect(grid, 26, 43, 40, 54, 'c');  // east crypt (the ritual chamber)
+  floor(5, 43, 19, 54, 'c');   // west crypt (the ossuary)
+  floor(26, 43, 40, 54, 'c');  // east crypt (the ritual chamber)
 
   // --- wall rings ---
-  wallRing(grid, 17, 3, 26, 35);   // nave
-  wallRing(grid, 6, 22, 37, 29);   // transept
-  wallRing(grid, 4, 42, 20, 55);   // west crypt
-  wallRing(grid, 25, 42, 41, 55);  // east crypt
+  wall(18, 4, 25, 34);   // nave
+  wall(7, 23, 36, 28);   // transept
+  wall(5, 43, 19, 54);   // west crypt
+  wall(26, 43, 40, 54);  // east crypt
 
   return grid.map((row) => row.join(''));
 }
@@ -56,7 +65,12 @@ function buildGrid() {
 export const GRID = buildGrid();
 
 export const PROPS = [];
-function prop(type, col, row, solid = true, extra = {}) { PROPS.push({ type, col, row, solid, ...extra }); }
+// prop positions are authored at base scale and multiplied by S (dest too).
+function prop(type, col, row, solid = true, extra = {}) {
+  const e = { ...extra };
+  if (e.dest) e.dest = { col: e.dest.col * S, row: e.dest.row * S };
+  PROPS.push({ type, col: col * S, row: row * S, solid, ...e });
+}
 
 // --- CHURCH ---
 prop('altar', 21, 4);                       // altar with an inverted cross behind it
@@ -74,13 +88,14 @@ prop('stair-down', 35, 25, false, { dest: { col: 38, row: 45 } }); // -> east cr
 prop('door', 21, 34, false);
 
 // Ownable Cathedral Room alcoves, set into the nave walls.
-export const CATHEDRAL_ALCOVES = [
+const RAW_ALCOVES = [
   { id: 'room-1', col: 18, row: 12 },
   { id: 'room-2', col: 25, row: 12 },
   { id: 'room-3', col: 18, row: 19 },
   { id: 'room-4', col: 25, row: 19 },
 ];
-for (const a of CATHEDRAL_ALCOVES) prop('cathedral-alcove', a.col, a.row, false, { roomId: a.id });
+export const CATHEDRAL_ALCOVES = RAW_ALCOVES.map((a) => ({ ...a, col: a.col * S, row: a.row * S }));
+for (const a of RAW_ALCOVES) prop('cathedral-alcove', a.col, a.row, false, { roomId: a.id });
 
 // --- WEST CRYPT (the ossuary) ---
 prop('stair-up', 7, 45, false, { dest: { col: 8, row: 26 } });

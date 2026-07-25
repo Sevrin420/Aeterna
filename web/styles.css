@@ -547,6 +547,7 @@ html, body {
   text-align: center;
   min-height: 1.4em;
 }
+.hint:empty { display: none; }  /* no instruction text -> no empty gap */
 
 /* ===== Entrance overlays: Doctrine / Mint / Wallet ===== */
 .lore-overlay[hidden], .wallet-overlay[hidden] { display: none; }

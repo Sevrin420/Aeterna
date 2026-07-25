@@ -7,7 +7,7 @@ import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
 import { drawCharacter, getCultistSprite, getGuruSprite, getCultistSpriteVariant } from '../spritesheet.js';
 import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
-import { TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS } from '../abbeyMap.js';
+import { TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS, S } from '../abbeyMap.js';
 
 const W = 208, H = 208; // logical screen size (canvas backing store is RES x this)
 const RES = 2;          // must match the 2x transform main.js sets each frame
@@ -33,24 +33,30 @@ function drawGrass(ctx, x, y, c, r) {
   }
 }
 
+// Station tile coords are authored at base scale and multiplied by S to match
+// the scaled map/props. Interaction radii are scaled too so the sweet spot
+// grows with the (now much larger) rooms. (CATHEDRAL_ALCOVES are already scaled
+// in abbeyMap, so those use a.col/a.row directly.)
+const ps = (t) => px(t * S);        // base tile -> scaled world px
+const sr = (r) => Math.round(r * S); // interaction radius, scaled
 const STATIONS = [
   // church (inverted-cross nave + transept)
-  { id: 'pray', kind: 'duty', label: 'Kneel & Pray', x: px(21), y: px(5), r: 13 },
-  { id: 'candles', kind: 'duty', label: 'Light the Black Candles', x: px(23), y: px(16), r: 13 },
-  { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: px(21), y: px(9), r: 14 },
-  { id: 'confession', kind: 'confession', label: 'Confess', x: px(11), y: px(25), r: 12 },
-  { id: 'leaderboard', kind: 'leaderboard', label: 'View the Devout', x: px(31), y: px(25), r: 12 },
-  { id: 'gate', kind: 'gate', label: 'Save & Exit [B]', x: px(21), y: px(33), r: 16 },
-  { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: px(18), y: px(6), r: 12 },
+  { id: 'pray', kind: 'duty', label: 'Kneel & Pray', x: ps(21), y: ps(5), r: sr(13) },
+  { id: 'candles', kind: 'duty', label: 'Light the Black Candles', x: ps(23), y: ps(16), r: sr(13) },
+  { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: ps(21), y: ps(9), r: sr(14) },
+  { id: 'confession', kind: 'confession', label: 'Confess', x: ps(11), y: ps(25), r: sr(12) },
+  { id: 'leaderboard', kind: 'leaderboard', label: 'View the Devout', x: ps(31), y: ps(25), r: sr(12) },
+  { id: 'gate', kind: 'gate', label: 'Save & Exit [B]', x: ps(21), y: ps(33), r: sr(16) },
+  { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: ps(18), y: ps(6), r: sr(12) },
   // west crypt (the ossuary)
-  { id: 'garden', kind: 'duty', label: 'Tend the Ossuary', x: px(13), y: px(48), r: 12 },
-  { id: 'nursery', kind: 'nursery', label: 'Approach the Nursery', x: px(16), y: px(51), r: 12 },
+  { id: 'garden', kind: 'duty', label: 'Tend the Ossuary', x: ps(13), y: ps(48), r: sr(12) },
+  { id: 'nursery', kind: 'nursery', label: 'Approach the Nursery', x: ps(16), y: ps(51), r: sr(12) },
   // east crypt (the ritual chamber)
-  { id: 'soul-altar', kind: 'soul-altar', label: 'Approach the Soul Altar', x: px(32), y: px(47), r: 12 },
-  { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(36), y: px(52), r: 12 },
+  { id: 'soul-altar', kind: 'soul-altar', label: 'Approach the Soul Altar', x: ps(32), y: ps(47), r: sr(12) },
+  { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: ps(36), y: ps(52), r: sr(12) },
   ...CATHEDRAL_ALCOVES.map((a) => ({
     id: a.id, kind: 'cathedral', roomId: a.id, label: 'Claim this Alcove',
-    x: px(a.col), y: px(a.row), r: 10,
+    x: px(a.col), y: px(a.row), r: sr(10),
   })),
 ];
 const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
@@ -86,7 +92,7 @@ export class CourtyardScene {
     this.myNet = 0;
 
     this.pc = {
-      x: px(21), y: px(32), // just inside the door, at the foot of the cross
+      x: ps(21), y: ps(32), // just inside the door, at the foot of the cross
       w: 7, h: 7,
       speed: 60, // +30% walk speed (was 46)
       dir: 'up',
@@ -788,7 +794,7 @@ export class CourtyardScene {
     }
     // blood-red aisle runner down the nave of the inverted cross
     ctx.fillStyle = 'rgba(96, 16, 20, 0.6)';
-    ctx.fillRect(px(21) - 2, 4 * TILE, 4, 30 * TILE);
+    ctx.fillRect(px(21 * S) - 3 * S, 4 * S * TILE, 4 * S, 30 * S * TILE);
   }
 
   // Soft ellipse shadow, offset down-right to imply one consistent light

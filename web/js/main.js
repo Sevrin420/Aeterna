@@ -217,7 +217,7 @@ function enterCourtyard(player) {
     crowd: CROWD,
   });
   scene.enter();
-  hint.textContent = 'D-pad/arrows to move · A to interact · B to drop, T to chat.';
+  hint.textContent = '';
   window.__aeterna = { scene, player };
 }
 
@@ -284,7 +284,7 @@ function enterEntrance(player) {
     isBusy: entranceOverlaysOpen,
   });
   scene.enter();
-  hint.textContent = 'D-pad to move · A at a table · walk north to enter.';
+  hint.textContent = '';
   window.__aeterna = { scene, player };
 }
 
@@ -390,7 +390,7 @@ async function afterBoot() {
 function startBoot() {
   scene = new BootScene({ onComplete: afterBoot });
   scene.enter();
-  hint.textContent = 'Press A when the console is ready.';
+  hint.textContent = '';
 }
 
 function powerOn() {
@@ -433,7 +433,7 @@ function powerOff() {
   mintOverlay.hidden = true;
   walletOverlay.hidden = true;
   drawOff();
-  hint.textContent = 'Slide the switch to power on the console.';
+  hint.textContent = '';
 }
 
 // Drag the knob across the track, or just tap the switch — either commits.
