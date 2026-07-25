@@ -5,7 +5,8 @@
 
 import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
-import { drawCharacter, getCultistSprite, getGuruSprite } from '../spritesheet.js';
+import { drawCharacter, getCultistSprite, getGuruSprite, getCultistSpriteVariant } from '../spritesheet.js';
+import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
 import { TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS } from '../abbeyMap.js';
 
 const W = 208, H = 208; // logical screen size (canvas backing store is RES x this)
@@ -52,8 +53,9 @@ const STATIONS = [
 const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
 
 export class CourtyardScene {
-  constructor({ player, onPlayerUpdate, onToast, socket, onLeaderboard, onSaveExit, onChatOpen, onMancala, onFinalCommunion }) {
+  constructor({ player, onPlayerUpdate, onToast, socket, onLeaderboard, onSaveExit, onChatOpen, onMancala, onFinalCommunion, crowd }) {
     this.player = player;
+    this.crowd = this._spawnCrowd(crowd || 0); // demo NPC cultists wandering the sanctuary
     this.onPlayerUpdate = onPlayerUpdate || (() => {});
     this.onToast = onToast || (() => {});
     this.onLeaderboard = onLeaderboard || (() => {});
@@ -261,6 +263,73 @@ export class CourtyardScene {
   _updateCamera() {
     this.cam.x = Math.max(0, Math.min(MAP_W - W, this.pc.x - W / 2));
     this.cam.y = Math.max(0, Math.min(MAP_H - H, this.pc.y - H / 2));
+  }
+
+  // Demo crowd: spawn N wandering Cultist NPCs (each a real generated Cultist
+  // with rolled cult traits — hood/mask/horns/halo/blood robe) so you can see
+  // the collection walking around the sanctuary. Enabled via ?crowd=N.
+  _spawnCrowd(n) {
+    if (!n) return [];
+    n = Math.max(0, Math.min(60, n | 0));
+    const floors = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const ch = tileAt(c, r);
+      if ((ch === '.' || ch === 'c') && !isSolid(c, r)) floors.push([c, r]);
+    }
+    const list = [];
+    for (let i = 0; i < n && floors.length; i++) {
+      const [c, r] = floors[(i * 53 + 7) % floors.length];
+      const seed = 1 + ((i * 131 + 17) % 2222);
+      const traits = rollCultTraits(seed);
+      const sex = (h2(seed, 3) % 2 === 0) ? 'male' : 'female';
+      list.push({
+        seed, traits, sex,
+        sheet: getCultistSpriteVariant(seed, sex, traits.robe),
+        x: px(c), y: px(r), dir: 'down', moving: false, bob: 0,
+        tc: c, tr: r, wait: Math.random() * 2,
+      });
+    }
+    return list;
+  }
+
+  _updateCrowd(dt) {
+    for (const n of this.crowd) {
+      n.wait -= dt;
+      if (n.wait > 0) { n.moving = false; continue; }
+      const tx = px(n.tc), ty = px(n.tr);
+      const dx = tx - n.x, dy = ty - n.y, d = Math.hypot(dx, dy);
+      if (d < 1.5) {
+        // reached the target tile — idle a beat, then pick a new adjacent walkable tile
+        n.moving = false;
+        n.wait = 0.4 + Math.random() * 2.2;
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
+        for (let a = 0; a < 6; a++) {
+          const [ox, oy] = dirs[(Math.random() * dirs.length) | 0];
+          const nc = n.tc + ox, nr = n.tr + oy, t = tileAt(nc, nr);
+          if ((t === '.' || t === 'c') && !isSolid(nc, nr)) { n.tc = nc; n.tr = nr; break; }
+        }
+      } else {
+        const sp = 22 * dt;
+        n.x += (dx / d) * sp; n.y += (dy / d) * sp;
+        n.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
+        n.moving = true; n.bob += dt * 9;
+      }
+    }
+  }
+
+  _drawCultist(ctx, n) {
+    const x = Math.round(n.x), groundY = Math.round(n.y) + 6;
+    const frames = n.sheet[n.dir] || n.sheet.down;
+    const idx = n.moving ? Math.floor(n.bob / 6) % 2 : Math.floor(this.t / 1.4) % 2;
+    const frame = frames[idx] || frames[0];
+    const targetH = 21, scale = targetH / frame.lh, w = frame.lw * scale, h = frame.lh * scale;
+    const top = groundY - h;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.ellipse(x, groundY - 1, 5, 2, 0, 0, Math.PI * 2); ctx.fill();
+    drawRegaliaBack(ctx, x, top, w, h, n.traits);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(frame, x - w / 2, top, w, h);
+    drawRegaliaFront(ctx, x, top, w, h, n.traits);
   }
 
   // Stepping onto a staircase tile drops (or raises) the player to the tile
@@ -483,6 +552,7 @@ export class CourtyardScene {
       }
     }
     this._checkStairs();
+    if (this.crowd.length) this._updateCrowd(dt);
     this._updateCamera(dt);
 
     for (let i = this.footDust.length - 1; i >= 0; i--) {
@@ -1159,6 +1229,7 @@ export class CourtyardScene {
       if (rp.x == null) continue;
       items.push({ y: rp.y, draw: () => this._drawRemotePlayer(ctx, id, rp) });
     }
+    for (const n of this.crowd) items.push({ y: n.y, draw: () => this._drawCultist(ctx, n) });
     items.push({ y: this.pc.y, draw: () => this._drawLocalPlayer(ctx) });
     items.sort((a, b) => a.y - b.y);
     return items;

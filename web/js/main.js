@@ -170,6 +170,8 @@ chatInput.addEventListener('keydown', (e) => {
   e.stopPropagation();
 });
 
+const CROWD = parseInt(new URLSearchParams(location.search).get('crowd') || '0', 10) || 0;
+
 function enterCourtyard(player) {
   updateHud(player);
   scene = new CourtyardScene({
@@ -182,6 +184,7 @@ function enterCourtyard(player) {
     onChatOpen: openChat,
     onMancala: showMancala,
     onFinalCommunion: showFinalCommunion,
+    crowd: CROWD,
   });
   scene.enter();
   hint.textContent = 'D-pad/arrows to move · A to interact · B to drop, T to chat.';

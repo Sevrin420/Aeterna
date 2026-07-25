@@ -2,6 +2,7 @@
 // character generator (web/js/pixelchar.js) and draws/animates them.
 
 import { makeCharacterHD, traitsForSeed, traitsForGuru } from './pixelchar.js';
+import { applyRobe } from './cultLook.js';
 
 const cache = new Map(); // seed -> {down:[c0,c1], up:[c0,c1], left:[c0,c1], right:[c0,c1]}
 
@@ -10,6 +11,18 @@ export function getCultistSprite(seed, sex) {
   let sheet = cache.get(key);
   if (!sheet) {
     sheet = makeCharacterHD(traitsForSeed(seed, sex));
+    cache.set(key, sheet);
+  }
+  return sheet;
+}
+
+// Same as getCultistSprite but bakes in a robe variant (e.g. 'blood') so the
+// habit colour is generated with correct shading, not painted over.
+export function getCultistSpriteVariant(seed, sex, robe) {
+  const key = `${seed}|${sex || ''}|${robe || ''}`;
+  let sheet = cache.get(key);
+  if (!sheet) {
+    sheet = makeCharacterHD(applyRobe(traitsForSeed(String(seed), sex), robe));
     cache.set(key, sheet);
   }
   return sheet;
