@@ -40,10 +40,21 @@ const communionOverlay = document.getElementById('communionOverlay');
 const communionBody = document.getElementById('communionBody');
 const communionClose = document.getElementById('communionClose');
 
+// Background hymn — preloaded on page load (before the switch is touched) so it
+// can begin the instant the console is powered on. Looped; obeys the mute
+// button; stopped on power off.
+const bgm = new Audio('assets/hymn.mp3');
+bgm.loop = true;
+bgm.preload = 'auto';
+bgm.volume = 0.55;
+bgm.muted = sfx.isMuted();
+bgm.load(); // start buffering immediately
+
 muteToggle.setAttribute('aria-pressed', String(sfx.isMuted()));
 muteToggle.addEventListener('click', () => {
   const nowMuted = sfx.toggleMute();
   muteToggle.setAttribute('aria-pressed', String(nowMuted));
+  bgm.muted = nowMuted;
 });
 
 const input = new Input();
@@ -397,6 +408,10 @@ function powerOn() {
   if (powered) return;
   powered = true;
   sfx.power(true);
+  // start the hymn the instant the console powers on (this runs inside the
+  // switch's pointer gesture, so autoplay is allowed)
+  bgm.currentTime = 0;
+  bgm.play().catch(() => {});
   powerSwitch.setAttribute('aria-pressed', 'true');
   startBoot();
   if (!stopLoop) {
@@ -419,6 +434,8 @@ function powerOff() {
   if (!powered) return;
   powered = false;
   sfx.power(false);
+  bgm.pause();
+  bgm.currentTime = 0;
   powerSwitch.setAttribute('aria-pressed', 'false');
   if (scene && scene.exit) scene.exit();
   scene = null;
