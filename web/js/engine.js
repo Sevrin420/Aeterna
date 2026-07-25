@@ -56,11 +56,12 @@ export class Input {
       e.preventDefault();
       try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       el._pressed = true;
+      el.classList.add('is-down');
       sfx.click();
       from(e);
     });
     el.addEventListener('pointermove', (e) => { if (el._pressed) { e.preventDefault(); from(e); } });
-    ['pointerup', 'pointercancel'].forEach((ev) => el.addEventListener(ev, () => { el._pressed = false; clear(); }));
+    ['pointerup', 'pointercancel'].forEach((ev) => el.addEventListener(ev, () => { el._pressed = false; el.classList.remove('is-down'); clear(); }));
   }
 
   bindButton(el, which) {
@@ -71,9 +72,10 @@ export class Input {
     const press = () => {
       if (which === 'a') { this._aJustPressed = true; this.a = true; }
       else { this._bJustPressed = true; this.b = true; }
+      el.classList.add('is-down');
       sfx.click();
     };
-    const release = () => (which === 'a' ? (this.a = false) : (this.b = false));
+    const release = () => { el.classList.remove('is-down'); return which === 'a' ? (this.a = false) : (this.b = false); };
     el.addEventListener('pointerdown', (e) => { e.preventDefault(); press(); });
     el.addEventListener('pointerup', release);
     el.addEventListener('pointerleave', release);

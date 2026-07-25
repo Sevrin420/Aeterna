@@ -80,10 +80,10 @@ html, body {
 /* ===== Power switch (Club Nile style: wood pill, ON/OFF labels, ridged knob) ===== */
 .power-switch {
   position: absolute;
-  left: 71%;
-  top: 87.4%;
-  width: 23%;
-  height: 8%;
+  left: 74.5%;
+  top: 88.4%;
+  width: 17%;
+  height: 6.2%;
   background: transparent;
   border: none;
   padding: 0;
@@ -212,8 +212,9 @@ html, body {
   touch-action: none;
   /* background: rgba(0,255,0,0.25); uncomment to debug alignment */
 }
-.btn-a { left: 74.0%; top: 67.7%; width: 13.3%; height: 14.1%; }
-.btn-b { left: 54.6%; top: 79.5%; width: 11.1%; height: 8.9%; }
+/* sized to sit exactly on the drawn round buttons so the press glow aligns */
+.btn-a { left: 73.4%; top: 74.3%; width: 12.5%; height: 7.9%; }
+.btn-b { left: 54.4%; top: 81.0%; width: 11.8%; height: 7.6%; }
 
 /* ===== Shared overlay title/input/button styles (used by leaderboard, chat,
    Mancala, Final Communion) ===== */
@@ -539,3 +540,38 @@ html, body {
   border: 1px solid #3a2c3e;
   color: #f0dcdc;
 }
+
+/* ===== Button press feedback ===== */
+/* kill the browser's default grey tap-highlight box on the controls */
+.dpad-zone, .btn-hit, .power-switch, .mute-toggle { -webkit-tap-highlight-color: transparent; }
+
+/* a soft green glow shaped to each control, shown while it's held (.is-down
+   is toggled from JS so it fires even though pointerdown calls preventDefault) */
+.btn-hit::after {
+  content: '';
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 42%,
+    rgba(200,255,150,0.8), rgba(96,224,74,0.38) 55%, rgba(96,224,74,0) 74%);
+  opacity: 0;
+  transition: opacity 0.04s ease;
+  pointer-events: none;
+}
+.btn-hit.is-down::after { opacity: 1; }
+
+/* d-pad: the glow is clipped to a plus so it matches the cross, not the
+   rectangular hit zone */
+.dpad-zone::after {
+  content: '';
+  position: absolute;
+  inset: 15%;
+  background: radial-gradient(circle at 50% 50%,
+    rgba(200,255,150,0.6), rgba(96,224,74,0.3) 55%, rgba(96,224,74,0) 78%);
+  clip-path: polygon(34% 0, 66% 0, 66% 34%, 100% 34%, 100% 66%, 66% 66%,
+    66% 100%, 34% 100%, 34% 66%, 0 66%, 0 34%, 34% 34%);
+  opacity: 0;
+  transition: opacity 0.04s ease;
+  pointer-events: none;
+}
+.dpad-zone.is-down::after { opacity: 1; }
