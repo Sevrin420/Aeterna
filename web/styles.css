@@ -30,7 +30,7 @@ html, body {
 .console {
   position: relative;
   width: min(92vw, 480px);
-  aspect-ratio: 832 / 1248;
+  aspect-ratio: 1024 / 1536;
   user-select: none;
   -webkit-user-select: none;
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.6));
@@ -50,10 +50,10 @@ html, body {
 /* ===== Screen ===== */
 .screen-bezel {
   position: absolute;
-  left: 3.97%;
-  top: 2.96%;
-  width: 91.71%;
-  height: 60.58%;
+  left: 4.69%;
+  top: 3.45%;
+  width: 90.53%;
+  height: 60.61%;
   overflow: hidden;
   border-radius: 2px;
   background: #000;
@@ -95,22 +95,27 @@ html, body {
 .power-track {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, #7a5330 0%, #4d3220 55%, #3a2414 100%);
-  border: 0.5cqw solid #241608;
+  background: linear-gradient(180deg, #2b2e2b 0%, #17191a 55%, #0d0f0e 100%);
+  border: 0.5cqw solid #050706;
   border-radius: 2.6cqw;
-  box-shadow: inset 0 0.5cqw 0 rgba(210, 160, 90, 0.35),
-              inset 0 -0.6cqw 0.8cqw rgba(0, 0, 0, 0.55),
-              0 0.5cqw 0.7cqw rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 0.5cqw 0 rgba(120, 140, 120, 0.18),
+              inset 0 -0.6cqw 0.8cqw rgba(0, 0, 0, 0.7),
+              0 0.5cqw 0.7cqw rgba(0, 0, 0, 0.5);
   overflow: hidden;
 }
-/* recessed channel the knob rides in */
+/* recessed channel the knob rides in — faint green glow when powered */
 .power-track::before {
   content: '';
   position: absolute;
   left: 5%; right: 5%; top: 33%; height: 34%;
-  background: rgba(18, 10, 4, 0.6);
+  background: rgba(6, 10, 6, 0.7);
   border-radius: 2cqw;
-  box-shadow: inset 0 0.3cqw 0.5cqw rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 0.3cqw 0.5cqw rgba(0, 0, 0, 0.8);
+}
+.power-switch[aria-pressed="true"] .power-track {
+  box-shadow: inset 0 0.5cqw 0 rgba(120, 220, 120, 0.25),
+              inset 0 -0.6cqw 0.8cqw rgba(0, 0, 0, 0.7),
+              0 0 1.6cqw rgba(90, 200, 90, 0.4);
 }
 
 .power-txt {
@@ -120,16 +125,16 @@ html, body {
   font-family: 'Press Start 2P', 'Courier New', monospace;
   font-size: 1.7cqw;
   letter-spacing: 0.1cqw;
-  color: #e6c877;
-  opacity: 0.85;
+  color: #5c6b5a;
+  opacity: 0.9;
   pointer-events: none;
-  text-shadow: 0 0.2cqw 0 rgba(0, 0, 0, 0.6);
+  text-shadow: 0 0.2cqw 0 rgba(0, 0, 0, 0.7);
 }
 .power-txt.power-off { right: 8%; }
 .power-txt.power-on  { left: 8%; }
 .power-switch[aria-pressed="true"] .power-txt.power-on {
-  color: #b6f0a0;
-  text-shadow: 0 0 1.6cqw rgba(120, 220, 120, 0.8);
+  color: #8ef06e;
+  text-shadow: 0 0 1.6cqw rgba(120, 240, 110, 0.9);
 }
 
 .power-knob {
@@ -139,20 +144,26 @@ html, body {
   width: 44%;
   height: 78%;
   border-radius: 2.2cqw;
-  background: linear-gradient(180deg, #f8e9b6 0%, #d3aa52 45%, #a97f34 100%);
-  border: 0.4cqw solid #5a4014;
-  box-shadow: inset 0 0.4cqw 0 rgba(255, 248, 214, 0.75),
-              inset 0 -0.5cqw 0.5cqw rgba(90, 64, 20, 0.6),
-              0 0.6cqw 0.9cqw rgba(0, 0, 0, 0.55);
+  background: linear-gradient(180deg, #4a4f4a 0%, #2c302c 45%, #191c19 100%);
+  border: 0.4cqw solid #0a0c0a;
+  box-shadow: inset 0 0.4cqw 0 rgba(150, 170, 150, 0.4),
+              inset 0 -0.5cqw 0.5cqw rgba(0, 0, 0, 0.6),
+              0 0.6cqw 0.9cqw rgba(0, 0, 0, 0.6);
   transition: left 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-/* grip ridges on the knob */
+/* grip ridges on the knob — glow green when powered */
 .power-knob::after {
   content: '';
   position: absolute;
   left: 32%; right: 32%; top: 24%; bottom: 24%;
   background: repeating-linear-gradient(90deg,
-              rgba(90, 64, 20, 0.65) 0 0.4cqw, transparent 0.4cqw 1.3cqw);
+              rgba(10, 14, 10, 0.7) 0 0.4cqw, transparent 0.4cqw 1.3cqw);
+}
+.power-switch[aria-pressed="true"] .power-knob {
+  background: linear-gradient(180deg, #7fd66a 0%, #4ba03a 45%, #2f6e26 100%);
+  border-color: #1f3d18;
+  box-shadow: inset 0 0.4cqw 0 rgba(200, 255, 190, 0.6),
+              0 0 1.2cqw rgba(90, 220, 80, 0.7);
 }
 
 .power-switch.dragging .power-knob { transition: none; }
@@ -167,16 +178,16 @@ html, body {
   aspect-ratio: 1;
   z-index: 5;
   border-radius: 50%;
-  background: rgba(20, 13, 5, 0.7);
-  border: 1px solid #6b5227;
-  color: #c9a35f;
+  background: rgba(8, 14, 8, 0.72);
+  border: 1px solid #2f5a2a;
+  color: #7bbf5a;
   font-size: clamp(8px, 2.4cqw, 12px);
   line-height: 1;
   cursor: pointer;
   touch-action: none;
 }
 .mute-toggle[aria-pressed="true"] {
-  color: #6b5227;
+  color: #2f5a2a;
   text-decoration: line-through;
 }
 
