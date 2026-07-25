@@ -207,12 +207,9 @@ fastify.post('/duty/:type', async (req, reply) => {
 // ========== GIFTS (physical: spawn -> pickup -> carry -> offer -> accept) ==========
 // Fixed spawn points in church tile-space (see web/js/abbeyMap.js) — scattered
 // over the open nave and transept floor, clear of walls/props/stairs/altar.
-// Authored at base scale and multiplied by MAP_SCALE to match the scaled map
-// (must equal S in web/js/abbeyMap.js).
-const MAP_SCALE = 3;
 const GIFT_SPAWN_POINTS = [
-  { x: 19, y: 20 }, { x: 24, y: 20 }, { x: 19, y: 24 }, { x: 24, y: 24 }, { x: 13, y: 26 }, { x: 29, y: 26 },
-].map((p) => ({ x: p.x * MAP_SCALE, y: p.y * MAP_SCALE }));
+  { x: 55, y: 20 }, { x: 64, y: 20 }, { x: 55, y: 35 }, { x: 64, y: 35 }, { x: 40, y: 58 }, { x: 80, y: 58 },
+];
 const MAX_GROUND_GIFTS = 3;
 
 function maybeSpawnGifts() {

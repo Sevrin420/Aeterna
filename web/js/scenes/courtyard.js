@@ -7,7 +7,10 @@ import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
 import { drawCharacter, getCultistSprite, getGuruSprite, getCultistSpriteVariant } from '../spritesheet.js';
 import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
-import { TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS, S } from '../abbeyMap.js';
+import {
+  TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
+  ALCOVES, DOORS, ROOMS, SKULL_ROOM, NAVE, TRANSEPT, NAVE_CX, SKULL_WALL_ROW,
+} from '../abbeyMap.js';
 
 const W = 208, H = 208; // logical screen size (canvas backing store is RES x this)
 const RES = 2;          // must match the 2x transform main.js sets each frame
@@ -33,30 +36,23 @@ function drawGrass(ctx, x, y, c, r) {
   }
 }
 
-// Station tile coords are authored at base scale and multiplied by S to match
-// the scaled map/props. Interaction radii are scaled too so the sweet spot
-// grows with the (now much larger) rooms. (CATHEDRAL_ALCOVES are already scaled
-// in abbeyMap, so those use a.col/a.row directly.)
-const ps = (t) => px(t * S);        // base tile -> scaled world px
-const sr = (r) => Math.round(r * S); // interaction radius, scaled
 const STATIONS = [
-  // church (inverted-cross nave + transept)
-  { id: 'pray', kind: 'duty', label: 'Kneel & Pray', x: ps(21), y: ps(5), r: sr(13) },
-  { id: 'candles', kind: 'duty', label: 'Light the Black Candles', x: ps(23), y: ps(16), r: sr(13) },
-  { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: ps(21), y: ps(9), r: sr(14) },
-  { id: 'confession', kind: 'confession', label: 'Confess', x: ps(11), y: ps(25), r: sr(12) },
-  { id: 'leaderboard', kind: 'leaderboard', label: 'View the Devout', x: ps(31), y: ps(25), r: sr(12) },
-  { id: 'gate', kind: 'gate', label: 'Save & Exit [B]', x: ps(21), y: ps(33), r: sr(16) },
-  { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: ps(18), y: ps(6), r: sr(12) },
-  // west crypt (the ossuary)
-  { id: 'garden', kind: 'duty', label: 'Tend the Ossuary', x: ps(13), y: ps(48), r: sr(12) },
-  { id: 'nursery', kind: 'nursery', label: 'Approach the Nursery', x: ps(16), y: ps(51), r: sr(12) },
-  // east crypt (the ritual chamber)
-  { id: 'soul-altar', kind: 'soul-altar', label: 'Approach the Soul Altar', x: ps(32), y: ps(47), r: sr(12) },
-  { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: ps(36), y: ps(52), r: sr(12) },
-  ...CATHEDRAL_ALCOVES.map((a) => ({
-    id: a.id, kind: 'cathedral', roomId: a.id, label: 'Claim this Alcove',
-    x: px(a.col), y: px(a.row), r: sr(10),
+  // church nave + transept
+  { id: 'pray', kind: 'duty', label: 'Kneel & Pray', x: px(NAVE_CX), y: px(13), r: 13 },
+  { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: px(NAVE_CX), y: px(11), r: 13 },
+  { id: 'confession', kind: 'confession', label: 'Confess', x: px(TRANSEPT.x0 + 3), y: px(58), r: 13 },
+  { id: 'leaderboard', kind: 'leaderboard', label: 'View the Devout', x: px(TRANSEPT.x1 - 3), y: px(58), r: 13 },
+  { id: 'gate', kind: 'gate', label: 'Save & Exit [B]', x: px(NAVE_CX), y: px(75), r: 14 },
+  { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: px(NAVE.x0 + 1), y: px(11), r: 12 },
+  // east skull chamber — the daily chant (was "tend the ossuary")
+  { id: 'garden', kind: 'chant', label: 'Chant to the Skulls', x: px(Math.round((SKULL_ROOM.x0 + SKULL_ROOM.x1) / 2)), y: px(SKULL_WALL_ROW + 3), r: 14 },
+  { id: 'nursery', kind: 'nursery', label: 'Approach the Cradle', x: px(ROOMS[0].x0 + 3), y: px(ROOMS[0].y0 + 3), r: 12 },
+  { id: 'soul-altar', kind: 'soul-altar', label: 'Approach the Soul Altar', x: px(SKULL_ROOM.x0 + 4), y: px(SKULL_ROOM.y1 - 2), r: 12 },
+  { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(SKULL_ROOM.x1 - 4), y: px(SKULL_ROOM.y1 - 2), r: 12 },
+  // the fire-shrine duty: light any brazier down the nave (was "light candles")
+  ...ALCOVES.map((a, i) => ({
+    id: 'candles', kind: 'fire', label: 'Light the Brazier', alcove: i,
+    x: px(a.brazier.col), y: px(a.brazier.row), r: 14,
   })),
 ];
 const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
@@ -91,8 +87,15 @@ export class CourtyardScene {
     this.remotePlayers = new Map();
     this.myNet = 0;
 
+    // fire-alcove braziers that have been lit (keyed "col,row"), the openable
+    // room doors (keyed "col,row" -> open?), and the running skull chant.
+    this.litBraziers = new Set();
+    this.doors = new Map(DOORS.map((d) => [`${d.col},${d.row}`, false])); // closed
+    this._fireStep = 0;   // 0 = need wood, 1 = wood laid (need torch)
+    this._chant = null;   // { n, line, t } while chanting
+
     this.pc = {
-      x: ps(21), y: ps(32), // just inside the door, at the foot of the cross
+      x: px(NAVE_CX), y: px(74), // just inside the door, at the foot of the cross
       w: 7, h: 7,
       speed: 60, // +30% walk speed (was 46)
       dir: 'up',
@@ -292,6 +295,12 @@ export class CourtyardScene {
     return list;
   }
 
+  // A tile blocks movement if it's a wall/void OR a currently-closed room door.
+  _blocked(col, row) {
+    if (isSolid(col, row)) return true;
+    return this.doors.get(`${col},${row}`) === false; // door present & shut
+  }
+
   _tryMove(dx, dy) {
     const p = this.pc;
     const nx = p.x + dx;
@@ -301,9 +310,9 @@ export class CourtyardScene {
       [x - half, y - half], [x + half, y - half],
       [x - half, y + half], [x + half, y + half],
     ];
-    const blockedX = corners(nx, p.y).some(([cx, cy]) => isSolid(Math.floor(cx / TILE), Math.floor(cy / TILE)));
+    const blockedX = corners(nx, p.y).some(([cx, cy]) => this._blocked(Math.floor(cx / TILE), Math.floor(cy / TILE)));
     if (!blockedX) p.x = nx;
-    const blockedY = corners(p.x, ny).some(([cx, cy]) => isSolid(Math.floor(cx / TILE), Math.floor(cy / TILE)));
+    const blockedY = corners(p.x, ny).some(([cx, cy]) => this._blocked(Math.floor(cx / TILE), Math.floor(cy / TILE)));
     if (!blockedY) p.y = ny;
   }
 
@@ -467,6 +476,65 @@ export class CourtyardScene {
     this._lastNoHint = now;
     sfx.error();
     this.onToast('Nothing to do here — stand on a station.');
+  }
+
+  _nearestDoor() {
+    let best = null, bestD = Infinity;
+    for (const d of DOORS) {
+      const dist = Math.hypot(this.pc.x - px(d.col), this.pc.y - px(d.row));
+      if (dist < 15 && dist < bestD) { best = d; bestD = dist; }
+    }
+    return best;
+  }
+
+  _toggleDoor(d) {
+    const key = `${d.col},${d.row}`;
+    const open = !this.doors.get(key);
+    this.doors.set(key, open);
+    sfx.click();
+    this.onToast(open ? 'The door creaks open.' : 'You pull the door shut.');
+  }
+
+  // Fire-shrine duty (replaces "light the candles"): lay wood, then take the
+  // torch and set the brazier ablaze. Lighting the first brazier of the day
+  // completes the required "candles" duty; later ones just burn for ambience.
+  async _handleFire(station) {
+    const br = ALCOVES[station.alcove].brazier;
+    const key = `${br.col},${br.row}`;
+    if (this.litBraziers.has(key)) { this.onToast('This brazier already burns.'); return; }
+    if (this._fireArmed !== key) {
+      this._fireArmed = key;
+      sfx.click();
+      this.onToast('You lay wood in the brazier. Press A with the torch to light it.');
+      return;
+    }
+    this._fireArmed = null;
+    this.litBraziers.add(key);
+    if (this.player.candles_today) { sfx.dutyComplete(); this.onToast('The brazier roars to life.'); }
+    else await this._handleDuty('candles');
+  }
+
+  // Daily chant before the wall of skulls: the cultist intones the litany five
+  // times, then the rite completes (mapped to the "garden" duty slot).
+  _handleChant() {
+    if (this._chant) return;
+    if (this.player.garden_today) { this.onToast('You have already chanted today.'); return; }
+    this._chant = { n: 0, t: 0.9 }; // fire the first line immediately
+  }
+
+  _updateChant(dt) {
+    const c = this._chant;
+    c.t += dt;
+    if (c.t < 0.9) return;
+    c.t = 0;
+    if (c.n >= 5) { // rite finished
+      this._chant = null;
+      this._handleDuty('garden');
+      return;
+    }
+    c.n += 1;
+    this.showChat('local', 'Sanguis Aeternus, Vita Aeterna');
+    sfx.click();
   }
 
   async _handleDuty(id) {
@@ -663,6 +731,7 @@ export class CourtyardScene {
       }
     }
     this._checkStairs();
+    if (this._chant) this._updateChant(dt);
     if (this.crowd.length) this._updateCrowd(dt);
     this._updateCamera(dt);
 
@@ -673,12 +742,17 @@ export class CourtyardScene {
 
     this._activeStation = this._nearestStation();
     this._activeGift = this._nearestGift();
+    this._activeDoor = this._nearestDoor();
 
     if (input.consumeAPress()) {
-      if (this._activeGift && !this.holdingGift) {
+      if (this._activeDoor) {
+        this._toggleDoor(this._activeDoor);
+      } else if (this._activeGift && !this.holdingGift) {
         this._handlePickup(this._activeGift);
       } else if (this._activeStation) {
         if (this._activeStation.kind === 'duty') this._handleDuty(this._activeStation.id);
+        else if (this._activeStation.kind === 'fire') this._handleFire(this._activeStation);
+        else if (this._activeStation.kind === 'chant') this._handleChant();
         else if (this._activeStation.kind === 'guru') this._handleGuru();
         else if (this._activeStation.kind === 'confession') this._handleConfession();
         else if (this._activeStation.kind === 'leaderboard') this._handleLeaderboard();
@@ -756,34 +830,34 @@ export class CourtyardScene {
         const x = c * TILE, y = r * TILE;
         const bhash = h2(c, r);
         if (ch === '#') {
-          // near-black stone wall — the dim church swallows most of the light
+          // stone wall — mid grey masonry (lightened for visibility)
           const shade = bhash % 3;
-          ctx.fillStyle = shade === 0 ? '#211f28' : shade === 1 ? '#1b1a22' : '#1e1d26';
+          ctx.fillStyle = shade === 0 ? '#3c3a46' : shade === 1 ? '#343240' : '#38363f';
           ctx.fillRect(x, y, TILE, TILE);
-          // a whisper of a cold top edge so blocks still read as masonry
-          ctx.fillStyle = 'rgba(90,92,110,0.22)';
+          // cold top edge so blocks read as masonry
+          ctx.fillStyle = 'rgba(120,122,140,0.30)';
           ctx.fillRect(x, y, TILE, 1.4);
-          ctx.fillStyle = 'rgba(0,0,0,0.55)';
+          ctx.fillStyle = 'rgba(0,0,0,0.38)';
           ctx.fillRect(x, y + TILE - 2, TILE, 2);
           ctx.fillRect(x + TILE - 1, y, 1, TILE);
         } else if (ch === '.') {
-          // cold, dark church flagstone — walkable but shadowed
+          // church flagstone — lit grey stone (lightened for visibility)
           const shade = bhash % 3;
-          ctx.fillStyle = shade === 0 ? '#3b3944' : shade === 1 ? '#34323d' : '#38363f';
+          ctx.fillStyle = shade === 0 ? '#5e5c6a' : shade === 1 ? '#565462' : '#5a5866';
           ctx.fillRect(x, y, TILE, TILE);
-          if (bhash % 7 === 0) { ctx.fillStyle = 'rgba(120,120,140,0.05)'; ctx.fillRect(x + 2, y + 2, 3, 3); }
-          if (bhash % 11 === 0) { ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(x + 4, y + 5, 3, 2); }
-          ctx.fillStyle = 'rgba(0,0,0,0.32)'; // grout
+          if (bhash % 7 === 0) { ctx.fillStyle = 'rgba(160,160,182,0.10)'; ctx.fillRect(x + 2, y + 2, 3, 3); }
+          if (bhash % 11 === 0) { ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(x + 4, y + 5, 3, 2); }
+          ctx.fillStyle = 'rgba(0,0,0,0.22)'; // grout
           ctx.fillRect(x, y + TILE - 1, TILE, 1);
           ctx.fillRect(x + TILE - 1, y, 1, TILE);
         } else if (ch === 'c') {
-          // basement crypt floor — earthen, even darker than the church stone
+          // basement crypt floor — earthen, lit enough to read
           const shade = bhash % 3;
-          ctx.fillStyle = shade === 0 ? '#2a2621' : shade === 1 ? '#24211c' : '#272420';
+          ctx.fillStyle = shade === 0 ? '#453f36' : shade === 1 ? '#3d382f' : '#413b33';
           ctx.fillRect(x, y, TILE, TILE);
-          if (bhash % 6 === 0) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(x + 3, y + 4, 3, 2); }
-          if (bhash % 13 === 0) { ctx.fillStyle = 'rgba(90,70,50,0.10)'; ctx.fillRect(x + 5, y + 2, 2, 2); }
-          ctx.fillStyle = 'rgba(0,0,0,0.30)';
+          if (bhash % 6 === 0) { ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(x + 3, y + 4, 3, 2); }
+          if (bhash % 13 === 0) { ctx.fillStyle = 'rgba(120,96,66,0.14)'; ctx.fillRect(x + 5, y + 2, 2, 2); }
+          ctx.fillStyle = 'rgba(0,0,0,0.22)';
           ctx.fillRect(x, y + TILE - 1, TILE, 1);
         } else {
           // the void beyond the walls — pure black
@@ -794,7 +868,7 @@ export class CourtyardScene {
     }
     // blood-red aisle runner down the nave of the inverted cross
     ctx.fillStyle = 'rgba(96, 16, 20, 0.6)';
-    ctx.fillRect(px(21 * S) - 3 * S, 4 * S * TILE, 4 * S, 30 * S * TILE);
+    ctx.fillRect(px(NAVE_CX) - 8, NAVE.y0 * TILE, 16, (NAVE.y1 - NAVE.y0) * TILE);
   }
 
   // Soft ellipse shadow, offset down-right to imply one consistent light
@@ -917,6 +991,94 @@ export class CourtyardScene {
       case 'fountain-block': break; // covered by the fountain draw above
       case 'pillar': this._drawPillar(ctx, p.col, p.row); this._drawLantern(ctx, p.col, p.row); break;
       case 'torch': this._drawTorch(ctx, p.col, p.row); break;
+      case 'alcove-arch': {
+        // a pointed arch recess cut into the back wall; tip points E or W
+        const w = TILE * 3.2, h = TILE * 3.6, top = y - h / 2;
+        ctx.fillStyle = 'rgba(8,6,10,0.72)';
+        ctx.beginPath();
+        if (p.side === 'W') { // niche opens east; arch tip to the west
+          ctx.moveTo(x + w / 2, top); ctx.lineTo(x + w / 2, top + h);
+          ctx.quadraticCurveTo(x - w / 2, top + h / 2, x + w / 2, top);
+        } else {
+          ctx.moveTo(x - w / 2, top); ctx.lineTo(x - w / 2, top + h);
+          ctx.quadraticCurveTo(x + w / 2, top + h / 2, x - w / 2, top);
+        }
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#4c4a56'; ctx.lineWidth = 1.4; ctx.stroke();
+        break;
+      }
+      case 'brazier': {
+        const key = `${p.col},${p.row}`;
+        const lit = this.litBraziers.has(key);
+        this._dropShadow(ctx, x, y + 5, 6, 2.2);
+        ctx.fillStyle = '#26221c'; // tripod legs
+        ctx.fillRect(x - 5, y - 1, 1.6, 7); ctx.fillRect(x + 3.4, y - 1, 1.6, 7); ctx.fillRect(x - 0.8, y - 1, 1.6, 7);
+        ctx.fillStyle = '#3a362e'; // iron bowl
+        ctx.beginPath(); ctx.moveTo(x - 6, y - 2); ctx.lineTo(x + 6, y - 2); ctx.lineTo(x + 4, y + 2); ctx.lineTo(x - 4, y + 2); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#514c42'; ctx.fillRect(x - 6, y - 3, 12, 1.4);
+        if (lit) {
+          const fl = 0.82 + Math.sin(this.t * 12 + p.col) * 0.18 + Math.sin(this.t * 27) * 0.05;
+          ctx.save(); ctx.globalCompositeOperation = 'lighter';
+          const g = ctx.createRadialGradient(x, y - 5, 1, x, y - 5, 22 * fl);
+          g.addColorStop(0, 'rgba(255,170,70,0.5)'); g.addColorStop(1, 'rgba(255,150,60,0)');
+          ctx.fillStyle = g; ctx.fillRect(x - 24, y - 26, 48, 34);
+          ctx.fillStyle = 'rgba(255,140,40,0.9)'; ctx.beginPath(); ctx.ellipse(x, y - 6, 3.2 * fl, 6.4 * fl, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = 'rgba(255,226,150,0.95)'; ctx.beginPath(); ctx.ellipse(x, y - 5, 1.6 * fl, 3.4 * fl, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        } else {
+          ctx.fillStyle = '#3a2c1e'; ctx.fillRect(x - 3, y - 3, 6, 1.3); ctx.fillRect(x - 2, y - 4.2, 5, 1.1);
+        }
+        break;
+      }
+      case 'wall-torch': {
+        ctx.fillStyle = '#3a2c1e'; ctx.fillRect(x - 1, y - 2, 2, 8);   // staff
+        ctx.fillStyle = '#5a4a34'; ctx.fillRect(x - 2.2, y + 5, 4.4, 1.4); // bracket
+        const fl = 0.8 + Math.sin(this.t * 14 + p.row) * 0.2;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(x, y - 4, 0, x, y - 4, 12 * fl);
+        g.addColorStop(0, 'rgba(255,170,80,0.4)'); g.addColorStop(1, 'rgba(255,150,60,0)');
+        ctx.fillStyle = g; ctx.fillRect(x - 12, y - 16, 24, 24);
+        ctx.fillStyle = 'rgba(255,150,60,0.85)'; ctx.beginPath(); ctx.ellipse(x, y - 4, 2 * fl, 3.6 * fl, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,230,160,0.9)'; ctx.beginPath(); ctx.ellipse(x, y - 4, 0.9 * fl, 1.8 * fl, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        break;
+      }
+      case 'wood-stack': {
+        this._dropShadow(ctx, x, y + 4, 5, 2);
+        const cols = ['#5a4228', '#6b4f30', '#4a3826'];
+        for (let i = 0; i < 3; i++) {
+          ctx.fillStyle = cols[i % 3]; ctx.fillRect(x - 5, y - 2 + i * 2.2, 10, 2);
+          ctx.fillStyle = '#2a1f14'; ctx.fillRect(x - 5, y - 2 + i * 2.2, 1.4, 2); ctx.fillRect(x + 3.6, y - 2 + i * 2.2, 1.4, 2);
+        }
+        break;
+      }
+      case 'room-door': {
+        const open = this.doors.get(`${p.col},${p.row}`);
+        this._dropShadow(ctx, x, y + 3, 5, 1.6);
+        if (open) {
+          ctx.fillStyle = '#0a0808'; ctx.fillRect(x - 5, y - 7, 10, 12);   // dark opening
+          ctx.fillStyle = '#3a2c1c'; ctx.fillRect(x - 6, y - 7, 2, 12);    // door swung to the post
+        } else {
+          ctx.fillStyle = '#3a2c1c'; ctx.fillRect(x - 5, y - 8, 10, 13);   // timber door
+          ctx.fillStyle = '#4a3826'; for (let i = 0; i < 3; i++) ctx.fillRect(x - 5 + i * 3.4, y - 8, 2.6, 13);
+          ctx.fillStyle = '#6b5636'; ctx.fillRect(x - 5, y - 8, 10, 1.2);
+          ctx.fillStyle = '#141010'; ctx.fillRect(x + 2, y - 2, 1.4, 1.4); // iron handle
+        }
+        break;
+      }
+      case 'skull-wall': {
+        const yb = p.row * TILE + TILE - 2;
+        for (let c = p.x0; c <= p.x1; c++) {
+          for (let k = 0; k < 2; k++) {
+            const sx = c * TILE + TILE / 2, sy = yb - k * 5;
+            ctx.fillStyle = '#d8d1bd'; ctx.beginPath(); ctx.arc(sx, sy - 2, 2.6, 0, Math.PI * 2); ctx.fill();
+            ctx.fillRect(sx - 2, sy, 4, 2.6);
+            ctx.fillStyle = '#241f18'; ctx.fillRect(sx - 1.5, sy - 3, 1.2, 1.2); ctx.fillRect(sx + 0.3, sy - 3, 1.2, 1.2);
+            ctx.fillRect(sx - 0.4, sy - 1, 0.8, 1.1);
+          }
+        }
+        break;
+      }
       case 'bench': {
         // garden bench — a solid timber seat with a back rail and legs
         this._dropShadow(ctx, x, y + 5, 8, 2.4);
@@ -1403,9 +1565,9 @@ export class CourtyardScene {
   _roomTint() {
     const ch = tileAt(Math.floor(this.pc.x / TILE), Math.floor(this.pc.y / TILE));
     switch (ch) {
-      case '.': return 'rgba(70, 12, 16, 0.14)';   // church: cold blood-red gloom
-      case 'c': return 'rgba(48, 8, 34, 0.20)';    // crypt: deeper, sickly violet dark
-      default: return 'rgba(6, 4, 8, 0.22)';       // walls/void: near-black
+      case '.': return 'rgba(70, 12, 16, 0.06)';   // church: faint blood-red wash
+      case 'c': return 'rgba(48, 8, 34, 0.09)';    // crypt: faint violet
+      default: return 'rgba(6, 4, 8, 0.10)';       // walls/void
     }
   }
 
@@ -1534,11 +1696,11 @@ export class CourtyardScene {
 
     ctx.restore();
 
-    // heavy vignette — the dim church only reveals what's close to the player
-    const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.22, W / 2, H / 2, H * 0.62);
+    // light vignette — just enough to frame the view, not to hide the room
+    const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.72);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(0.7, 'rgba(0,0,0,0.45)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.82)');
+    grad.addColorStop(0.7, 'rgba(0,0,0,0.10)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.34)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
@@ -1547,7 +1709,12 @@ export class CourtyardScene {
 
     ctx.textAlign = 'center';
     const promptBounce = Math.sin(this.t * 6) * 1.2;
-    if (this._activeGift && !this.holdingGift) {
+    if (this._activeDoor) {
+      ctx.font = '6px "Courier New", monospace';
+      ctx.fillStyle = '#f4e5bd';
+      const open = this.doors.get(`${this._activeDoor.col},${this._activeDoor.row}`);
+      ctx.fillText(open ? '[A] Close door' : '[A] Open door', W / 2, H - 16 + promptBounce);
+    } else if (this._activeGift && !this.holdingGift) {
       ctx.font = '6px "Courier New", monospace';
       ctx.fillStyle = '#f4e5bd';
       ctx.fillText('[A] Pick up gift', W / 2, H - 16 + promptBounce);

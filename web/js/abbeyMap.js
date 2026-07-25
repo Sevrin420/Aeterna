@@ -1,63 +1,91 @@
-// The unhallowed church — a death-cult sanctuary. No exterior at all: the
-// whole world is a dimly-lit stone church laid out as an INVERTED CROSS (a
-// long nave with a low transept and a short foot below it), surrounded by
-// pitch-black void. Two staircases descend to two separate basement crypts.
-//
-// The whole cross is authored at a base scale and then multiplied by S, so the
-// entire map (nave, transept, crypts and every prop) can be grown or shrunk
-// from one knob. S = 3 makes the cross three times wider/taller/longer.
+// The unhallowed church — a death-cult sanctuary laid out as an INVERTED CROSS
+// (a long north nave with a low transept and a short foot below it), surrounded
+// by pitch-black void. Down the nave are ten arched alcoves (five per side),
+// each a fire-shrine. Two staircases descend: the WEST stair to a warren of six
+// private rooms with doors; the EAST stair to a chamber walled with skulls.
 //
 // Everything is drawn in Aeterna's own procedural pixel style in
 // web/js/scenes/courtyard.js from the tile grid + prop list below.
 
-export const S = 3;              // map scale (3 = triple-size cross)
 export const TILE = 10;
-export const COLS = 125;         // sized to fit the tripled cross + both crypts
-export const ROWS = 167;
+export const COLS = 108;
+export const ROWS = 122;
+export const S = 1; // (legacy scale knob; the map is now authored at final size)
 
 export function h2(x, y) { return (((x * 73856093) ^ (y * 19349663)) >>> 0) % 97; }
 
-function blank() {
-  // fill the whole world with void; rooms are carved out of it
-  return Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
-}
-
+function blank() { return Array.from({ length: ROWS }, () => Array(COLS).fill(' ')); }
 function fillRect(grid, x0, y0, x1, y1, ch) {
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) grid[y][x] = ch;
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (grid[y] && x >= 0 && x < COLS) grid[y][x] = ch;
 }
-
-// Wall ring around a footprint, but only on cells still void — so an
-// overlapping rectangle (nave + transept) merges into one open interior.
+// Wall ring, only on cells still void — so overlapping rooms merge into one open interior.
 function wallRing(grid, x0, y0, x1, y1) {
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       const border = x === x0 || x === x1 || y === y0 || y === y1;
-      if (border && grid[y][x] === ' ') grid[y][x] = '#';
+      if (border && grid[y] && grid[y][x] === ' ') grid[y][x] = '#';
     }
   }
 }
 
+// ---- landmark coordinates (single source of truth, shared with courtyard) ----
+export const NAVE = { x0: 51, y0: 8, x1: 68, y1: 77 };      // long stem
+export const TRANSEPT = { x0: 27, y0: 52, x1: 92, y1: 64 };  // low crossbar
+export const NAVE_CX = 59;                                   // nave centre column
+
+// Ten arched alcoves down the nave, five per side. Each is a niche cut into the
+// nave wall with a fire brazier, a wall torch and a stack of wood.
+const ALCOVE_ROWS = [12, 20, 28, 36, 44]; // top row of each 4-tall niche
+export const ALCOVES = [];
+for (const r of ALCOVE_ROWS) {
+  // west niche (opens east into the nave; arch tip points WEST)
+  ALCOVES.push({ side: 'W', x0: 47, y0: r, x1: 50, y1: r + 3, cy: r + 1,
+    brazier: { col: 48, row: r + 2 }, torch: { col: 47, row: r + 1 }, wood: { col: 50, row: r + 2 } });
+  // east niche (opens west; arch tip points EAST)
+  ALCOVES.push({ side: 'E', x0: 69, y0: r, x1: 72, y1: r + 3, cy: r + 1,
+    brazier: { col: 71, row: r + 2 }, torch: { col: 72, row: r + 1 }, wood: { col: 69, row: r + 2 } });
+}
+
+// WEST warren: a corridor with six doored rooms (three above, three below).
+const WEST_CORRIDOR = { x0: 10, y0: 105, x1: 41, y1: 108 };
+const ROOM_COLS = [[12, 19], [23, 30], [34, 41]];
+export const ROOMS = [];
+export const DOORS = [];
+for (const [cx0, cx1] of ROOM_COLS) {
+  const doorCol = Math.round((cx0 + cx1) / 2);
+  ROOMS.push({ x0: cx0, y0: 97, x1: cx1, y1: 103, door: { col: doorCol, row: 104 } }); // top room
+  ROOMS.push({ x0: cx0, y0: 110, x1: cx1, y1: 116, door: { col: doorCol, row: 109 } }); // bottom room
+}
+for (const rm of ROOMS) DOORS.push(rm.door);
+
+// EAST chamber: a single room whose north wall is a rack of skulls.
+export const SKULL_ROOM = { x0: 78, y0: 98, x1: 102, y1: 116 };
+export const SKULL_WALL_ROW = 98;
+
 function buildGrid() {
   const grid = blank();
-  // A base-scale tile (x0..x1) covers scaled cells x0*S .. x1*S+S-1.
-  const floor = (x0, y0, x1, y1, ch) => fillRect(grid, x0 * S, y0 * S, x1 * S + S - 1, y1 * S + S - 1, ch);
-  // Wall hugs the scaled floor one tile out on every side.
-  const wall = (x0, y0, x1, y1) => wallRing(grid, x0 * S - 1, y0 * S - 1, x1 * S + S, y1 * S + S);
 
-  // --- INVERTED CROSS church (floors first) ---
-  floor(18, 4, 25, 34, '.');   // long nave (vertical stem, altar at top)
-  floor(7, 23, 36, 28, '.');   // transept (crossbar), set LOW -> inverted cross
-  // (the nave rows below the transept form the short foot below it)
+  // church floors
+  fillRect(grid, NAVE.x0, NAVE.y0, NAVE.x1, NAVE.y1, '.');
+  fillRect(grid, TRANSEPT.x0, TRANSEPT.y0, TRANSEPT.x1, TRANSEPT.y1, '.');
+  for (const a of ALCOVES) fillRect(grid, a.x0, a.y0, a.x1, a.y1, '.'); // niches
 
-  // --- two basement crypts, isolated boxes in the void (reached by stairs) ---
-  floor(5, 43, 19, 54, 'c');   // west crypt (the ossuary)
-  floor(26, 43, 40, 54, 'c');  // east crypt (the ritual chamber)
+  // underground floors
+  fillRect(grid, WEST_CORRIDOR.x0, WEST_CORRIDOR.y0, WEST_CORRIDOR.x1, WEST_CORRIDOR.y1, 'c');
+  for (const rm of ROOMS) fillRect(grid, rm.x0, rm.y0, rm.x1, rm.y1, 'c');
+  fillRect(grid, SKULL_ROOM.x0, SKULL_ROOM.y0, SKULL_ROOM.x1, SKULL_ROOM.y1, 'c');
+  // doorway gaps (walkable floor; a door prop sits here and can be closed)
+  for (const d of DOORS) grid[d.row][d.col] = 'c';
 
-  // --- wall rings ---
-  wall(18, 4, 25, 34);   // nave
-  wall(7, 23, 36, 28);   // transept
-  wall(5, 43, 19, 54);   // west crypt
-  wall(26, 43, 40, 54);  // east crypt
+  // walls
+  wallRing(grid, NAVE.x0 - 1, NAVE.y0 - 1, NAVE.x1 + 1, NAVE.y1 + 1);
+  wallRing(grid, TRANSEPT.x0 - 1, TRANSEPT.y0 - 1, TRANSEPT.x1 + 1, TRANSEPT.y1 + 1);
+  for (const a of ALCOVES) wallRing(grid, a.x0 - 1, a.y0 - 1, a.x1 + 1, a.y1 + 1);
+  wallRing(grid, WEST_CORRIDOR.x0 - 1, WEST_CORRIDOR.y0 - 1, WEST_CORRIDOR.x1 + 1, WEST_CORRIDOR.y1 + 1);
+  for (const rm of ROOMS) wallRing(grid, rm.x0 - 1, rm.y0 - 1, rm.x1 + 1, rm.y1 + 1);
+  wallRing(grid, SKULL_ROOM.x0 - 1, SKULL_ROOM.y0 - 1, SKULL_ROOM.x1 + 1, SKULL_ROOM.y1 + 1);
+  // re-open the doorways the rings may have sealed
+  for (const d of DOORS) grid[d.row][d.col] = 'c';
 
   return grid.map((row) => row.join(''));
 }
@@ -65,55 +93,46 @@ function buildGrid() {
 export const GRID = buildGrid();
 
 export const PROPS = [];
-// prop positions are authored at base scale and multiplied by S (dest too).
-function prop(type, col, row, solid = true, extra = {}) {
-  const e = { ...extra };
-  if (e.dest) e.dest = { col: e.dest.col * S, row: e.dest.row * S };
-  PROPS.push({ type, col: col * S, row: row * S, solid, ...e });
-}
+function prop(type, col, row, solid = true, extra = {}) { PROPS.push({ type, col, row, solid, ...extra }); }
 
 // --- CHURCH ---
-prop('altar', 21, 4);                       // altar with an inverted cross behind it
-prop('torch', 18, 4); prop('torch', 24, 4); // flanking the altar
-prop('torch', 7, 26); prop('torch', 36, 26);// transept arm ends
-prop('bulletin', 18, 6);
-// black votive candles lining the nave (the church's dim light)
-for (const [c, r] of [[18, 9], [25, 9], [18, 16], [25, 16], [19, 30], [23, 30]]) prop('candle', c, r, false);
-// a couple of pews down in the foot of the cross
-prop('pew', 19, 32); prop('pew', 23, 32);
-// staircases DOWN into the two crypts (walkable — step on to descend)
-prop('stair-down', 8, 25, false, { dest: { col: 7, row: 45 } });   // -> west crypt
-prop('stair-down', 35, 25, false, { dest: { col: 38, row: 45 } }); // -> east crypt
+prop('altar', NAVE_CX, 9);
+prop('torch', NAVE_CX - 3, 9); prop('torch', NAVE_CX + 3, 9);
+prop('bulletin', NAVE.x0, 11, false);
+prop('pew', NAVE_CX - 3, 70); prop('pew', NAVE_CX + 3, 70);
+// staircases down (walkable — step to descend)
+prop('stair-down', TRANSEPT.x0 + 2, 58, false, { dest: { col: WEST_CORRIDOR.x0 + 2, row: 106 } });  // WEST -> warren
+prop('stair-down', TRANSEPT.x1 - 2, 58, false, { dest: { col: SKULL_ROOM.x1 - 3, row: 101 } });      // EAST -> skulls
 // the way out, at the foot of the cross
-prop('door', 21, 34, false);
+prop('door', NAVE_CX, 76, false);
 
-// Ownable Cathedral Room alcoves, set into the nave walls.
-const RAW_ALCOVES = [
-  { id: 'room-1', col: 18, row: 12 },
-  { id: 'room-2', col: 25, row: 12 },
-  { id: 'room-3', col: 18, row: 19 },
-  { id: 'room-4', col: 25, row: 19 },
-];
-export const CATHEDRAL_ALCOVES = RAW_ALCOVES.map((a) => ({ ...a, col: a.col * S, row: a.row * S }));
-for (const a of RAW_ALCOVES) prop('cathedral-alcove', a.col, a.row, false, { roomId: a.id });
+// --- TEN FIRE ALCOVES (brazier is the interactive fire-shrine; torch + wood are dressing) ---
+for (const a of ALCOVES) {
+  prop('brazier', a.brazier.col, a.brazier.row, false, { side: a.side, cy: a.cy });
+  prop('wall-torch', a.torch.col, a.torch.row, false, { side: a.side });
+  prop('wood-stack', a.wood.col, a.wood.row, false);
+  prop('alcove-arch', a.side === 'W' ? a.x0 - 1 : a.x1 + 1, a.cy, false, { side: a.side }); // arch on the back wall
+}
 
-// --- WEST CRYPT (the ossuary) ---
-prop('stair-up', 7, 45, false, { dest: { col: 8, row: 26 } });
-prop('ossuary', 6, 44); prop('ossuary', 17, 44); prop('ossuary', 15, 53);
-prop('candle', 18, 47, false); prop('candle', 6, 51, false);
-prop('nursery', 16, 51);
+// --- WEST WARREN (six doored rooms; a private meeting place) ---
+prop('stair-up', WEST_CORRIDOR.x0 + 2, 106, false, { dest: { col: TRANSEPT.x0 + 2, row: 60 } });
+for (const rm of ROOMS) prop('room-door', rm.door.col, rm.door.row, false);
+prop('nursery', ROOMS[0].x0 + 3, ROOMS[0].y0 + 3, false); // cradle in the first room
 
-// --- EAST CRYPT (the ritual chamber) ---
-prop('stair-up', 38, 45, false, { dest: { col: 35, row: 26 } });
-prop('ritual-circle', 32, 51, false);       // glowing sigil on the floor
-prop('soul-altar', 32, 47, false);
-prop('mancala-table', 36, 52);
-for (const [c, r] of [[28, 45], [40, 45], [28, 53], [40, 53]]) prop('candle', c, r, false);
+// --- EAST SKULL CHAMBER (chant to the skulls; also holds the ritual games) ---
+prop('stair-up', SKULL_ROOM.x1 - 3, 101, false, { dest: { col: TRANSEPT.x1 - 2, row: 60 } });
+prop('skull-wall', Math.round((SKULL_ROOM.x0 + SKULL_ROOM.x1) / 2), SKULL_WALL_ROW, false,
+  { x0: SKULL_ROOM.x0, x1: SKULL_ROOM.x1 });
+prop('soul-altar', SKULL_ROOM.x0 + 4, SKULL_ROOM.y1 - 2, false);
+prop('mancala-table', SKULL_ROOM.x1 - 4, SKULL_ROOM.y1 - 2);
+
+// No claimable Cathedral alcoves in this layout (the fire alcoves replace them).
+export const CATHEDRAL_ALCOVES = [];
 
 // Stairs the player can step onto to teleport between the church and crypts.
 export const STAIRS = PROPS.filter((p) => p.type === 'stair-down' || p.type === 'stair-up');
 
-const SOLID_CHARS = new Set(['#', ' ']); // walls and the surrounding void block movement
+const SOLID_CHARS = new Set(['#', ' ']);
 const solidProps = new Set();
 for (const p of PROPS) if (p.solid) solidProps.add(`${p.col},${p.row}`);
 
@@ -121,7 +140,6 @@ export function tileAt(col, row) {
   if (row < 0 || row >= ROWS || col < 0 || col >= COLS) return '#';
   return GRID[row][col];
 }
-
 export function isSolid(col, row) {
   if (SOLID_CHARS.has(tileAt(col, row))) return true;
   return solidProps.has(`${col},${row}`);
