@@ -64,12 +64,20 @@ export class Input {
   }
 
   bindButton(el, which) {
-    const setter = which === 'a' ? this._setA.bind(this) : this._setB.bind(this);
-    const clear = () => (which === 'a' ? (this.a = false) : (this.b = false));
-    el.addEventListener('pointerdown', (e) => { setter(true); e.preventDefault(); });
-    el.addEventListener('pointerup', clear);
-    el.addEventListener('pointerleave', clear);
-    el.addEventListener('pointercancel', clear);
+    // Every pointerdown queues a DISCRETE press, independent of the held-state
+    // boolean. (The old code only fired on the rising edge of `this.a`; if a
+    // pointerup/leave/cancel was ever missed on mobile, `this.a` stayed true
+    // and every later tap was silently dropped — "A doesn't register".)
+    const press = () => {
+      if (which === 'a') { this._aJustPressed = true; this.a = true; }
+      else { this._bJustPressed = true; this.b = true; }
+      sfx.click();
+    };
+    const release = () => (which === 'a' ? (this.a = false) : (this.b = false));
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); press(); });
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointerleave', release);
+    el.addEventListener('pointercancel', release);
   }
 
   // Call once per frame after update() has consumed the "just pressed" edge.
