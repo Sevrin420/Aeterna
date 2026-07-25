@@ -383,6 +383,41 @@ const io = new Server(fastify.server, {
 
 const online = new Map(); // socketId → player data
 
+// ---- Realtime scaling (Tier 1): authoritative tick + interest management ----
+// Instead of relaying every move to everyone (O(N^2)), the server holds
+// authoritative positions and, on a fixed tick, sends each client only the
+// nearest players around them as a compact BINARY snapshot. Clients interpolate
+// between snapshots. This keeps cost bounded no matter how many are online.
+const TILE = 10;                 // must match web/js/abbeyMap.js
+const CELL = 8 * TILE;           // interest grid cell (world px)
+const INTEREST_K = 40;           // max peers streamed to a client (fits the screen)
+const TICK_MS = 100;             // 10 Hz snapshot rate
+const DIR_CODE = { down: 0, up: 1, left: 2, right: 3 };
+let _netSeq = 1;
+const _freeNet = [];
+function assignNet() { if (_freeNet.length) return _freeNet.pop(); const id = _netSeq++; if (_netSeq > 65535) _netSeq = 1; return id; }
+function releaseNet(id) { if (id) _freeNet.push(id); }
+
+// ---- Tier 3 (optional): multi-process fan-out via the Socket.IO Redis adapter.
+// Set REDIS_URL and run several workers behind Caddy (sticky sessions) to use
+// all CPU cores. Inert (single process) when REDIS_URL is unset, so nothing to
+// install until you actually need it.
+if (process.env.REDIS_URL) {
+  try {
+    const [{ createAdapter }, { createClient }] = await Promise.all([
+      import('@socket.io/redis-adapter'),
+      import('redis'),
+    ]);
+    const pub = createClient({ url: process.env.REDIS_URL });
+    const sub = pub.duplicate();
+    await Promise.all([pub.connect(), sub.connect()]);
+    io.adapter(createAdapter(pub, sub));
+    console.log('Socket.IO Redis adapter enabled (multi-process mode).');
+  } catch (e) {
+    console.warn('REDIS_URL set but Redis adapter failed to load:', e.message);
+  }
+}
+
 // ========== MANCALA (2-player wager game, GDD section 10) ==========
 // One physical table. Classic Kalah rules: indices 0-5 are seat 0's pits,
 // 6 is seat 0's store; 7-12 are seat 1's pits, 13 is seat 1's store.
@@ -495,40 +530,36 @@ function mancalaLeave(socket) {
 
 io.on('connection', (socket) => {
   socket.on('join', (data) => {
-    online.set(socket.id, { ...data, heldGiftId: null });
-    socket.broadcast.emit('player_joined', {
-      id: data.tokenId || socket.id,
-      name: data.name,
-      prefix: data.prefix,
-      x: data.x,
-      y: data.y,
+    const netId = assignNet();
+    online.set(socket.id, {
+      ...data,
+      netId,
+      dir: 'down',
+      heldGiftId: null,
+      socket,          // local ref for the tick loop
+      known: new Set(), // netIds we've already sent meta for (this frame's interest set)
     });
-    // Catch the new player up on everyone already in the abbey.
-    for (const [otherId, p] of online) {
-      if (otherId === socket.id) continue;
-      socket.emit('player_joined', { id: p.tokenId || otherId, name: p.name, prefix: p.prefix, x: p.x, y: p.y });
-    }
+    // Tell the client its own network id so it can ignore itself in snapshots.
+    socket.emit('welcome', { netId });
+    // Everyone else discovers this player lazily via the interest tick — no
+    // O(N) fan-out on join, no catch-up loop.
   });
 
   socket.on('move', (data) => {
     const p = online.get(socket.id);
     if (!p) return;
+    // Authoritative state only. No broadcast here — the tick loop streams
+    // positions to just the nearby players as a compact binary snapshot.
     p.x = data.x;
     p.y = data.y;
     p.dir = data.dir;
-    socket.broadcast.emit('player_moved', {
-      id: p.tokenId || socket.id,
-      x: data.x,
-      y: data.y,
-      dir: data.dir
-    });
   });
 
   socket.on('emoji', (data) => {
     const p = online.get(socket.id);
     if (!p) return;
     socket.broadcast.emit('emoji_show', {
-      id: p.tokenId || socket.id,
+      net: p.netId,
       emoji: data.emoji
     });
   });
@@ -540,7 +571,7 @@ io.on('connection', (socket) => {
     if (p.lastChatAt && now - p.lastChatAt < 1500) return; // rate-limit: 1 msg / 1.5s
     p.lastChatAt = now;
     socket.broadcast.emit('chat_msg', {
-      id: p.tokenId || socket.id,
+      net: p.netId,
       name: p.name,
       text: String(data.text || '').slice(0, 120)
     });
@@ -551,6 +582,7 @@ io.on('connection', (socket) => {
     if (!p) return;
     p.heldGiftId = data.giftId;
     socket.broadcast.emit('gift_picked', {
+      net: p.netId,
       playerId: p.tokenId || socket.id,
       giftId: data.giftId
     });
@@ -560,6 +592,7 @@ io.on('connection', (socket) => {
     const p = online.get(socket.id);
     if (!p || !p.heldGiftId) return;
     socket.broadcast.emit('gift_offered', {
+      net: p.netId,
       fromPlayerId: p.tokenId || socket.id,
       giftId: p.heldGiftId
     });
@@ -580,6 +613,7 @@ io.on('connection', (socket) => {
     const giftId = p.heldGiftId;
     p.heldGiftId = null;
     socket.broadcast.emit('gift_dropped', {
+      net: p.netId,
       playerId: p.tokenId || socket.id,
       giftId,
       x: p.x,
@@ -641,12 +675,96 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const p = online.get(socket.id);
     if (p) {
-      socket.broadcast.emit('player_left', { id: p.tokenId || socket.id });
+      releaseNet(p.netId);
+      socket.broadcast.emit('peer_left', { net: p.netId });
       online.delete(socket.id);
     }
     mancalaLeave(socket);
   });
 });
+
+// ---- Interest tick: stream each client only the nearest INTEREST_K players ----
+// Cost is O(N * avgNeighbours), not O(N^2): we bucket players into a coarse
+// spatial grid and only compare against the 3x3 block of cells around each one.
+// Positions go out as a packed binary snapshot; names/prefixes go out once (as
+// JSON) the first time a peer enters a client's interest set.
+// NOTE: with the Redis adapter (Tier 3, multi-process) each worker only sees
+// its own connected sockets in `online`, so cross-worker interest would need
+// shared position state. For a single process (the default) this is exact.
+const SNAP_STRIDE = 7; // bytes per peer: netId(u16) x(i16) y(i16) dir(u8)
+
+setInterval(() => {
+  if (online.size === 0) return;
+
+  // 1) Bucket everyone into grid cells.
+  const cells = new Map(); // "cx,cy" -> array of player entries
+  for (const p of online.values()) {
+    if (typeof p.x !== 'number' || typeof p.y !== 'number') continue;
+    const key = `${Math.floor(p.x / CELL)},${Math.floor(p.y / CELL)}`;
+    let bucket = cells.get(key);
+    if (!bucket) { bucket = []; cells.set(key, bucket); }
+    bucket.push(p);
+  }
+
+  // 2) For each player, gather candidates from its 3x3 cell block, take the
+  //    nearest K, and emit meta (new peers) + a binary position snapshot.
+  for (const me of online.values()) {
+    if (typeof me.x !== 'number') continue;
+    const cx = Math.floor(me.x / CELL);
+    const cy = Math.floor(me.y / CELL);
+    const candidates = [];
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gy = cy - 1; gy <= cy + 1; gy++) {
+        const bucket = cells.get(`${gx},${gy}`);
+        if (!bucket) continue;
+        for (const other of bucket) {
+          if (other === me) continue;
+          const dx = other.x - me.x;
+          const dy = other.y - me.y;
+          candidates.push([dx * dx + dy * dy, other]);
+        }
+      }
+    }
+    if (candidates.length > INTEREST_K) {
+      candidates.sort((a, b) => a[0] - b[0]);
+      candidates.length = INTEREST_K;
+    }
+
+    // Meta for peers newly entering this client's interest set.
+    const nextKnown = new Set();
+    const newPeers = [];
+    for (const [, other] of candidates) {
+      nextKnown.add(other.netId);
+      if (!me.known.has(other.netId)) {
+        newPeers.push({
+          net: other.netId,
+          id: other.tokenId || null,
+          name: other.name,
+          prefix: other.prefix,
+        });
+      }
+    }
+    me.known = nextKnown;
+    if (newPeers.length) me.socket.emit('peers', newPeers);
+
+    // Nothing nearby: skip the packet entirely. Peers that just left this
+    // client's radius will lapse via the client's staleness timeout.
+    if (candidates.length === 0) continue;
+
+    // Packed positions.
+    const buf = new ArrayBuffer(2 + candidates.length * SNAP_STRIDE);
+    const view = new DataView(buf);
+    view.setUint16(0, candidates.length);
+    let off = 2;
+    for (const [, other] of candidates) {
+      view.setUint16(off, other.netId); off += 2;
+      view.setInt16(off, Math.round(other.x)); off += 2;
+      view.setInt16(off, Math.round(other.y)); off += 2;
+      view.setUint8(off, DIR_CODE[other.dir] || 0); off += 1;
+    }
+    me.socket.emit('snap', buf);
+  }
+}, TICK_MS);
 
 // ========== START ==========
 const port = Number(process.env.PORT) || 3000;

@@ -80,8 +80,8 @@ html, body {
 /* ===== Power switch (Club Nile style: wood pill, ON/OFF labels, ridged knob) ===== */
 .power-switch {
   position: absolute;
-  left: 74.5%;
-  top: 88.4%;
+  left: 72%;
+  top: 87.6%;
   width: 17%;
   height: 6.2%;
   background: transparent;

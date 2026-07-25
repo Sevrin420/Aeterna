@@ -13,6 +13,9 @@ const W = 208, H = 208; // logical screen size (canvas backing store is RES x th
 const RES = 2;          // must match the 2x transform main.js sets each frame
 const MAP_W = COLS * TILE, MAP_H = ROWS * TILE;
 const GIFT_POLL_MS = 4000;
+const DIRS = ['down', 'up', 'left', 'right']; // decode of the server's DIR_CODE
+const PEER_STALE_MS = 700;    // drop a peer not seen in a snapshot this long
+const INTERP_TIME = 0.1;      // seconds to ease a peer to its latest target (~tick rate)
 
 const px = (t) => t * TILE + TILE / 2;
 
@@ -75,7 +78,12 @@ export class CourtyardScene {
     this.cathedralRooms = new Map(); // roomId -> { owner_id, owner_name }
     this.finalCommunionShown = false;
 
-    this.remotePlayers = new Map(); // id -> { x, y, dir, name, prefix, emoji }
+    // Keyed by network id (uint16 assigned by the server). Each entry carries
+    // the peer's identity (id=tokenId, name, prefix), its latest server target
+    // (tx,ty,dir), the interpolated render position (rx,ry), a lastSnap
+    // timestamp for staleness eviction, plus transient emoji/chat bubbles.
+    this.remotePlayers = new Map();
+    this.myNet = 0;
 
     this.pc = {
       x: px(21), y: px(32), // just inside the door, at the foot of the cross
@@ -113,12 +121,12 @@ export class CourtyardScene {
     window.addEventListener('keydown', this._onKeyDown);
   }
 
-  showChat(id, text) {
-    if (id === 'local') {
+  showChat(key, text) {
+    if (key === 'local') {
       this.localChat = { text, t: 3.2 };
     } else {
-      const existing = this.remotePlayers.get(id) || {};
-      this.remotePlayers.set(id, { ...existing, chat: { text, t: 3.2 } });
+      const rp = this.remotePlayers.get(key);
+      if (rp) rp.chat = { text, t: 3.2 };
     }
   }
 
@@ -132,24 +140,57 @@ export class CourtyardScene {
   _bindSocket() {
     const s = this.socket;
     if (!s) return;
-    this._onJoined = (p) => this.remotePlayers.set(p.id, p);
-    this._onLeft = (p) => this.remotePlayers.delete(p.id);
-    this._onMoved = (p) => {
-      const existing = this.remotePlayers.get(p.id) || {};
-      this.remotePlayers.set(p.id, { ...existing, ...p });
+
+    // Server tells us our own network id so we can ignore ourselves in snaps.
+    this._onWelcome = (p) => { this.myNet = p.net || p.netId || 0; };
+
+    // Identity metadata for peers newly entering our interest radius. Sent as
+    // JSON, once each, so the per-tick position snapshot can stay tiny.
+    this._onPeers = (list) => {
+      for (const m of list) {
+        const rp = this.remotePlayers.get(m.net) || {};
+        rp.id = m.id; rp.name = m.name; rp.prefix = m.prefix;
+        this.remotePlayers.set(m.net, rp);
+      }
     };
+
+    // Binary position snapshot: uint16 count, then per peer
+    // netId(u16) x(i16) y(i16) dir(u8). We set the target and let update()
+    // interpolate the render position toward it.
+    this._onSnap = (buf) => {
+      const view = new DataView(buf instanceof ArrayBuffer ? buf : buf.buffer || buf);
+      const count = view.getUint16(0);
+      const now = performance.now();
+      let off = 2;
+      for (let i = 0; i < count; i++) {
+        const net = view.getUint16(off); off += 2;
+        const x = view.getInt16(off); off += 2;
+        const y = view.getInt16(off); off += 2;
+        const dir = DIRS[view.getUint8(off)] || 'down'; off += 1;
+        if (net === this.myNet) continue;
+        let rp = this.remotePlayers.get(net);
+        if (!rp) { rp = {}; this.remotePlayers.set(net, rp); }
+        if (rp.rx == null) { rp.rx = x; rp.ry = y; } // snap in on first sight
+        rp.tx = x; rp.ty = y; rp.dir = dir; rp.lastSnap = now;
+      }
+    };
+
+    this._onPeerLeft = (p) => { if (p && p.net != null) this.remotePlayers.delete(p.net); };
     this._onEmoji = (p) => {
-      const existing = this.remotePlayers.get(p.id) || {};
-      this.remotePlayers.set(p.id, { ...existing, emoji: { emoji: p.emoji, t: 1.6 } });
+      const rp = this.remotePlayers.get(p.net);
+      if (rp) rp.emoji = { emoji: p.emoji, t: 1.6 };
     };
-    this._onChatMsg = (p) => this.showChat(p.id, p.text);
+    this._onChatMsg = (p) => this.showChat(p.net, p.text);
+
     this._onMancalaState = (state) => this.onMancala({ type: 'state', ...state });
     this._onMancalaEnd = (state) => this.onMancala({ type: 'end', ...state });
     this._onMancalaError = (data) => this.onToast(data.message);
     this._onMancalaFull = () => this.onToast('The table is full — wait for a seat.');
-    s.on('player_joined', this._onJoined);
-    s.on('player_left', this._onLeft);
-    s.on('player_moved', this._onMoved);
+
+    s.on('welcome', this._onWelcome);
+    s.on('peers', this._onPeers);
+    s.on('snap', this._onSnap);
+    s.on('peer_left', this._onPeerLeft);
     s.on('emoji_show', this._onEmoji);
     s.on('chat_msg', this._onChatMsg);
     s.on('mancala_state', this._onMancalaState);
@@ -161,9 +202,10 @@ export class CourtyardScene {
   _unbindSocket() {
     const s = this.socket;
     if (!s) return;
-    s.off('player_joined', this._onJoined);
-    s.off('player_left', this._onLeft);
-    s.off('player_moved', this._onMoved);
+    s.off('welcome', this._onWelcome);
+    s.off('peers', this._onPeers);
+    s.off('snap', this._onSnap);
+    s.off('peer_left', this._onPeerLeft);
     s.off('emoji_show', this._onEmoji);
     s.off('chat_msg', this._onChatMsg);
     s.off('mancala_state', this._onMancalaState);
@@ -635,7 +677,20 @@ export class CourtyardScene {
       this.localChat.t -= dt;
       if (this.localChat.t <= 0) this.localChat = null;
     }
-    for (const rp of this.remotePlayers.values()) {
+    const nowMs = performance.now();
+    const lerp = Math.min(1, dt / INTERP_TIME);
+    for (const [net, rp] of this.remotePlayers) {
+      // Evict peers we've stopped hearing about (left our interest radius or
+      // disconnected). Keep those with identity but no position yet (rx null).
+      if (rp.lastSnap != null && nowMs - rp.lastSnap > PEER_STALE_MS) {
+        this.remotePlayers.delete(net);
+        continue;
+      }
+      // Ease the render position toward the last server target.
+      if (rp.tx != null) {
+        rp.rx += (rp.tx - rp.rx) * lerp;
+        rp.ry += (rp.ty - rp.ry) * lerp;
+      }
       if (rp.emoji) {
         rp.emoji.t -= dt;
         if (rp.emoji.t <= 0) rp.emoji = null;
@@ -1248,9 +1303,10 @@ export class CourtyardScene {
     );
   }
 
-  _drawRemotePlayer(ctx, id, rp) {
-    const rpSheet = getCultistSprite(id, rp.prefix === 'Sister' ? 'female' : 'male');
-    this._drawRobedFigure(ctx, rp.x, rp.y, rp.dir || 'down', false, this.t, rpSheet, false, rp.name, rp.emoji, rp.chat);
+  _drawRemotePlayer(ctx, net, rp) {
+    const seed = rp.id != null ? rp.id : 'n' + net;
+    const rpSheet = getCultistSprite(seed, rp.prefix === 'Sister' ? 'female' : 'male');
+    this._drawRobedFigure(ctx, rp.rx, rp.ry, rp.dir || 'down', false, this.t, rpSheet, false, rp.name, rp.emoji, rp.chat);
   }
 
   // Collects every prop, station, gift, and character into one list and
@@ -1269,9 +1325,13 @@ export class CourtyardScene {
     for (const g of this.gifts) {
       items.push({ y: px(g.loc_y), draw: () => this._drawGift(ctx, g) });
     }
-    for (const [id, rp] of this.remotePlayers) {
-      if (rp.x == null) continue;
-      items.push({ y: rp.y, draw: () => this._drawRemotePlayer(ctx, id, rp) });
+    // Only draw peers whose interpolated position is on-screen (Tier 2 cull):
+    // even if the server streams a few dozen, we skip anyone off-camera.
+    const camX = this.cam.x, camY = this.cam.y, M = TILE * 2;
+    for (const [net, rp] of this.remotePlayers) {
+      if (rp.rx == null) continue;
+      if (rp.rx < camX - M || rp.rx > camX + W + M || rp.ry < camY - M || rp.ry > camY + H + M) continue;
+      items.push({ y: rp.ry, draw: () => this._drawRemotePlayer(ctx, net, rp) });
     }
     for (const n of this.crowd) items.push({ y: n.y, draw: () => this._drawCultist(ctx, n) });
     items.push({ y: this.pc.y, draw: () => this._drawLocalPlayer(ctx) });
