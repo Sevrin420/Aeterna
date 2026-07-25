@@ -364,9 +364,9 @@ export class CourtyardScene {
         const g = cvs.getContext('2d');
         g.imageSmoothingEnabled = false; g.setTransform(RES, 0, 0, RES, 0, 0);
         const top = ay - h;
-        drawRegaliaBack(g, ax, top, w, h, n.traits);
+        drawRegaliaBack(g, ax, top, w, h, n.traits, dir);
         g.drawImage(fr, ax - w / 2, top, w, h);
-        drawRegaliaFront(g, ax, top, w, h, n.traits);
+        drawRegaliaFront(g, ax, top, w, h, n.traits, dir);
         return cvs;
       });
     }

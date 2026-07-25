@@ -38,12 +38,24 @@ export function applyRobe(tr, robe) {
   return tr;
 }
 
-function geom(cx, top, w, h) {
-  return { cx, headCx: cx, headTop: top + h * 0.04, headW: w * 0.62, headH: h * 0.44, top, w, h, groundY: top + h };
+// In the side-facing (left/right) sprite frames the head is drawn off-centre,
+// toward the way the figure looks, and reads narrower (a profile). The regalia
+// paths are authored around the head centre, so for side views we shift the
+// head anchor toward the face and slim it — otherwise the hood/horns/skull
+// float beside the head with a gap. Front/back frames (default) are unchanged,
+// so NFT art and up/down walking frames render exactly as before.
+function geom(cx, top, w, h, dir) {
+  const side = dir === 'left' || dir === 'right';
+  const off = dir === 'left' ? -w * 0.15 : dir === 'right' ? w * 0.15 : 0;
+  return {
+    cx, headCx: cx + off, headTop: top + h * 0.04,
+    headW: w * (side ? 0.54 : 0.62), headH: h * 0.44,
+    top, w, h, groundY: top + h, dir, side,
+  };
 }
 
-export function drawRegaliaBack(ctx, cx, top, w, h, tr) {
-  const { headCx, headTop, headW, headH } = geom(cx, top, w, h);
+export function drawRegaliaBack(ctx, cx, top, w, h, tr, dir = 'down') {
+  const { headCx, headTop, headW, headH } = geom(cx, top, w, h, dir);
   if (tr.halo === 'crossHalo') {
     const R = headH * 0.95;
     const gg = ctx.createRadialGradient(headCx, headTop + headH * 0.4, 1, headCx, headTop + headH * 0.4, R);
@@ -65,8 +77,8 @@ export function drawRegaliaBack(ctx, cx, top, w, h, tr) {
   }
 }
 
-export function drawRegaliaFront(ctx, cx, top, w, h, tr) {
-  const { headCx, headTop, headW, headH, groundY } = geom(cx, top, w, h);
+export function drawRegaliaFront(ctx, cx, top, w, h, tr, dir = 'down') {
+  const { headCx, headTop, headW, headH, groundY } = geom(cx, top, w, h, dir);
   if (tr.hood !== 'none') {
     const base = tr.hood === 'gilded' ? '#2a2018' : '#171018';
     const edge = tr.hood === 'gilded' ? '#b8933f' : '#33242e';

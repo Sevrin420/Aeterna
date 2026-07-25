@@ -197,9 +197,11 @@ html, body {
   z-index: 4;
   cursor: pointer;
   touch-action: none;
-  /* covers the full d-pad cross so a press anywhere on it steers, and the
-     thumb can slide to change direction without lifting */
-  left: 12%; top: 70.5%; width: 32%; height: 23%;
+  /* covers the full d-pad cross (plus a margin) so a press anywhere near it
+     steers, and the thumb can slide to change direction without lifting.
+     Enlarged ~1.15x and recentred on the same point; the glow inset below is
+     widened to match so the plus glow still sits on the drawn cross. */
+  left: 9.5%; top: 68.75%; width: 37%; height: 26.5%;
   /* background: rgba(255,0,0,0.2); uncomment to debug alignment */
 }
 
@@ -569,7 +571,9 @@ html, body {
 .dpad-zone::after {
   content: '';
   position: absolute;
-  inset: 15%;
+  /* zone is ~1.15x larger than before; this inset (was 15%) keeps the plus
+     glow the same absolute size, still centred on the drawn cross. */
+  inset: 19.6%;
   background: radial-gradient(circle at 50% 50%,
     rgba(200,255,150,0.6), rgba(96,224,74,0.3) 55%, rgba(96,224,74,0) 78%);
   clip-path: polygon(34% 0, 66% 0, 66% 34%, 100% 34%, 100% 66%, 66% 66%,
