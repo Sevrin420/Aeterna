@@ -63,10 +63,51 @@ jobs:
             systemctl --no-pager status aeterna-server
           '
 
+      # Put Caddy in front of the Node app so the game is served over HTTPS on
+      # membersonly.cc (clean URL, no :3000, no "Not secure"). Caddy fetches &
+      # renews a free Let's Encrypt cert automatically and proxies WebSockets
+      # (Socket.io) through untouched. Idempotent: installs only if missing,
+      # rewrites the tiny Caddyfile and reloads each run.
+      - name: Set up HTTPS reverse proxy (Caddy)
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" '
+            set -e
+            if ! command -v caddy >/dev/null 2>&1; then
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg
+              curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+              curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt" | tee /etc/apt/sources.list.d/caddy-stable.list
+              apt-get update
+              apt-get install -y caddy
+            fi
+            # open the web ports on the host firewall if ufw is managing it
+            if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+              ufw allow 80/tcp || true
+              ufw allow 443/tcp || true
+            fi
+            printf "%s\n" "membersonly.cc {" "    encode gzip" "    reverse_proxy localhost:3000" "}" > /etc/caddy/Caddyfile
+            systemctl enable caddy
+            systemctl reload caddy 2>/dev/null || systemctl restart caddy
+            sleep 2
+            systemctl --no-pager status caddy | head -15 || true
+          '
+
       - name: Verify externally reachable
         run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${{ secrets.VPS_HOST }}:3000/" || echo "000")
-          echo "External HTTP status on port 3000: $code"
-          if [ "$code" != "200" ]; then
-            echo "::warning::Server did not respond 200 externally on port 3000 (check firewall/security group)."
+          http=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${{ secrets.VPS_HOST }}:3000/" || echo "000")
+          echo "Direct HTTP on :3000 -> $http"
+          echo "Waiting for Caddy to obtain the TLS certificate..."
+          sleep 10
+          https="000"
+          for i in 1 2 3 4 5 6; do
+            https=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://membersonly.cc/" || echo "000")
+            echo "Attempt $i: https://membersonly.cc -> $https"
+            [ "$https" = "200" ] && break
+            sleep 10
+          done
+          if [ "$https" != "200" ]; then
+            echo "::warning::HTTPS not 200 yet. Cert issuance can take a minute on first run; if it persists, ports 80/443 are likely blocked by the cloud provider firewall/security group (they must allow inbound 80 and 443)."
+          else
+            echo "✅ Live at https://membersonly.cc/"
           fi
