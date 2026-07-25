@@ -39,6 +39,11 @@ export const sfx = {
     localStorage.setItem('aeterna_muted', muted ? '1' : '0');
     return muted;
   },
+  setMuted(v) {
+    muted = !!v;
+    localStorage.setItem('aeterna_muted', muted ? '1' : '0');
+    return muted;
+  },
   click() {
     tone({ freq: 320, duration: 0.05, type: 'square', gain: 0.06 });
   },

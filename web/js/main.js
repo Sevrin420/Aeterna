@@ -40,21 +40,24 @@ const communionOverlay = document.getElementById('communionOverlay');
 const communionBody = document.getElementById('communionBody');
 const communionClose = document.getElementById('communionClose');
 
-// Background hymn — preloaded on page load (before the switch is touched) so it
-// can begin the instant the console is powered on. Looped; obeys the mute
-// button; stopped on power off.
+// Two looping hymns, both preloaded up front:
+//  - `bgm` plays the instant the console powers on (title / entrance).
+//  - `gameBgm` takes over once the player enters the game proper.
+// Both obey the mute button and stop on power off.
 const bgm = new Audio('assets/hymn.mp3');
-bgm.loop = true;
-bgm.preload = 'auto';
-bgm.volume = 0.55;
-bgm.muted = sfx.isMuted();
-bgm.load(); // start buffering immediately
+bgm.loop = true; bgm.preload = 'auto'; bgm.volume = 0.55; bgm.muted = sfx.isMuted(); bgm.load();
+
+const gameBgm = new Audio('assets/hymn-game.mp3');
+gameBgm.loop = true; gameBgm.preload = 'auto'; gameBgm.volume = 0.5; gameBgm.muted = sfx.isMuted(); gameBgm.load();
+
+const MUSIC = [bgm, gameBgm];
+function applyMute(m) { for (const a of MUSIC) a.muted = m; }
 
 muteToggle.setAttribute('aria-pressed', String(sfx.isMuted()));
 muteToggle.addEventListener('click', () => {
   const nowMuted = sfx.toggleMute();
   muteToggle.setAttribute('aria-pressed', String(nowMuted));
-  bgm.muted = nowMuted;
+  applyMute(nowMuted);
 });
 
 const input = new Input();
@@ -215,6 +218,14 @@ const CROWD = parseInt(new URLSearchParams(location.search).get('crowd') || '0',
 
 function enterCourtyard(player) {
   updateHud(player);
+  // Entering the game: auto-unmute and cross over from the title hymn to the
+  // in-game hymn (looping). Players silence it with the mute button.
+  sfx.setMuted(false);
+  muteToggle.setAttribute('aria-pressed', 'false');
+  applyMute(false);
+  bgm.pause();
+  gameBgm.currentTime = 0;
+  gameBgm.play().catch(() => {});
   scene = new CourtyardScene({
     player,
     onPlayerUpdate: updateHud,
@@ -434,8 +445,7 @@ function powerOff() {
   if (!powered) return;
   powered = false;
   sfx.power(false);
-  bgm.pause();
-  bgm.currentTime = 0;
+  for (const a of MUSIC) { a.pause(); a.currentTime = 0; }
   powerSwitch.setAttribute('aria-pressed', 'false');
   if (scene && scene.exit) scene.exit();
   scene = null;
