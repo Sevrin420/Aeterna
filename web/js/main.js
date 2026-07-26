@@ -1,4 +1,5 @@
 import { Input, makeLoop } from './engine.js';
+import { PresenterScene } from './scenes/presenter.js';
 import { BootScene } from './scenes/boot.js';
 import { EntranceScene } from './scenes/entrance.js';
 import { CourtyardScene } from './scenes/courtyard.js';
@@ -232,7 +233,7 @@ function enterCourtyard(player) {
     onToast: showToast,
     socket: ensureSocket(),
     onLeaderboard: showLeaderboard,
-    onSaveExit: powerOff,
+    onSaveExit: returnToEntrance,
     onChatOpen: openChat,
     onMancala: showMancala,
     onFinalCommunion: showFinalCommunion,
@@ -296,8 +297,21 @@ mintClose.addEventListener('click', () => { mintOverlay.hidden = true; });
 let entrancePlayer = null;
 let chosenCultist = null;
 
+// Save & Exit from the game returns to the entry lobby (not power off). Devotion
+// was already saved by the scene before this runs.
+function returnToEntrance() {
+  if (scene && scene.exit) scene.exit();
+  if (socket) { socket.disconnect(); socket = null; }
+  hud.hidden = true;
+  revealTransition(() => enterEntrance(entrancePlayer));
+}
+
 function enterEntrance(player) {
   entrancePlayer = player;
+  // Entry-lobby music: the title hymn plays here (the in-game hymn is paused).
+  gameBgm.pause();
+  bgm.muted = sfx.isMuted();
+  if (bgm.paused) bgm.play().catch(() => {});
   scene = new EntranceScene({
     player,
     onDocs: () => { docsOverlay.hidden = false; },
@@ -409,8 +423,26 @@ async function afterBoot() {
   }
 }
 
+// A one-shot stinger played when the presenter card hands off to the title
+// card (the "title card audio"). Preloaded so it fires instantly.
+const stinger = new Audio('assets/title-a.mp3');
+stinger.preload = 'auto'; stinger.load();
+
 function startBoot() {
   scene = new BootScene({ onComplete: afterBoot });
+  scene.enter();
+  hint.textContent = '';
+}
+
+// First scene on power-on: "Presented by / Members Only". Pressing A there plays
+// the title-card stinger and reveals the title card (image fade + logo drop).
+function startPresenter() {
+  scene = new PresenterScene({
+    onComplete: () => {
+      if (!sfx.isMuted()) { try { stinger.currentTime = 0; stinger.play().catch(() => {}); } catch { /* ignore */ } }
+      startBoot();
+    },
+  });
   scene.enter();
   hint.textContent = '';
 }
@@ -424,7 +456,7 @@ function powerOn() {
   bgm.currentTime = 0;
   bgm.play().catch(() => {});
   powerSwitch.setAttribute('aria-pressed', 'true');
-  startBoot();
+  startPresenter();
   if (!stopLoop) {
     stopLoop = makeLoop(
       (dt) => { if (scene) scene.update(dt, input); },

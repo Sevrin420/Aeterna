@@ -42,7 +42,7 @@ const STATIONS = [
   { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: px(NAVE_CX), y: px(11), r: 13 },
   { id: 'confession', kind: 'confession', label: 'Confess', x: px(TRANSEPT.x0 + 3), y: px(58), r: 13 },
   { id: 'leaderboard', kind: 'leaderboard', label: 'View the Devout', x: px(TRANSEPT.x1 - 3), y: px(58), r: 13 },
-  { id: 'gate', kind: 'gate', label: 'Save & Exit [B]', x: px(NAVE_CX), y: px(75), r: 14 },
+  { id: 'gate', kind: 'gate', label: 'Save & Exit', x: px(NAVE_CX), y: px(75), r: 14 },
   { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: px(NAVE.x0 + 1), y: px(11), r: 12 },
   // east skull chamber — the daily chant (was "tend the ossuary")
   { id: 'garden', kind: 'chant', label: 'Chant to the Skulls', x: px(Math.round((SKULL_ROOM.x0 + SKULL_ROOM.x1) / 2)), y: px(SKULL_WALL_ROW + 3), r: 14 },
@@ -761,6 +761,7 @@ export class CourtyardScene {
         else if (this._activeStation.kind === 'soul-altar') this._handleSoulAltar();
         else if (this._activeStation.kind === 'nursery') this._handleNursery();
         else if (this._activeStation.kind === 'mancala') this._handleMancala();
+        else if (this._activeStation.kind === 'gate') this._handleSaveExit();
       } else {
         // A pressed with nothing in range: it DID register — give feedback so it
         // never feels dead. Rate-limited so tapping while walking isn't spammy.
@@ -769,7 +770,6 @@ export class CourtyardScene {
     }
     if (input.consumeBPress()) {
       if (this.holdingGift) this._handleDrop();
-      else if (this._activeStation && this._activeStation.kind === 'gate') this._handleSaveExit();
       else this._noActionHint(dt);
     }
 
@@ -1316,19 +1316,26 @@ export class CourtyardScene {
         break;
       }
       case 'door': {
-        // the way out — a heavy arched door at the foot of the cross
-        this._dropShadow(ctx, x, y + 6, 8, 2.4);
-        ctx.fillStyle = '#0c0a10';                 // dark doorway
-        ctx.fillRect(x - 7, y - 12, 14, 18);
-        ctx.beginPath(); ctx.arc(x, y - 12, 7, Math.PI, 0); ctx.fill();
-        ctx.fillStyle = '#2c1d12';                 // door planks
-        ctx.fillRect(x - 5, y - 9, 10, 14);
-        ctx.beginPath(); ctx.arc(x, y - 9, 5, Math.PI, 0); ctx.fill();
-        ctx.fillStyle = 'rgba(20,14,9,0.9)';       // plank seams
-        ctx.fillRect(x - 1.5, y - 12, 0.8, 17);
-        ctx.fillRect(x + 1.5, y - 12, 0.8, 17);
-        ctx.fillStyle = '#6a5230';                 // iron ring handle
-        ctx.beginPath(); ctx.arc(x + 3, y - 1, 1.1, 0, Math.PI * 2); ctx.stroke();
+        // the way out — a black gap cut into the wall at the foot of the cross
+        const gw = 22;
+        const topY = y - 22, botY = y + 14;
+        // black opening with an arched top
+        ctx.fillStyle = '#040406';
+        ctx.fillRect(x - gw / 2, topY, gw, botY - topY);
+        ctx.beginPath(); ctx.arc(x, topY, gw / 2, Math.PI, 0); ctx.fill();
+        // a touch of depth toward the far dark
+        const g = ctx.createLinearGradient(0, topY - gw / 2, 0, botY);
+        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.55)');
+        ctx.fillStyle = g; ctx.fillRect(x - gw / 2, topY - gw / 2, gw, botY - topY + gw / 2);
+        // dressed-stone arch framing the gap
+        ctx.strokeStyle = '#3a3d44'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - gw / 2, botY);
+        ctx.lineTo(x - gw / 2, topY);
+        ctx.arc(x, topY, gw / 2, Math.PI, 0);
+        ctx.lineTo(x + gw / 2, botY);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(120,122,140,0.35)'; ctx.lineWidth = 1; ctx.stroke();
         break;
       }
       case 'ossuary': {
@@ -1721,8 +1728,7 @@ export class CourtyardScene {
     } else if (this._activeStation) {
       ctx.font = '6px "Courier New", monospace';
       ctx.fillStyle = '#f4e5bd';
-      const prefix = this._activeStation.kind === 'gate' ? '' : '[A] ';
-      ctx.fillText(`${prefix}${this._activeStation.label}`, W / 2, H - 16 + promptBounce);
+      ctx.fillText(`[A] ${this._activeStation.label}`, W / 2, H - 16 + promptBounce);
     }
 
     if (this.messageTimer > 0) {

@@ -3,20 +3,8 @@
 // real assets (web/assets/title-bg.jpg + title-logo.png). This sequence runs on
 // every power-on.
 
-import { sfx } from '../sfx.js';
-
 const W = 208, H = 208;
 const FONT = '"Press Start 2P", monospace';
-
-// Stinger played when A is pressed on the title screen. Module-level + preloaded
-// so it survives the scene switch and can fire instantly.
-const pressSfx = new Audio('assets/title-a.mp3');
-pressSfx.preload = 'auto';
-pressSfx.load();
-function playPressSfx() {
-  if (sfx.isMuted()) return;
-  try { pressSfx.currentTime = 0; pressSfx.play().catch(() => {}); } catch { /* ignore */ }
-}
 
 function easeOutBounce(t) {
   const n1 = 7.5625, d1 = 2.75;
@@ -66,7 +54,7 @@ export class BootScene {
       return;
     }
     this.blink += dt;
-    if (input.consumeAPress()) { playPressSfx(); this.onComplete(); }
+    if (input.consumeAPress()) this.onComplete();
   }
 
   render(ctx) {
