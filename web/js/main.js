@@ -451,7 +451,8 @@ function powerOn() {
   if (powered) return;
   powered = true;
   sfx.power(true);
-  // bgm is already playing from page load
+  bgm.currentTime = 0;
+  bgm.play().catch(() => {});
   powerSwitch.setAttribute('aria-pressed', 'true');
   startBoot();
   if (!stopLoop) {
@@ -555,4 +556,4 @@ window.addEventListener('keydown', (e) => {
   backOut();
 }, true);
 
-bgm.currentTime = 0; bgm.play().catch(() => {}); drawOff();
+drawOff();
