@@ -109,8 +109,6 @@ export class CourtyardScene {
     this.fireflies = this._initFireflies();
     this._updateCamera();
 
-    this.entryMessage = `The candles gutter. You enter the unhallowed nave, ${player.prefix} ${player.name}.`;
-    this.messageTimer = 4;
     this.lastEmittedMove = 0;
   }
 
@@ -697,7 +695,6 @@ export class CourtyardScene {
 
   update(dt, input) {
     this.t += dt;
-    if (this.messageTimer > 0) this.messageTimer -= dt;
 
     this.giftPollTimer += dt;
     if (this.giftPollTimer > GIFT_POLL_MS / 1000) {
@@ -1729,15 +1726,6 @@ export class CourtyardScene {
       ctx.font = '6px "Courier New", monospace';
       ctx.fillStyle = '#f4e5bd';
       ctx.fillText(`[A] ${this._activeStation.label}`, W / 2, H - 16 + promptBounce);
-    }
-
-    if (this.messageTimer > 0) {
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, this.messageTimer);
-      ctx.font = '7px "Courier New", monospace';
-      ctx.fillStyle = '#f4e5bd';
-      ctx.fillText(this.entryMessage, W / 2, H - 6);
-      ctx.restore();
     }
   }
 
