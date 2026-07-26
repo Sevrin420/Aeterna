@@ -451,12 +451,9 @@ function powerOn() {
   if (powered) return;
   powered = true;
   sfx.power(true);
-  // start the hymn the instant the console powers on (this runs inside the
-  // switch's pointer gesture, so autoplay is allowed)
-  bgm.currentTime = 0;
-  bgm.play().catch(() => {});
+  // bgm is already playing from page load
   powerSwitch.setAttribute('aria-pressed', 'true');
-  startPresenter();
+  startBoot();
   if (!stopLoop) {
     stopLoop = makeLoop(
       (dt) => { if (scene) scene.update(dt, input); },
@@ -558,4 +555,4 @@ window.addEventListener('keydown', (e) => {
   backOut();
 }, true);
 
-drawOff();
+bgm.currentTime = 0; bgm.play().catch(() => {}); drawOff();
