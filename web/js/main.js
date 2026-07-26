@@ -557,3 +557,13 @@ window.addEventListener('keydown', (e) => {
 }, true);
 
 drawOff();
+
+// Start background music on the very first user interaction (any tap on the
+// page). Browsers require a user gesture before Audio elements can play.
+document.addEventListener('pointerdown', function firstTap() {
+  document.removeEventListener('pointerdown', firstTap);
+  if (!powered) {
+    bgm.currentTime = 0;
+    bgm.play().catch(() => {});
+  }
+}, { once: true });
