@@ -408,7 +408,6 @@ walletBackBtn.addEventListener('click', () => {
 });
 
 async function afterBoot() {
-  sfx.bootConfirm();
   if (!sfx.isMuted()) { try { stinger.currentTime = 0; stinger.play().catch(() => {}); } catch {} }
   try {
     let player;
