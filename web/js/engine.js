@@ -73,15 +73,18 @@ export class Input {
       el.addEventListener('touchmove', (e) => { if (!el._pressed) return; e.preventDefault(); const t = e.touches[0]; if (t) from(t.clientX, t.clientY); }, { passive: false });
       el.addEventListener('touchend', (e) => { e.preventDefault(); up(); }, { passive: false });
       el.addEventListener('touchcancel', up, { passive: false });
-    } else {
-      el.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-        down(e.clientX, e.clientY);
-      });
-      el.addEventListener('pointermove', (e) => { if (el._pressed) { e.preventDefault(); from(e.clientX, e.clientY); } });
-      ['pointerup', 'pointercancel'].forEach((ev) => el.addEventListener(ev, up));
     }
+    // Fallback/dual: pointer events cover browsers where touch events are
+    // unreliable (e.g. DuckDuckGo's WKWebView reports touch capability but
+    // preventDefault doesn't always stick). Added alongside touch events
+    // instead of in an else branch so both fire.
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      down(e.clientX, e.clientY);
+    });
+    el.addEventListener('pointermove', (e) => { if (el._pressed) { e.preventDefault(); from(e.clientX, e.clientY); } });
+    ['pointerup', 'pointercancel'].forEach((ev) => el.addEventListener(ev, up));
   }
 
   bindButton(el, which) {
