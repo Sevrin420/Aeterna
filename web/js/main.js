@@ -41,18 +41,13 @@ const communionOverlay = document.getElementById('communionOverlay');
 const communionBody = document.getElementById('communionBody');
 const communionClose = document.getElementById('communionClose');
 
-// Two looping hymns, both preloaded up front:
-//  - `bgm` plays the instant the console powers on (title / entrance).
-//  - `gameBgm` takes over once the player enters the game proper.
-// Both obey the mute button and stop on power off.
-const bgm = new Audio('assets/hymn.mp3');
-bgm.loop = true; bgm.preload = 'auto'; bgm.volume = 0.55; bgm.muted = sfx.isMuted(); bgm.load();
-
-const gameBgm = new Audio('assets/hymn-game.mp3');
-gameBgm.loop = true; gameBgm.preload = 'auto'; gameBgm.volume = 0.5; gameBgm.muted = sfx.isMuted(); gameBgm.load();
-
-const MUSIC = [bgm, gameBgm];
-function applyMute(m) { for (const a of MUSIC) a.muted = m; }
+// Two looping hymns. Created fresh inside their respective user-gesture
+// handlers (powerOn / enterCourtyard) so mobile browsers always allow
+// playback — pre-creating Audio elements on page load can silently fail.
+let _bgm = null;
+let _gameBgm = null;
+const MUSIC = () => [_bgm, _gameBgm].filter(Boolean);
+function applyMute(m) { for (const a of MUSIC()) a.muted = m; }
 
 muteToggle.setAttribute('aria-pressed', String(sfx.isMuted()));
 muteToggle.addEventListener('click', () => {
@@ -219,14 +214,16 @@ const CROWD = parseInt(new URLSearchParams(location.search).get('crowd') || '0',
 
 function enterCourtyard(player) {
   updateHud(player);
-  // Entering the game: auto-unmute and cross over from the title hymn to the
-  // in-game hymn (looping). Players silence it with the mute button.
+  // Entering the game: auto-unmute, create fresh game bgm, pause title bgm.
   sfx.setMuted(false);
   muteToggle.setAttribute('aria-pressed', 'false');
   applyMute(false);
-  bgm.pause();
-  gameBgm.currentTime = 0;
-  gameBgm.play().catch(() => {});
+  if (_bgm) try { _bgm.pause(); } catch {}
+  _gameBgm = new Audio('assets/hymn-game.mp3');
+  _gameBgm.loop = true;
+  _gameBgm.volume = 0.5;
+  _gameBgm.muted = false;
+  _gameBgm.play().catch(() => {});
   scene = new CourtyardScene({
     player,
     onPlayerUpdate: updateHud,
@@ -309,9 +306,17 @@ function returnToEntrance() {
 function enterEntrance(player) {
   entrancePlayer = player;
   // Entry-lobby music: the title hymn plays here (the in-game hymn is paused).
-  gameBgm.pause();
-  bgm.muted = sfx.isMuted();
-  if (bgm.paused) bgm.play().catch(() => {});
+  if (_gameBgm) try { _gameBgm.pause(); } catch {}
+  if (!_bgm) {
+    _bgm = new Audio('assets/hymn.mp3');
+    _bgm.loop = true;
+    _bgm.volume = 0.55;
+    _bgm.muted = sfx.isMuted();
+    _bgm.play().catch(() => {});
+  } else {
+    _bgm.muted = sfx.isMuted();
+    if (_bgm.paused) _bgm.play().catch(() => {});
+  }
   scene = new EntranceScene({
     player,
     onDocs: () => { docsOverlay.hidden = false; },
@@ -450,8 +455,12 @@ function startPresenter() {
 function powerOn() {
   if (powered) return;
   powered = true;
-  bgm.currentTime = 0;
-  bgm.play().catch(() => {});
+  // Fresh Audio inside user gesture = most reliable on mobile browsers
+  _bgm = new Audio('assets/hymn.mp3');
+  _bgm.loop = true;
+  _bgm.volume = 0.55;
+  _bgm.muted = sfx.isMuted();
+  _bgm.play().catch(() => {});
   powerSwitch.setAttribute('aria-pressed', 'true');
   startBoot();
   if (!stopLoop) {
@@ -473,7 +482,8 @@ function powerOn() {
 function powerOff() {
   if (!powered) return;
   powered = false;
-  for (const a of MUSIC) { a.pause(); a.currentTime = 0; }
+  for (const a of MUSIC()) { try { a.pause(); a.currentTime = 0; } catch {} }
+  _bgm = null; _gameBgm = null;
   powerSwitch.setAttribute('aria-pressed', 'false');
   if (scene && scene.exit) scene.exit();
   scene = null;
@@ -495,9 +505,6 @@ function powerOff() {
 let drag = null;
 powerSwitch.addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  // Start music immediately on touch (pointerdown = earliest user gesture).
-  // Mobile browsers reliably allow audio here; pointerup often doesn't.
-  if (!powered) { bgm.currentTime = 0; bgm.play().catch(() => {}); }
   powerSwitch.setPointerCapture(e.pointerId);
   powerSwitch.classList.add('dragging');
   drag = { x0: e.clientX, w: powerSwitch.getBoundingClientRect().width * 0.5, f: powered ? 1 : 0, moved: false };
@@ -558,13 +565,3 @@ window.addEventListener('keydown', (e) => {
 }, true);
 
 drawOff();
-
-// Start background music on the very first user interaction (any tap on the
-// page). Browsers require a user gesture before Audio elements can play.
-document.addEventListener('pointerdown', function firstTap() {
-  document.removeEventListener('pointerdown', firstTap);
-  if (!powered) {
-    bgm.currentTime = 0;
-    bgm.play().catch(() => {});
-  }
-}, { once: true });
