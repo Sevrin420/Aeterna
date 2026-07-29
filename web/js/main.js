@@ -496,6 +496,9 @@ function powerOff() {
 let drag = null;
 powerSwitch.addEventListener('pointerdown', (e) => {
   e.preventDefault();
+  // Start music immediately on touch (pointerdown = earliest user gesture).
+  // Mobile browsers reliably allow audio here; pointerup often doesn't.
+  if (!powered) { bgm.currentTime = 0; bgm.play().catch(() => {}); }
   powerSwitch.setPointerCapture(e.pointerId);
   powerSwitch.classList.add('dragging');
   drag = { x0: e.clientX, w: powerSwitch.getBoundingClientRect().width * 0.5, f: powered ? 1 : 0, moved: false };
