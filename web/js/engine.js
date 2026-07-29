@@ -65,7 +65,7 @@ export class Input {
       if (Math.abs(nx) > Math.abs(ny)) this.dirs[nx < 0 ? 'left' : 'right'] = true;
       else this.dirs[ny < 0 ? 'up' : 'down'] = true;
     };
-    const down = (cx, cy) => { el._pressed = true; el.classList.add('is-down'); sfx.click(); from(cx, cy); };
+    const down = (cx, cy) => { el._pressed = true; el.classList.add('is-down'); from(cx, cy); };
     const up = () => { el._pressed = false; el.classList.remove('is-down'); clear(); };
 
     if (HAS_TOUCH) {
@@ -96,7 +96,6 @@ export class Input {
       if (which === 'a') { this._aJustPressed = true; this.a = true; }
       else { this._bJustPressed = true; this.b = true; }
       el.classList.add('is-down');
-      sfx.click();
     };
     const release = () => { el.classList.remove('is-down'); return which === 'a' ? (this.a = false) : (this.b = false); };
 

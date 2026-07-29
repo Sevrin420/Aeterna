@@ -473,7 +473,6 @@ function powerOn() {
 function powerOff() {
   if (!powered) return;
   powered = false;
-  sfx.power(false);
   for (const a of MUSIC) { a.pause(); a.currentTime = 0; }
   powerSwitch.setAttribute('aria-pressed', 'false');
   if (scene && scene.exit) scene.exit();
