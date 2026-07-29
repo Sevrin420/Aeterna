@@ -450,7 +450,6 @@ function startPresenter() {
 function powerOn() {
   if (powered) return;
   powered = true;
-  sfx.power(true);
   bgm.currentTime = 0;
   bgm.play().catch(() => {});
   powerSwitch.setAttribute('aria-pressed', 'true');
