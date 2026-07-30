@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>BOYZ N THE HOOD — Robinhood Block</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="select">
+  <div class="logo">
+    <span class="l1">BOYZ</span><span class="l2">N THE HOOD</span>
+    <span class="sub">ROBINHOOD BLOCK — FOUR BOYZ. ONE BLOCK. ZERO CHANCE OF BEHAVING.</span>
+  </div>
+  <div id="picks"></div>
+  <p class="hint">
+    <b>WASD / arrows</b> move &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp;
+    <b>Space</b> shoot &nbsp;·&nbsp; <b>E</b> enter car / start mission &nbsp;·&nbsp; <b>M</b> map
+  </p>
+</div>
+
+<canvas id="game"></canvas>
+
+<div id="hud" hidden>
+  <div id="stick"><i></i></div>
+  <div id="pad">
+    <button id="btnAct" class="tb">E</button>
+    <button id="btnFire" class="tb fire">FIRE</button>
+  </div>
+</div>
+
+<script type="module" src="js/game.js"></script>
+</body>
+</html>

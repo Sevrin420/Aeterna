@@ -7,6 +7,7 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
 import db from './db/database.js';
+import boyzRoutes from './routes/boyz.js';
 import {
   DUTY_DEVOTION, STREAK_BONUS_BASE, GIFT_DEVOTION, GIFT_DAILY_LIMITS,
   todayStr, streakMultiplier, confessionCost, ensureFreshDay, pendingConfession, getSeasonInfo,
@@ -35,6 +36,11 @@ await fastify.register(fastifyStatic, {
     }
   },
 });
+
+// ========== BOYZ N THE HOOD (second game, served under /boyz) ==========
+// Its own routes and tables; shares this process and the SQLite file so there
+// is one thing to deploy and one thing to back up.
+await fastify.register(boyzRoutes);
 
 // ========== HEALTH ==========
 fastify.get('/health', async () => ({ status: 'ok', service: 'aeterna' }));
