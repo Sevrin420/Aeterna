@@ -76,13 +76,13 @@ for (const r of ALCOVE_ROWS) {
   ALCOVES.push({
     side: 'W', x0: 51 - ALCOVE_DEPTH, y0: r, x1: 50, y1: r + ALCOVE_HALF * 2, cy,
     cells: alcoveCells('W', r),
-    brazier: { col: 48, row: cy }, torch: { col: 47, row: cy }, wood: { col: 49, row: cy + 1 },
+    brazier: { col: 48, row: cy }, wood: { col: 49, row: cy + 1 },
   });
   // east niche (opens west; tapers to a point in the EAST)
   ALCOVES.push({
     side: 'E', x0: 69, y0: r, x1: 68 + ALCOVE_DEPTH, y1: r + ALCOVE_HALF * 2, cy,
     cells: alcoveCells('E', r),
-    brazier: { col: 71, row: cy }, torch: { col: 72, row: cy }, wood: { col: 70, row: cy + 1 },
+    brazier: { col: 71, row: cy }, wood: { col: 70, row: cy + 1 },
   });
 }
 
@@ -146,10 +146,13 @@ prop('stair-down', TRANSEPT.x1 - 2, 58, false, { dest: { col: SKULL_ROOM.x1 - 3,
 // the way out, at the foot of the cross
 prop('door', NAVE_CX, 76, false);
 
-// --- TEN FIRE ALCOVES (brazier is the interactive fire-shrine; torch + wood are dressing) ---
+// --- TEN FIRE ALCOVES ---
+// Just the brazier (the interactive fire-shrine) and its fuel. The niche used
+// to also carry a wall torch and a three-candle rack drawn over the brazier by
+// the duty station; both are gone, so the only flame in a nook is the brazier's
+// own and the shrine reads as one object instead of three light sources.
 for (const a of ALCOVES) {
   prop('brazier', a.brazier.col, a.brazier.row, false, { side: a.side, cy: a.cy });
-  prop('wall-torch', a.torch.col, a.torch.row, false, { side: a.side });
   prop('wood-stack', a.wood.col, a.wood.row, false);
   // No arch prop: the niche's own tapered floor plan is the point.
 }

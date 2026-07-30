@@ -1088,15 +1088,6 @@ export class CourtyardScene {
         }
         break;
       }
-      case 'wall-torch': {
-        ctx.fillStyle = IRON.o; ctx.fillRect(x - 2, y - 3, 4, 10);      // sconce
-        ctx.fillStyle = IRON.b; ctx.fillRect(x - 1.2, y - 3, 2.4, 9);
-        ctx.fillStyle = IRON.h; ctx.fillRect(x - 1.2, y - 3, 0.8, 9);
-        ctx.fillStyle = GOLD.d; ctx.fillRect(x - 3, y + 5, 6, 2);       // bracket
-        ctx.fillStyle = GOLD.b; ctx.fillRect(x - 3, y + 5, 6, 0.9);
-        flame(ctx, x, y - 6, 0.7, this.t, p.row * 3);
-        break;
-      }
       case 'wood-stack': {
         this._dropShadow(ctx, x, y + 4, 5.5, 2);
         for (let i = 0; i < 3; i++) {
@@ -1448,32 +1439,6 @@ export class CourtyardScene {
         const g = 0.4 + Math.sin(this.t * 3) * 0.25;
         ctx.fillStyle = `rgba(232,90,74,${g})`;
         ctx.fillRect(-8, 3, 16, 1.4);
-      }
-    } else if (s.id === 'candles') {
-      this._dropShadow(ctx, 0, 7, 3.4, 1.8);
-      ctx.fillStyle = IRON.o; ctx.fillRect(-2.5, -8, 5, 16);   // iron stand
-      ctx.fillStyle = IRON.b; ctx.fillRect(-1.6, -8, 3.2, 16);
-      ctx.fillStyle = IRON.h; ctx.fillRect(-1.6, -8, 1, 16);
-      for (const off of [-6, 0, 6]) {
-        const lit = this.player.candles_today;
-        const flick = 0.7 + Math.sin(this.t * 12 + off) * 0.2;
-        if (lit) {
-          const pool = ctx.createRadialGradient(off, 3, 0.5, off, 3, 8);
-          pool.addColorStop(0, `rgba(255,170,70,${0.16 + flick * 0.08})`);
-          pool.addColorStop(1, 'rgba(255,170,70,0)');
-          ctx.fillStyle = pool;
-          ctx.fillRect(off - 8, -5, 16, 16);
-        }
-        ctx.fillStyle = GOLD.o; ctx.fillRect(off - 1.4, 4, 2.8, 4);  // brass cup
-        ctx.fillStyle = GOLD.d; ctx.fillRect(off - 1, 4, 2, 4);
-        if (lit) {
-          candleFlame(ctx, off, 2, this.t, off);
-        } else {
-          ctx.fillStyle = BONE.o;   // spent candle: outline pass, then wax
-          ctx.beginPath(); ctx.ellipse(off, 2, 2, 3, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = BONE.d;
-          ctx.beginPath(); ctx.ellipse(off, 2, 1.4, 2.4, 0, 0, Math.PI * 2); ctx.fill();
-        }
       }
     } else if (s.id === 'guru') {
       this._dropShadow(ctx, 0, 7, 6, 2.4);
