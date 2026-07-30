@@ -9,6 +9,8 @@
 // and dropping the giraffe/NFT-card/casino-specific code this project
 // doesn't need.
 
+import { GOLD, BLOOD, BONE, SOUL, MOSS, IRON, WOOD } from './palette.js';
+
 function hex2rgb(h) {
   return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 }
@@ -17,18 +19,22 @@ function mixc(a, b, t) {
   const c = A.map((v, i) => Math.round(v + (B[i] - v) * t));
   return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
 }
-/* LTTP shading: highlights lean warm cream, shadows lean cool plum —
-   pushed hard for the bold cartoon read */
+/* LttP shading, the same construction the world uses (see web/js/palette.js):
+   highlights drift warm, shadows drift cool and violet. The sprite row data
+   only carries three glyph steps per material (hi / base / sh), so instead of
+   the world's five-step ramps these span a WIDER value range to compensate —
+   a narrow ramp is what makes a sprite look like flat plastic. */
 function ramp(base) {
-  return { hi: mixc(base, '#fff3cf', 0.4), base, sh: mixc(base, '#2c1e3e', 0.48) };
+  return { hi: mixc(base, '#fff3cf', 0.46), base, sh: mixc(base, '#2c1e3e', 0.54) };
 }
 /* material-specific ramps (adds per-character depth: different cloths catch light
    differently). linen = soft high-key; leather = glossy with a deep core shadow. */
-function rampSoft(base)    { return { hi: mixc(base, '#fff6e2', 0.5),  base, sh: mixc(base, '#3a3050', 0.30) }; }
-function rampLeather(base) { return { hi: mixc(base, '#ffe9c0', 0.52), base, sh: mixc(base, '#1a0e12', 0.55) }; }
-/* undyed-wool habit: keep it earthen -- warm near-black shadow (not the cool
-   plum used elsewhere) so browns stay brown and greys/blacks stay neutral */
-function rampWool(base)    { return { hi: mixc(base, '#f3e8cc', 0.30), base, sh: mixc(base, '#181510', 0.52) }; }
+function rampSoft(base)    { return { hi: mixc(base, '#fff6e2', 0.54), base, sh: mixc(base, '#3a3050', 0.34) }; }
+function rampLeather(base) { return { hi: mixc(base, '#ffe9c0', 0.56), base, sh: mixc(base, '#1a0e12', 0.58) }; }
+/* undyed-wool habit: stays earthen so browns read brown and greys read grey,
+   but the shadow now carries a trace of the world's violet rather than being
+   purely warm — that is what seats the cast in the same light as the stone. */
+function rampWool(base)    { return { hi: mixc(base, '#f3e8cc', 0.34), base, sh: mixc(base, '#171220', 0.56) }; }
 /* saturation dial around a colour's own luma — <1 mutes, >1 enriches (rarity tint) */
 function satAdjust(hex, f) {
   const c = hex2rgb(hex), L = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
@@ -268,7 +274,9 @@ function paintRowsHD(g, rows, pal, yOff, xOff) {
     }
   }
 }
-/* selective outline only — the material ramps carry the shading now */
+/* Outline + interior edge-lighting pass. Two of the world's rules land here:
+   a coloured outline in each material's own hue, and a consistent upper-left
+   key light expressed as a lit inner edge / cool turning shadow. */
 function outlineHD(c) {
   const w = c.width, h = c.height;
   const g = c.getContext('2d');
@@ -278,17 +286,38 @@ function outlineHD(c) {
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = (y * w + x) * 4;
     if (src.data[i + 3] > 0) {
-      out.data[i] = src.data[i]; out.data[i + 1] = src.data[i + 1];
-      out.data[i + 2] = src.data[i + 2]; out.data[i + 3] = 255;
+      // Interior edge lighting. The row data only carries three shading steps
+      // per material, so the figure reads flat next to the five-step tiles.
+      // This adds the missing pass without touching the art: a filled pixel on
+      // the UPPER-LEFT boundary of the form catches the light and warms, one on
+      // the LOWER-RIGHT boundary turns away and cools toward violet. Same
+      // upper-left key light the whole abbey is lit by.
+      const lit = !A(x - 1, y) || !A(x, y - 1);
+      const away = !A(x + 1, y) || !A(x, y + 1);
+      let r = src.data[i], gg = src.data[i + 1], b = src.data[i + 2];
+      if (lit && !away) {
+        r = r + (255 - r) * 0.26; gg = gg + (246 - gg) * 0.24; b = b + (207 - b) * 0.16;
+      } else if (away && !lit) {
+        r = r * 0.74 + 11; gg = gg * 0.74 + 7; b = b * 0.78 + 18;
+      }
+      out.data[i] = Math.round(r); out.data[i + 1] = Math.round(gg);
+      out.data[i + 2] = Math.round(b); out.data[i + 3] = 255;
     } else if (A(x - 1, y) || A(x + 1, y) || A(x, y - 1) || A(x, y + 1)) {
       /* colored outline: a darkened tint of the fill it borders (richer than flat black) */
       let nr = 0, ng = 0, nb = 0, nc = 0;
       const add = (xx, yy) => { if (xx < 0 || yy < 0 || xx >= w || yy >= h) return; const j = (yy * w + xx) * 4; if (src.data[j + 3] > 0) { nr += src.data[j]; ng += src.data[j + 1]; nb += src.data[j + 2]; nc++; } };
       add(x - 1, y); add(x + 1, y); add(x, y - 1); add(x, y + 1);
       if (nc) { nr /= nc; ng /= nc; nb /= nc; }
-      out.data[i] = Math.round(nr * 0.30 + 30 * 0.70);
-      out.data[i + 1] = Math.round(ng * 0.30 + 18 * 0.70);
-      out.data[i + 2] = Math.round(nb * 0.30 + 22 * 0.70);
+      // Rule 1, the same one the tiles follow: the outline is a very dark
+      // version of the pixel's OWN hue, never a shared near-black. The old
+      // weighting was 30% neighbour / 70% a fixed (30,18,22), so every
+      // material ended up ringed in the same maroon and the hue was lost.
+      // Now the neighbour dominates (scaled hard toward black) over a small
+      // violet floor, so wool gets a brown-black edge, blood robes a maroon
+      // one, skin a warm one, and iron a blue-black one.
+      out.data[i] = Math.round(nr * 0.22 + 10);
+      out.data[i + 1] = Math.round(ng * 0.22 + 6);
+      out.data[i + 2] = Math.round(nb * 0.22 + 16);
       out.data[i + 3] = 255;
     }
   }
@@ -476,12 +505,29 @@ function mulberry32(a) {
 // liturgical accent colors. Weathered, austere, earthen.
 const AETERNA_SKIN = ['#f2cba0', '#e9b98c', '#d9ac84', '#c68a5e', '#a9714a', '#8a5a38'];
 const AETERNA_HAIR = ['#2a1c12', '#3a2718', '#5a3a1e', '#4a4440', '#7a736a', '#161210'];
-const AETERNA_ROBE = ['#4a3826', '#3a3630', '#26241f', '#5a4a34', '#2e2b24', '#463d2c', '#33302a'];
-const AETERNA_GOLD = ['#8a8378', '#9a8a5a', '#6e685c', '#7a7066'];
-const AETERNA_JEWEL = ['#7a2e28', '#3a5a3e', '#8a6a2a', '#4a3a5a', '#6a4a2a'];
-const AETERNA_LINEN = ['#f4ead2', '#e8dcc0', '#d9c8a0', '#dfe0e2'];
-const AETERNA_LEATHER = ['#5a3a1d', '#3d2712', '#6e4a24', '#4a3020'];
-const AETERNA_IRIS = ['#241a12', '#1a2436', '#22321f', '#2a1a22'];
+
+// Undyed wool, lifted about one value step from the original pool. The abbey
+// floor is now indigo flagstone at #423a6c; the old habits (#26241f, #2e2b24)
+// sat at almost exactly that value, so a walking monk dissolved into the
+// floor. LttP keeps a hard value gap between a figure and the ground it
+// stands on — these still read as Franciscan brown, Cistercian grey and
+// Benedictine near-black, just clear of the stone.
+const AETERNA_ROBE = ['#6b5138', '#575249', '#3a3730', '#7a6547', '#464238', '#65593f', '#4e4a41'];
+
+// Fittings come off the WORLD's metal ramps so a monk's buckle agrees with the
+// brazier rims and the door keystones. Most brethren wear humble pewter and
+// bronze; true gold stays rare, because gold is half of the abbey's only
+// accent pair and cheapens the moment everyone has it.
+const AETERNA_METAL = [IRON.b, IRON.l, mixc(IRON.l, GOLD.d, 0.55), GOLD.d];
+// Liturgical accents, drawn from the world's accent ramps rather than a
+// separate muddy set: altar crimson, cloister green, gilt, and soul violet.
+const AETERNA_JEWEL = [BLOOD.d, MOSS.d, GOLD.d, SOUL.d, mixc(WOOD.b, GOLD.o, 0.4)];
+// Linen tops out at BONE.l, not BONE.h — near-white on a 20px sprite reads as
+// a specular hit, and the brightest value in the frame should be a highlight,
+// not a whole garment.
+const AETERNA_LINEN = [BONE.l, BONE.b, mixc(BONE.b, BONE.l, 0.5), '#cfd0d4'];
+const AETERNA_LEATHER = [WOOD.d, WOOD.o, WOOD.b, mixc(WOOD.d, WOOD.o, 0.5)];
+const AETERNA_IRIS = ['#241a12', '#1a2436', MOSS.o, SOUL.o];
 const HEADS_M = ['bald', 'bald', 'curly', 'wavy'];
 const HEADS_F = ['wavy', 'curly', 'wavy', 'bald'];
 
@@ -499,7 +545,7 @@ export function traitsForSeed(seed, sex) {
   const skin = jitterCol(pick(AETERNA_SKIN), (h * 2246822519) >>> 0, 0.3);
   const hair = pick(AETERNA_HAIR);
   const robe = jitterCol(pick(AETERNA_ROBE), (h * 40503 + 7) >>> 0, 0.8);
-  const metal = pick(AETERNA_GOLD);
+  const metal = pick(AETERNA_METAL);
   const jewel = pick(AETERNA_JEWEL);
   const cloak = jitterCol(pick(AETERNA_ROBE), (h * 0x9e3779b1) >>> 0, 0.6);
 
@@ -524,20 +570,22 @@ export function traitsForSeed(seed, sex) {
 }
 
 // The Abbot: the abbey's presiding figure. A tonsured elder in a fine near-
-// black habit with a deep violet-black cloak and restrained gold trim (the
-// mark of his office) -- distinguished from the plain wool of the brethren.
+// black habit, and the one character allowed BOTH halves of the abbey's accent
+// pair at full strength -- a saturated soul-violet cloak over crimson, with
+// true gold trim (the mark of his office). Everyone else wears undyed wool, so
+// he is the only figure in the room carrying the same colours as the altar.
 export function traitsForGuru() {
   return {
     head: 'bald',
     body: 'vest',
     legs: 'suit',
     skin: '#e6bd92', hair: '#8a837a',
-    hat: '#2a2620', coat: '#2a2620', pants: '#201d17',
+    hat: '#332f28', coat: '#332f28', pants: '#252119',
     shoes: '#120d10',
-    metal: '#c9a13b', jewel: '#7a2e28', tie: '#7a2e28',
-    shirt: '#e8dcc0', leather: '#3d2712', iris: '#1a1216', trim: '#c9a13b',
-    mouth: '#8e4a42', feather: '#c9a13b',
+    metal: GOLD.b, jewel: BLOOD.d, tie: BLOOD.d,
+    shirt: BONE.l, leather: WOOD.o, iris: '#1a1216', trim: GOLD.b,
+    mouth: '#8e4a42', feather: GOLD.b,
     headAcc: 'none', faceAcc: 'none',
-    cloak: '#332844',
+    cloak: SOUL.d,
   };
 }
