@@ -6,30 +6,44 @@ let ctx = null;
 let muted = localStorage.getItem('aeterna_muted') === '1';
 
 function getCtx() {
-  if (!ctx) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    ctx = new AC();
+  try {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctx = new AC();
+    }
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    return ctx;
+  } catch {
+    // Some privacy-hardened browsers (e.g. DuckDuckGo, which deliberately
+    // instruments/restricts the Web Audio API to defeat audio fingerprinting)
+    // can make AudioContext construction or resume() throw or misbehave. These
+    // are decorative click sounds — a failure here must never propagate to the
+    // caller and block real input handling (that was the root cause of the
+    // on-screen d-pad silently not registering presses in such browsers).
+    return null;
   }
-  if (ctx.state === 'suspended') ctx.resume();
-  return ctx;
 }
 
 function tone({ freq = 440, duration = 0.15, type = 'sine', gain = 0.15, delay = 0, glideTo = null }) {
   if (muted) return;
-  const c = getCtx();
-  if (!c) return;
-  const osc = c.createOscillator();
-  const amp = c.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, c.currentTime + delay);
-  if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, c.currentTime + delay + duration);
-  amp.gain.setValueAtTime(0, c.currentTime + delay);
-  amp.gain.linearRampToValueAtTime(gain, c.currentTime + delay + 0.01);
-  amp.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + delay + duration);
-  osc.connect(amp).connect(c.destination);
-  osc.start(c.currentTime + delay);
-  osc.stop(c.currentTime + delay + duration + 0.02);
+  try {
+    const c = getCtx();
+    if (!c) return;
+    const osc = c.createOscillator();
+    const amp = c.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, c.currentTime + delay);
+    if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, c.currentTime + delay + duration);
+    amp.gain.setValueAtTime(0, c.currentTime + delay);
+    amp.gain.linearRampToValueAtTime(gain, c.currentTime + delay + 0.01);
+    amp.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + delay + duration);
+    osc.connect(amp).connect(c.destination);
+    osc.start(c.currentTime + delay);
+    osc.stop(c.currentTime + delay + duration + 0.02);
+  } catch {
+    // ignore — see getCtx() above
+  }
 }
 
 export const sfx = {

@@ -65,7 +65,14 @@ export class Input {
       if (Math.abs(nx) > Math.abs(ny)) this.dirs[nx < 0 ? 'left' : 'right'] = true;
       else this.dirs[ny < 0 ? 'up' : 'down'] = true;
     };
-    const down = (cx, cy) => { el._pressed = true; el.classList.add('is-down'); sfx.click(); from(cx, cy); };
+    // Set state (pressed + direction) BEFORE the sound cue. Some privacy-hardened
+    // browsers (e.g. DuckDuckGo, which deliberately instruments/restricts the Web
+    // Audio API to defeat audio fingerprinting) can make sfx.click() misbehave;
+    // if that ran first and threw, from() below would never execute, so a
+    // stationary press would silently set no direction. sfx.click() is now also
+    // exception-safe internally (see sfx.js), but this ordering is a second,
+    // independent guard: decorative audio must never gate real input state.
+    const down = (cx, cy) => { el._pressed = true; el.classList.add('is-down'); from(cx, cy); sfx.click(); };
     const up = () => { el._pressed = false; el.classList.remove('is-down'); clear(); };
 
     if (HAS_TOUCH) {

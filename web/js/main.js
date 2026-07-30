@@ -51,8 +51,34 @@ bgm.loop = true; bgm.preload = 'auto'; bgm.volume = 0.55; bgm.muted = sfx.isMute
 const gameBgm = new Audio('assets/hymn-game.mp3');
 gameBgm.loop = true; gameBgm.preload = 'auto'; gameBgm.volume = 0.5; gameBgm.muted = sfx.isMuted(); gameBgm.load();
 
+// A one-shot stinger played when the presenter card hands off to the title
+// card. Preloaded so it fires instantly.
+const stinger = new Audio('assets/title-a.mp3');
+stinger.preload = 'auto'; stinger.load();
+
 const MUSIC = [bgm, gameBgm];
 function applyMute(m) { for (const a of MUSIC) a.muted = m; }
+
+// Strict-autoplay browsers (Safari/WebKit-based — this includes DuckDuckGo's
+// in-app browser) require a media element's FIRST play() to happen
+// synchronously inside a real user gesture; once that succeeds, later
+// programmatic play() calls on that SAME element are allowed from anywhere,
+// gesture or not, for the rest of the session. `bgm` gets that direct gesture
+// via its real play() in powerOn() below, but `gameBgm` and `stinger` are only
+// ever played later from inside requestAnimationFrame (the game loop's
+// consumeAPress() check, and the nested rAF in revealTransition) — outside any
+// gesture's synchronous call stack — so on strict browsers those calls were
+// silently swallowed by the existing .catch(() => {}). Priming each element
+// with an immediate play()+pause() right here, inside the power switch's real
+// gesture, unlocks them so the later deferred play() calls actually work.
+function unlockAudio(el) {
+  try {
+    const p = el.play();
+    el.pause();
+    el.currentTime = 0;
+    if (p && p.catch) p.catch(() => {});
+  } catch { /* ignore */ }
+}
 
 muteToggle.setAttribute('aria-pressed', String(sfx.isMuted()));
 muteToggle.addEventListener('click', () => {
@@ -423,11 +449,6 @@ async function afterBoot() {
   }
 }
 
-// A one-shot stinger played when the presenter card hands off to the title
-// card (the "title card audio"). Preloaded so it fires instantly.
-const stinger = new Audio('assets/title-a.mp3');
-stinger.preload = 'auto'; stinger.load();
-
 function startBoot() {
   scene = new BootScene({ onComplete: afterBoot });
   scene.enter();
@@ -451,6 +472,10 @@ function powerOn() {
   if (powered) return;
   powered = true;
   sfx.power(true);
+  // Unlock gameBgm/stinger for later programmatic playback (see unlockAudio
+  // above) — do this first, synchronously, inside this real user gesture.
+  unlockAudio(gameBgm);
+  unlockAudio(stinger);
   // start the hymn the instant the console powers on (this runs inside the
   // switch's pointer gesture, so autoplay is allowed)
   bgm.currentTime = 0;
