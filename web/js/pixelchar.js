@@ -225,6 +225,78 @@ const HD_HEADS = {
   },
 };
 
+/* ---------------------------------------------------------------------------
+   The monastic cowl.
+
+   Every head above is bare — tonsured, plain-haired or wearing 1920s hats — so
+   a Cultist only ever read as a monk when the cult-regalia layer happened to
+   roll a hood, which is the demo crowd only: the player, other players and the
+   Abbot are all drawn straight from the sprite sheet with no regalia, so they
+   walked the abbey bare-headed.
+
+   Rather than hand-author another 96 rows of art data, the cowl is DERIVED from
+   the 'bald' head: widen the silhouette by two cells so the cloth sits over the
+   skull rather than painted on it, then convert every skin/hair cell outside a
+   face window into hood cloth (H/h/2, which take the habit's own wool ramp, so
+   the hood always matches the robe). Eyes and mouth (E/W/M) are never touched.
+   Shading follows the same upper-left key light as the rest of the abbey: lit
+   rim on the left, base across the crown, shadow down the right, and a dark
+   inner lip where the cloth turns into the opening.                          */
+function cowlFrom(rows, dir) {
+  const WID = rows[0].length;
+  // no face window on the back of the head — the hood closes over it
+  // Side view: the face sits left of centre (eyes around x5-12), so the window
+  // is tighter and pushed forward — a cowl in profile has to come down over the
+  // brow and cheek, otherwise the hood reads as a scarf sitting behind the head.
+  const face = dir === 'up' ? null
+    : dir === 'side' ? { cx: 6.6, cy: 17.4, rx: 6.6, ry: 6.8 }
+      : { cx: 17.5, cy: 17.5, rx: 9.6, ry: 7.8 };
+  const inFace = (x, y) => !!face
+    && ((x - face.cx) ** 2) / (face.rx ** 2) + ((y - face.cy) ** 2) / (face.ry ** 2) <= 1;
+
+  return rows.map((row, y) => {
+    const cells = [...row];
+    // 1. drape: widen the head's span so the cowl reads as cloth over the skull
+    if (y <= 26) {
+      const first = cells.findIndex((c) => c !== '.');
+      if (first >= 0) {
+        const last = WID - 1 - [...cells].reverse().findIndex((c) => c !== '.');
+        const grow = y <= 23 ? 2 : 1;
+        for (let d = 1; d <= grow; d++) {
+          if (first - d >= 0) cells[first - d] = 'H';
+          if (last + d < WID) cells[last + d] = 'H';
+        }
+      }
+    }
+    // 2. cloth: everything outside the face window that isn't an eye or mouth
+    const span0 = cells.findIndex((c) => c !== '.');
+    const span1 = WID - 1 - [...cells].reverse().findIndex((c) => c !== '.');
+    for (let x = 0; x < WID; x++) {
+      const c = cells[x];
+      if (c === '.' || c === 'E' || c === 'W' || c === 'M') continue;
+      if (!'Ss12HhKk'.includes(c)) continue;
+      if (inFace(x, y)) continue;
+      const nearOpening = face
+        && ((x - face.cx) ** 2) / ((face.rx + 1.7) ** 2)
+          + ((y - face.cy) ** 2) / ((face.ry + 1.5) ** 2) <= 1;
+      if (nearOpening) { cells[x] = 'h'; continue; }        // dark inner lip
+      const mid = (span0 + span1) / 2;
+      if (x <= span0 + 1 && y <= 24) cells[x] = '2';        // lit upper-left rim
+      else if (x >= span1 - 1 || y >= 25) cells[x] = 'h';   // turning shadow
+      else if (!face && y <= 5) cells[x] = '2';             // lit crown, back view
+      else if (!face && Math.abs(x - mid) < 1 && y >= 6) cells[x] = 'h'; // centre seam
+      else if (!face && x < mid - 1 && y <= 18) cells[x] = '2'; // key-lit left half
+      else cells[x] = 'H';
+    }
+    return cells.join('');
+  });
+}
+HD_HEADS.cowl = {
+  down: cowlFrom(HD_HEADS.bald.down, 'down'),
+  up: cowlFrom(HD_HEADS.bald.up, 'up'),
+  side: cowlFrom(HD_HEADS.bald.side, 'side'),
+};
+
 /* bodies + legs (v3) — Nile-era garments. 5 men: belted tunic (suit),
    heraldic surcoat (tux), leather jerkin (vest), quilted gambeson (pinstripe),
    forester's open tunic (openshirt). 5 women: laced kirtle (dress), noble gown
@@ -528,8 +600,12 @@ const AETERNA_JEWEL = [BLOOD.d, MOSS.d, GOLD.d, SOUL.d, mixc(WOOD.b, GOLD.o, 0.4
 const AETERNA_LINEN = [BONE.l, BONE.b, mixc(BONE.b, BONE.l, 0.5), '#cfd0d4'];
 const AETERNA_LEATHER = [WOOD.d, WOOD.o, WOOD.b, mixc(WOOD.d, WOOD.o, 0.5)];
 const AETERNA_IRIS = ['#241a12', '#1a2436', MOSS.o, SOUL.o];
-const HEADS_M = ['bald', 'bald', 'curly', 'wavy'];
-const HEADS_F = ['wavy', 'curly', 'wavy', 'bald'];
+// Brethren are hooded by default — an order of monks should read as one at a
+// glance, at 20px, without depending on a cult-regalia roll that the player and
+// their peers never get. One slot in four is left bare so a tonsure or a plain
+// head still turns up in a crowd.
+const HEADS_M = ['cowl', 'cowl', 'cowl', 'bald'];
+const HEADS_F = ['cowl', 'cowl', 'cowl', 'wavy'];
 
 // Deterministic Cultist traits from a wallet-id/name seed, in the same shape
 // makeCharacterHD expects. Always cloaked (a hooded wool habit), tonsured or
@@ -576,7 +652,7 @@ export function traitsForSeed(seed, sex) {
 // he is the only figure in the room carrying the same colours as the altar.
 export function traitsForGuru() {
   return {
-    head: 'bald',
+    head: 'cowl',
     body: 'vest',
     legs: 'suit',
     skin: '#e6bd92', hair: '#8a837a',
