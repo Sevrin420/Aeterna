@@ -1063,32 +1063,6 @@ export class CourtyardScene {
       case 'fountain-block': break; // covered by the fountain draw above
       case 'pillar': this._drawPillar(ctx, p.col, p.row); this._drawLantern(ctx, p.col, p.row); break;
       case 'torch': this._drawTorch(ctx, p.col, p.row); break;
-      case 'alcove-arch': {
-        // A pointed-arch recess cut into the niche's back wall: black interior,
-        // a ring of lit voussoirs around it, gilded keystone at the apex.
-        const dir = p.side === 'W' ? 1 : -1;
-        const bw = TILE * 2.0, bh = TILE * 3.4;
-        const x0 = dir > 0 ? p.col * TILE - 3 : p.col * TILE + TILE - bw + 3;
-        const y0 = y - bh / 2;
-        const path = (inset) => {
-          const ix = x0 + inset, iy = y0 + inset, iw = bw - inset * 2, ih = bh - inset * 2;
-          ctx.beginPath();
-          ctx.moveTo(ix, iy + ih);
-          ctx.lineTo(ix, iy + ih * 0.42);
-          ctx.quadraticCurveTo(ix + iw / 2, iy - ih * 0.10, ix + iw, iy + ih * 0.42);
-          ctx.lineTo(ix + iw, iy + ih);
-          ctx.closePath();
-        };
-        path(-2); ctx.fillStyle = WALL.o; ctx.fill();
-        path(0); ctx.fillStyle = WALL.b; ctx.fill();
-        path(0); ctx.strokeStyle = WALL.l; ctx.lineWidth = 1.6; ctx.stroke();
-        path(3); ctx.fillStyle = WALL.o; ctx.fill();
-        path(4.2); ctx.fillStyle = VOID; ctx.fill();
-        ctx.fillStyle = GOLD.d; ctx.fillRect(x0 + bw / 2 - 2.4, y0 + 0.6, 4.8, 4);
-        ctx.fillStyle = GOLD.b; ctx.fillRect(x0 + bw / 2 - 2.4, y0 + 0.6, 4.8, 1.6);
-        ctx.fillStyle = GOLD.h; ctx.fillRect(x0 + bw / 2 - 2.4, y0 + 0.6, 1.6, 0.9);
-        break;
-      }
       case 'brazier': {
         const key = `${p.col},${p.row}`;
         const lit = this.litBraziers.has(key);
@@ -1381,31 +1355,28 @@ export class CourtyardScene {
         break;
       }
       case 'door': {
-        // the way out — a black gap cut into the wall at the foot of the cross
+        // The way out. Not an arch and not a door — just a stretch of wall that
+        // isn't there: a flat black gap exactly the depth of the masonry course,
+        // with the two cut wall ends picked out in gold so it reads as an exit
+        // rather than as a hole someone forgot to fill in.
         const gw = 22;
-        const topY = y - 22, botY = y + 14;
-        // black opening with an arched top
+        const wallTop = (NAVE.y1 + 1) * TILE, wallBot = wallTop + TILE;
         ctx.fillStyle = VOID;
-        ctx.fillRect(x - gw / 2, topY, gw, botY - topY);
-        ctx.beginPath(); ctx.arc(x, topY, gw / 2, Math.PI, 0); ctx.fill();
-        // a touch of depth toward the far dark
-        const g = ctx.createLinearGradient(0, topY - gw / 2, 0, botY);
-        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.55)');
-        ctx.fillStyle = g; ctx.fillRect(x - gw / 2, topY - gw / 2, gw, botY - topY + gw / 2);
-        // dressed-stone arch framing the gap: dark voussoirs, lit inner edge,
-        // gilded keystone at the crown
-        const jamb = () => {
-          ctx.beginPath();
-          ctx.moveTo(x - gw / 2, botY);
-          ctx.lineTo(x - gw / 2, topY);
-          ctx.arc(x, topY, gw / 2, Math.PI, 0);
-          ctx.lineTo(x + gw / 2, botY);
-        };
-        ctx.strokeStyle = WALL.o; ctx.lineWidth = 4; jamb(); ctx.stroke();
-        ctx.strokeStyle = WALL.l; ctx.lineWidth = 1.6; jamb(); ctx.stroke();
-        ctx.fillStyle = GOLD.d; ctx.fillRect(x - 2.6, topY - gw / 2 - 1, 5.2, 4);
-        ctx.fillStyle = GOLD.b; ctx.fillRect(x - 2.6, topY - gw / 2 - 1, 5.2, 1.6);
-        ctx.fillStyle = GOLD.h; ctx.fillRect(x - 2.6, topY - gw / 2 - 1, 1.7, 0.9);
+        ctx.fillRect(x - gw / 2, wallTop, gw, wallBot - wallTop);
+        // threshold: the floor darkens as it runs into the opening
+        const g = ctx.createLinearGradient(0, wallTop - 7, 0, wallTop);
+        g.addColorStop(0, 'rgba(8,6,17,0)');
+        g.addColorStop(1, 'rgba(8,6,17,0.9)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x - gw / 2, wallTop - 7, gw, 7);
+        // the cut ends of the wall, gilded
+        for (const ex of [x - gw / 2 - 3, x + gw / 2]) {
+          const h = wallBot - wallTop;
+          ctx.fillStyle = GOLD.o; ctx.fillRect(ex, wallTop, 3, h);
+          ctx.fillStyle = GOLD.d; ctx.fillRect(ex, wallTop + 1, 3, h - 2);
+          ctx.fillStyle = GOLD.b; ctx.fillRect(ex, wallTop + 1, 3, 2);
+          ctx.fillStyle = GOLD.h; ctx.fillRect(ex, wallTop + 1, 1.3, 1);
+        }
         break;
       }
       case 'ossuary': {

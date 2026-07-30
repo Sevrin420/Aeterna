@@ -1,6 +1,6 @@
 // The unhallowed church — a death-cult sanctuary laid out as an INVERTED CROSS
 // (a long north nave with a low transept and a short foot below it), surrounded
-// by pitch-black void. Down the nave are ten arched alcoves (five per side),
+// by pitch-black void. Down the nave are ten pointed alcoves (five per side),
 // each a fire-shrine. Two staircases descend: the WEST stair to a warren of six
 // private rooms with doors; the EAST stair to a chamber walled with skulls.
 //
@@ -18,6 +18,18 @@ function blank() { return Array.from({ length: ROWS }, () => Array(COLS).fill(' 
 function fillRect(grid, x0, y0, x1, y1, ch) {
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (grid[y] && x >= 0 && x < COLS) grid[y][x] = ch;
 }
+// Wall around an arbitrary cell list: any still-void neighbour becomes masonry.
+// A rectangular ring can't follow a tapered room, so the fire niches use this.
+function wrapWalls(grid, cells) {
+  for (const [x, y] of cells) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (grid[ny] && nx >= 0 && nx < COLS && grid[ny][nx] === ' ') grid[ny][nx] = '#';
+      }
+    }
+  }
+}
 // Wall ring, only on cells still void — so overlapping rooms merge into one open interior.
 function wallRing(grid, x0, y0, x1, y1) {
   for (let y = y0; y <= y1; y++) {
@@ -33,17 +45,45 @@ export const NAVE = { x0: 51, y0: 8, x1: 68, y1: 77 };      // long stem
 export const TRANSEPT = { x0: 27, y0: 52, x1: 92, y1: 64 };  // low crossbar
 export const NAVE_CX = 59;                                   // nave centre column
 
-// Ten arched alcoves down the nave, five per side. Each is a niche cut into the
-// nave wall with a fire brazier, a wall torch and a stack of wood.
-const ALCOVE_ROWS = [12, 20, 28, 36, 44]; // top row of each 4-tall niche
+// Ten fire alcoves down the nave, five per side. The niche used to be a plain
+// 4x4 box with a pointed-arch prop drawn inside it; the point is now the SHAPE
+// of the room itself — the floor runs full height at the nave opening and
+// tapers to a single tile at its far end, so the nook comes to a point without
+// any decoration standing in for one. Walls follow the taper (see wrapWalls).
+const ALCOVE_ROWS = [12, 20, 28, 36, 44]; // top row of each 5-tall niche
+const ALCOVE_DEPTH = 5;                   // columns from the tip to the opening
+const ALCOVE_HALF = 2;                    // half-height once the taper is full
 export const ALCOVES = [];
+
+// Floor cells of one niche: at `d` columns in from the tip the niche is
+// (2*min(d, ALCOVE_HALF) + 1) tiles tall, giving a 1 / 3 / 5 / 5… chevron.
+function alcoveCells(side, r) {
+  const cy = r + ALCOVE_HALF;
+  const cells = [];
+  for (let d = 0; d < ALCOVE_DEPTH; d++) {
+    // d counts from the tip toward the nave; the opening column is fixed at
+    // the nave wall (50 west / 69 east) so the niche always meets the aisle.
+    const col = side === 'W' ? (51 - ALCOVE_DEPTH) + d : (68 + ALCOVE_DEPTH) - d;
+    const half = Math.min(d, ALCOVE_HALF);
+    for (let y = cy - half; y <= cy + half; y++) cells.push([col, y]);
+  }
+  return cells;
+}
+
 for (const r of ALCOVE_ROWS) {
-  // west niche (opens east into the nave; arch tip points WEST)
-  ALCOVES.push({ side: 'W', x0: 47, y0: r, x1: 50, y1: r + 3, cy: r + 1,
-    brazier: { col: 48, row: r + 2 }, torch: { col: 47, row: r + 1 }, wood: { col: 50, row: r + 2 } });
-  // east niche (opens west; arch tip points EAST)
-  ALCOVES.push({ side: 'E', x0: 69, y0: r, x1: 72, y1: r + 3, cy: r + 1,
-    brazier: { col: 71, row: r + 2 }, torch: { col: 72, row: r + 1 }, wood: { col: 69, row: r + 2 } });
+  const cy = r + ALCOVE_HALF;
+  // west niche (opens east into the nave; tapers to a point in the WEST)
+  ALCOVES.push({
+    side: 'W', x0: 51 - ALCOVE_DEPTH, y0: r, x1: 50, y1: r + ALCOVE_HALF * 2, cy,
+    cells: alcoveCells('W', r),
+    brazier: { col: 48, row: cy }, torch: { col: 47, row: cy }, wood: { col: 49, row: cy + 1 },
+  });
+  // east niche (opens west; tapers to a point in the EAST)
+  ALCOVES.push({
+    side: 'E', x0: 69, y0: r, x1: 68 + ALCOVE_DEPTH, y1: r + ALCOVE_HALF * 2, cy,
+    cells: alcoveCells('E', r),
+    brazier: { col: 71, row: cy }, torch: { col: 72, row: cy }, wood: { col: 70, row: cy + 1 },
+  });
 }
 
 // WEST warren: a corridor with six doored rooms (three above, three below).
@@ -68,7 +108,7 @@ function buildGrid() {
   // church floors
   fillRect(grid, NAVE.x0, NAVE.y0, NAVE.x1, NAVE.y1, '.');
   fillRect(grid, TRANSEPT.x0, TRANSEPT.y0, TRANSEPT.x1, TRANSEPT.y1, '.');
-  for (const a of ALCOVES) fillRect(grid, a.x0, a.y0, a.x1, a.y1, '.'); // niches
+  for (const a of ALCOVES) for (const [x, y] of a.cells) grid[y][x] = '.'; // tapered niches
 
   // underground floors
   fillRect(grid, WEST_CORRIDOR.x0, WEST_CORRIDOR.y0, WEST_CORRIDOR.x1, WEST_CORRIDOR.y1, 'c');
@@ -80,7 +120,7 @@ function buildGrid() {
   // walls
   wallRing(grid, NAVE.x0 - 1, NAVE.y0 - 1, NAVE.x1 + 1, NAVE.y1 + 1);
   wallRing(grid, TRANSEPT.x0 - 1, TRANSEPT.y0 - 1, TRANSEPT.x1 + 1, TRANSEPT.y1 + 1);
-  for (const a of ALCOVES) wallRing(grid, a.x0 - 1, a.y0 - 1, a.x1 + 1, a.y1 + 1);
+  for (const a of ALCOVES) wrapWalls(grid, a.cells);
   wallRing(grid, WEST_CORRIDOR.x0 - 1, WEST_CORRIDOR.y0 - 1, WEST_CORRIDOR.x1 + 1, WEST_CORRIDOR.y1 + 1);
   for (const rm of ROOMS) wallRing(grid, rm.x0 - 1, rm.y0 - 1, rm.x1 + 1, rm.y1 + 1);
   wallRing(grid, SKULL_ROOM.x0 - 1, SKULL_ROOM.y0 - 1, SKULL_ROOM.x1 + 1, SKULL_ROOM.y1 + 1);
@@ -111,7 +151,7 @@ for (const a of ALCOVES) {
   prop('brazier', a.brazier.col, a.brazier.row, false, { side: a.side, cy: a.cy });
   prop('wall-torch', a.torch.col, a.torch.row, false, { side: a.side });
   prop('wood-stack', a.wood.col, a.wood.row, false);
-  prop('alcove-arch', a.side === 'W' ? a.x0 - 1 : a.x1 + 1, a.cy, false, { side: a.side }); // arch on the back wall
+  // No arch prop: the niche's own tapered floor plan is the point.
 }
 
 // --- WEST WARREN (six doored rooms; a private meeting place) ---
