@@ -32,12 +32,10 @@ export class EntranceScene {
     this.isBusy = isBusy || (() => false);
 
     this.t = 0;
-    this.locked = false; // true once the wallet flow is triggered at the arch
+    this.locked = false;
     this.pc = { x: 104, y: 168, w: 7, h: 7, speed: 42, dir: 'up', moving: false, bob: 0 };
     this.sheet = getCultistSprite(getWalletId(), player?.sex || 'male');
-    this.entryMessage = 'A cold draught. You drift into the antechamber as a spirit.';
-    this.messageTimer = 5;
-    this._prompt = null; // 'mint' | 'docs' | 'arch'
+    this._prompt = null;
   }
 
   enter() {}
@@ -64,7 +62,6 @@ export class EntranceScene {
 
   update(dt, input) {
     this.t += dt;
-    if (this.messageTimer > 0) this.messageTimer -= dt;
     if (this.locked || this.isBusy()) { input.consumeAPress?.(); input.consumeBPress?.(); return; }
 
     const p = this.pc;
@@ -139,14 +136,6 @@ export class EntranceScene {
     else if (this._prompt === 'docs') ctx.fillText('[A] Read the Doctrine', W / 2, H - 16 + bounce);
     else if (this._prompt === 'arch') ctx.fillText('Walk north to enter…', W / 2, H - 16 + bounce);
 
-    if (this.messageTimer > 0) {
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, this.messageTimer);
-      ctx.font = '7px "Courier New", monospace';
-      ctx.fillStyle = '#c9b6d6';
-      ctx.fillText(this.entryMessage, W / 2, H - 6);
-      ctx.restore();
-    }
     ctx.textAlign = 'left';
   }
 

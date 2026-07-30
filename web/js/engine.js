@@ -65,14 +65,10 @@ export class Input {
       if (Math.abs(nx) > Math.abs(ny)) this.dirs[nx < 0 ? 'left' : 'right'] = true;
       else this.dirs[ny < 0 ? 'up' : 'down'] = true;
     };
-    // Set state (pressed + direction) BEFORE the sound cue. Some privacy-hardened
-    // browsers (e.g. DuckDuckGo, which deliberately instruments/restricts the Web
-    // Audio API to defeat audio fingerprinting) can make sfx.click() misbehave;
-    // if that ran first and threw, from() below would never execute, so a
-    // stationary press would silently set no direction. sfx.click() is now also
-    // exception-safe internally (see sfx.js), but this ordering is a second,
-    // independent guard: decorative audio must never gate real input state.
-    const down = (cx, cy) => { el._pressed = true; el.classList.add('is-down'); from(cx, cy); sfx.click(); };
+    // No click sound here by design (blips were removed from the on-screen
+    // controls). State (pressed + direction) is set directly with no audio
+    // call in the way, so nothing decorative can ever block real input.
+    const down = (cx, cy) => { el._pressed = true; el.classList.add('is-down'); from(cx, cy); };
     const up = () => { el._pressed = false; el.classList.remove('is-down'); clear(); };
 
     if (HAS_TOUCH) {
@@ -80,15 +76,18 @@ export class Input {
       el.addEventListener('touchmove', (e) => { if (!el._pressed) return; e.preventDefault(); const t = e.touches[0]; if (t) from(t.clientX, t.clientY); }, { passive: false });
       el.addEventListener('touchend', (e) => { e.preventDefault(); up(); }, { passive: false });
       el.addEventListener('touchcancel', up, { passive: false });
-    } else {
-      el.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-        down(e.clientX, e.clientY);
-      });
-      el.addEventListener('pointermove', (e) => { if (el._pressed) { e.preventDefault(); from(e.clientX, e.clientY); } });
-      ['pointerup', 'pointercancel'].forEach((ev) => el.addEventListener(ev, up));
     }
+    // Fallback/dual: pointer events cover browsers where touch events are
+    // unreliable (e.g. DuckDuckGo's WKWebView reports touch capability but
+    // preventDefault doesn't always stick). Added alongside touch events
+    // instead of in an else branch so both fire.
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      down(e.clientX, e.clientY);
+    });
+    el.addEventListener('pointermove', (e) => { if (el._pressed) { e.preventDefault(); from(e.clientX, e.clientY); } });
+    ['pointerup', 'pointercancel'].forEach((ev) => el.addEventListener(ev, up));
   }
 
   bindButton(el, which) {
@@ -100,7 +99,6 @@ export class Input {
       if (which === 'a') { this._aJustPressed = true; this.a = true; }
       else { this._bJustPressed = true; this.b = true; }
       el.classList.add('is-down');
-      sfx.click();
     };
     const release = () => { el.classList.remove('is-down'); return which === 'a' ? (this.a = false) : (this.b = false); };
 

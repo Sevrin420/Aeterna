@@ -41,23 +41,13 @@ const communionOverlay = document.getElementById('communionOverlay');
 const communionBody = document.getElementById('communionBody');
 const communionClose = document.getElementById('communionClose');
 
-// Two looping hymns, both preloaded up front:
-//  - `bgm` plays the instant the console powers on (title / entrance).
-//  - `gameBgm` takes over once the player enters the game proper.
-// Both obey the mute button and stop on power off.
-const bgm = new Audio('assets/hymn.mp3');
-bgm.loop = true; bgm.preload = 'auto'; bgm.volume = 0.55; bgm.muted = sfx.isMuted(); bgm.load();
-
-const gameBgm = new Audio('assets/hymn-game.mp3');
-gameBgm.loop = true; gameBgm.preload = 'auto'; gameBgm.volume = 0.5; gameBgm.muted = sfx.isMuted(); gameBgm.load();
-
-// A one-shot stinger played when the presenter card hands off to the title
-// card. Preloaded so it fires instantly.
-const stinger = new Audio('assets/title-a.mp3');
-stinger.preload = 'auto'; stinger.load();
-
-const MUSIC = [bgm, gameBgm];
-function applyMute(m) { for (const a of MUSIC) a.muted = m; }
+// Two looping hymns. Created fresh inside their respective user-gesture
+// handlers (powerOn / enterCourtyard) so mobile browsers always allow
+// playback — pre-creating Audio elements on page load can silently fail.
+let _bgm = null;
+let _gameBgm = null;
+const MUSIC = () => [_bgm, _gameBgm].filter(Boolean);
+function applyMute(m) { for (const a of MUSIC()) a.muted = m; }
 
 // Strict-autoplay browsers (Safari/WebKit-based — this includes DuckDuckGo's
 // in-app browser) require a media element's FIRST play() to happen
@@ -245,14 +235,16 @@ const CROWD = parseInt(new URLSearchParams(location.search).get('crowd') || '0',
 
 function enterCourtyard(player) {
   updateHud(player);
-  // Entering the game: auto-unmute and cross over from the title hymn to the
-  // in-game hymn (looping). Players silence it with the mute button.
+  // Entering the game: auto-unmute, create fresh game bgm, pause title bgm.
   sfx.setMuted(false);
   muteToggle.setAttribute('aria-pressed', 'false');
   applyMute(false);
-  bgm.pause();
-  gameBgm.currentTime = 0;
-  gameBgm.play().catch(() => {});
+  if (_bgm) try { _bgm.pause(); } catch {}
+  _gameBgm = new Audio('assets/hymn-game.mp3');
+  _gameBgm.loop = true;
+  _gameBgm.volume = 0.5;
+  _gameBgm.muted = false;
+  _gameBgm.play().catch(() => {});
   scene = new CourtyardScene({
     player,
     onPlayerUpdate: updateHud,
@@ -335,9 +327,17 @@ function returnToEntrance() {
 function enterEntrance(player) {
   entrancePlayer = player;
   // Entry-lobby music: the title hymn plays here (the in-game hymn is paused).
-  gameBgm.pause();
-  bgm.muted = sfx.isMuted();
-  if (bgm.paused) bgm.play().catch(() => {});
+  if (_gameBgm) try { _gameBgm.pause(); } catch {}
+  if (!_bgm) {
+    _bgm = new Audio('assets/hymn.mp3');
+    _bgm.loop = true;
+    _bgm.volume = 0.55;
+    _bgm.muted = sfx.isMuted();
+    _bgm.play().catch(() => {});
+  } else {
+    _bgm.muted = sfx.isMuted();
+    if (_bgm.paused) _bgm.play().catch(() => {});
+  }
   scene = new EntranceScene({
     player,
     onDocs: () => { docsOverlay.hidden = false; },
@@ -434,7 +434,7 @@ walletBackBtn.addEventListener('click', () => {
 });
 
 async function afterBoot() {
-  sfx.bootConfirm();
+  if (!sfx.isMuted()) { try { stinger.currentTime = 0; stinger.play().catch(() => {}); } catch {} }
   try {
     let player;
     try { player = await api.me(); }
@@ -471,17 +471,14 @@ function startPresenter() {
 function powerOn() {
   if (powered) return;
   powered = true;
-  sfx.power(true);
-  // Unlock gameBgm/stinger for later programmatic playback (see unlockAudio
-  // above) — do this first, synchronously, inside this real user gesture.
-  unlockAudio(gameBgm);
-  unlockAudio(stinger);
-  // start the hymn the instant the console powers on (this runs inside the
-  // switch's pointer gesture, so autoplay is allowed)
-  bgm.currentTime = 0;
-  bgm.play().catch(() => {});
+  // Fresh Audio inside user gesture = most reliable on mobile browsers
+  _bgm = new Audio('assets/hymn.mp3');
+  _bgm.loop = true;
+  _bgm.volume = 0.55;
+  _bgm.muted = sfx.isMuted();
+  _bgm.play().catch(() => {});
   powerSwitch.setAttribute('aria-pressed', 'true');
-  startPresenter();
+  startBoot();
   if (!stopLoop) {
     stopLoop = makeLoop(
       (dt) => { if (scene) scene.update(dt, input); },
@@ -501,8 +498,8 @@ function powerOn() {
 function powerOff() {
   if (!powered) return;
   powered = false;
-  sfx.power(false);
-  for (const a of MUSIC) { a.pause(); a.currentTime = 0; }
+  for (const a of MUSIC()) { try { a.pause(); a.currentTime = 0; } catch {} }
+  _bgm = null; _gameBgm = null;
   powerSwitch.setAttribute('aria-pressed', 'false');
   if (scene && scene.exit) scene.exit();
   scene = null;
