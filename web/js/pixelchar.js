@@ -291,6 +291,74 @@ function cowlFrom(rows, dir) {
     return cells.join('');
   });
 }
+/* ---------------------------------------------------------------------------
+   LttP faces.
+
+   The ported generator draws a 1920s-cartoon face: each eye is an 8x9 cell
+   cluster (4 x 4.5 logical px) built from a white sclera with an iris ring
+   around it, plus a mouth. Two of those fill most of the head, which is what
+   makes these read as mascots rather than as SNES overworld sprites.
+
+   A Link to the Past draws an overworld face with almost nothing: no sclera, no
+   mouth, no brow. An eye is a small dark mark, and the character is carried by
+   silhouette and shading instead. This collapses each cluster down to that —
+   clear the sclera/iris/mouth back to skin, then stamp one 3x4 cell mark per
+   eye (roughly 1.5 x 2 logical px), nudged inward because the cartoon eyes sat
+   far wider apart than LttP ever places them.
+
+   Only skin cells are ever stamped on, so a cowl's cloth is never punched
+   through, and heads with no face at all (the back of the head) are untouched. */
+const FACE_CACHE = new Map();
+function lttpFace(rows, dir, key) {
+  const ck = `${key}|${dir}`;
+  const hit = FACE_CACHE.get(ck);
+  if (hit) return hit;
+
+  const WID = rows[0].length;
+  const cells = rows.map((r) => [...r]);
+  const eye = [];
+  for (let y = 0; y < cells.length; y++) {
+    for (let x = 0; x < WID; x++) {
+      const c = cells[y][x];
+      if (c === 'E' || c === 'W') eye.push([x, y]);
+      if (c === 'E' || c === 'W' || c === 'M') cells[y][x] = 'S';   // back to skin
+    }
+  }
+  if (eye.length) {
+    const xs = eye.map((p) => p[0]);
+    const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const groups = dir === 'side'
+      ? [eye]
+      : [eye.filter((p) => p[0] < mid), eye.filter((p) => p[0] >= mid)];
+    for (const g of groups) {
+      if (!g.length) continue;
+      const gx = g.map((p) => p[0]), gy = g.map((p) => p[1]);
+      let cx = Math.round((Math.min(...gx) + Math.max(...gx)) / 2);
+      const cy = Math.round((Math.min(...gy) + Math.max(...gy)) / 2);
+      if (dir !== 'side') cx += cx < mid ? 2 : -2;   // draw the eyes closer in
+      for (let dy = -1; dy <= 2; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = cx + dx, y = cy + dy;
+          if (!cells[y] || !cells[y][x]) continue;
+          if (!'Ss1'.includes(cells[y][x])) continue;  // never punch through cloth
+          cells[y][x] = 'E';
+        }
+      }
+    }
+  }
+  const out = cells.map((c) => c.join(''));
+  FACE_CACHE.set(ck, out);
+  return out;
+}
+function lttpHead(name) {
+  const h = HD_HEADS[name] || HD_HEADS.cowl;
+  return {
+    down: lttpFace(h.down, 'down', name),
+    up: lttpFace(h.up, 'up', name),
+    side: lttpFace(h.side, 'side', name),
+  };
+}
+
 HD_HEADS.cowl = {
   down: cowlFrom(HD_HEADS.bald.down, 'down'),
   up: cowlFrom(HD_HEADS.bald.up, 'up'),
@@ -335,17 +403,46 @@ const HD_LEGS = {
     side: [ ['.........BBBBBBBB...............','.........BBBBBBBB...............','........BBBBBBBBB...............','........BBBBBBBBB...............','.......BBBBBBBBBB...............','.......BBBBBBBBBB...............','......BBFBBBBBFB................','......ffBBBBBBff................'], ['.........BBBBBBBB...............','.........BBBBBBBB...............','........BBBBBBBBB...............','........BBBBBBBBB...............','.......BBBBBBBBBB...............','.......BBBBBBBBBB...............','......BBFBBBBBFB................','......ffBBBBBBff................'] ] }
 };
 
-function paintRowsHD(g, rows, pal, yOff, xOff) {
+/* Paints a block of rows at an arbitrary cell size, horizontally centred in the
+   sprite's 18-logical-px content box, with its top edge at yTop. The cell size
+   is a parameter (it used to be hardcoded at 0.5 for every part) so the head
+   and the body can be drawn at different scales — see PROPORTIONS below. */
+function paintRowsHD(g, rows, pal, yTop, cell) {
+  const x0 = (18 - rows[0].length * cell) / 2;
   for (let y = 0; y < rows.length; y++) {
     const r = rows[y];
     for (let x = 0; x < r.length; x++) {
       const ch = r[x];
       if (ch === '.' || !pal[ch]) continue;
       g.fillStyle = pal[ch];
-      g.fillRect((x + (xOff || 0)) * 0.5, y * 0.5 + yOff, 0.5, 0.5);
+      g.fillRect(x0 + x * cell, yTop + y * cell, cell, cell);
     }
   }
 }
+
+/* PROPORTIONS.
+
+   The ported generator draws every part at the same 0.5 cell size, which puts
+   the head at 16 of the figure's 26 logical px — 61%, or about 1.6 heads tall.
+   That is a mascot build. A Link to the Past draws its overworld cast at
+   roughly 2 to 2.5 heads: Link is 24px with a ~10px head, about 42%.
+
+   Shrinking the head cell and growing the body/leg cell moves us most of the
+   way there without touching a single row of art data. Feet stay pinned at
+   y=26 so the sprite keeps its existing ground line and nothing else in the
+   scene has to move. */
+// Tuned by eye against the reference build. The row data has a 32-row head but
+// only 20 rows of body+legs, so matching LttP's head fraction exactly would
+// need shoulders far wider than the head; 0.42/0.55 lands the head near half
+// the figure with shoulders about a sixth wider, which reads as a robed adult
+// rather than either a mascot or a pinhead on a slab.
+const HEAD_CELL = 0.42;   // 32 rows -> 13.4 logical px tall, 15.1 wide
+const BODY_CELL = 0.55;   // 12 rows -> 6.6 body, 8 rows -> 4.4 legs, 17.6 wide
+const FEET_Y = 26;
+const HEAD_H = 32 * HEAD_CELL, BODY_H = 12 * BODY_CELL, LEGS_H = 8 * BODY_CELL;
+const HEAD_Y = FEET_Y - (HEAD_H + BODY_H + LEGS_H);
+const BODY_Y = HEAD_Y + HEAD_H;
+const LEGS_Y = BODY_Y + BODY_H;
 /* Outline + interior edge-lighting pass. Two of the world's rules land here:
    a coloured outline in each material's own hue, and a consistent upper-left
    key light expressed as a lit inner edge / cool turning shadow. */
@@ -403,10 +500,21 @@ function buildFrameHD(head, body, legs, pal, mirror, acc, dir) {
   g.setTransform(2, 0, 0, 2, 0, 0);
   g.imageSmoothingEnabled = false;
   g.translate(1, 1);
-  paintRowsHD(g, head, pal, 0, 0);      // 32 rows x 36 cells → 16lp of head
-  paintRowsHD(g, body, pal, 16, 2);     // 12 rows x 32 cells → 6lp of body
-  paintRowsHD(g, legs, pal, 22, 2);     // 8 rows x 32 cells → 4lp of legs
-  if (acc) acc(g, dir, pal);            // cap / feather / favour, before outline
+  paintRowsHD(g, head, pal, HEAD_Y, HEAD_CELL);
+  paintRowsHD(g, body, pal, BODY_Y, BODY_CELL);
+  paintRowsHD(g, legs, pal, LEGS_Y, BODY_CELL);
+  if (acc) {
+    // Accessory painters (the cloak, and the unused hat/face sets) are authored
+    // against the ORIGINAL layout — body top at 16, feet at 26, half-size cells.
+    // Map that space onto the new proportions rather than rewriting each one.
+    g.save();
+    const sy = (FEET_Y - BODY_Y) / (FEET_Y - 16);
+    g.translate(9, FEET_Y);
+    g.scale(BODY_CELL / 0.5, sy);
+    g.translate(-9, -FEET_Y);
+    acc(g, dir, pal);                   // cloak / cap / favour, before outline
+    g.restore();
+  }
   g.setTransform(1, 0, 0, 1, 0, 0);
   outlineHD(c);
   if (!mirror) return c;
@@ -548,7 +656,7 @@ function makeCharacterHD_human(t) {
   const acc = (t.cloak || (t.headAcc && t.headAcc !== 'none') || (t.faceAcc && t.faceAcc !== 'none'))
     ? accPainter(t, ax) : null;
   const legStyle = t.legs || (t.body === 'gown' ? 'gown' : ['dress','fringe','beaded','wrap'].includes(t.body) ? 'dress' : 'suit');
-  const hd = HD_HEADS[t.head || 'fez'], bd = HD_BODIES[t.body || 'suit'], lg = HD_LEGS[legStyle] || HD_LEGS.suit;
+  const hd = lttpHead(t.head || 'fez'), bd = HD_BODIES[t.body || 'suit'], lg = HD_LEGS[legStyle] || HD_LEGS.suit;
   const out = {};
   out.down  = [0,1].map(f => buildFrameHD(hd.down, bd.front, lg.front[f], pal, false, acc, 'down'));
   out.up    = [0,1].map(f => buildFrameHD(hd.up,   bd.front, lg.front[f], pal, false, acc, 'up'));

@@ -59,12 +59,17 @@ export function applyRobe(tr, robe) {
 // head anchor toward the face and slim it — otherwise the hood/horns/skull
 // float beside the head with a gap. Front/back frames (default) are unchanged,
 // so NFT art and up/down walking frames render exactly as before.
+// Fractions track the sprite generator's layout (see PROPORTIONS in
+// pixelchar.js). The head used to run from 4% to 48% of the frame at 62% of its
+// width; on the LttP proportions it starts lower, ends higher and is relatively
+// wider, so regalia authored around the head centre has to follow or it floats
+// above the hood.
 function geom(cx, top, w, h, dir) {
   const side = dir === 'left' || dir === 'right';
   const off = dir === 'left' ? -w * 0.15 : dir === 'right' ? w * 0.15 : 0;
   return {
-    cx, headCx: cx + off, headTop: top + h * 0.04,
-    headW: w * (side ? 0.54 : 0.62), headH: h * 0.44,
+    cx, headCx: cx + off, headTop: top + h * 0.09,
+    headW: w * (side ? 0.62 : 0.72), headH: h * 0.48,
     top, w, h, groundY: top + h, dir, side,
   };
 }
