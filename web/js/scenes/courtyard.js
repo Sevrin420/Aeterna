@@ -10,6 +10,7 @@ import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.j
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, DOORS, ROOMS, SKULL_ROOM, NAVE, TRANSEPT, NAVE_CX, SKULL_WALL_ROW,
+  EXIT_ROW, EXIT_COLS,
 } from '../abbeyMap.js';
 import {
   FLOOR, WALL, EARTH, VOID, BLOOD, GOLD, WOOD, IRON, BONE, CLOTH, SOUL, MOSS,
@@ -107,6 +108,7 @@ export class CourtyardScene {
       bob: 0,
     };
     this._stairLock = false; // true while standing on the stair we just used
+    this._exiting = false;   // latched once the exit threshold fires, so it runs once
     this.cam = { x: 0, y: 0 };
     this.footDust = []; // { x, y, t } fading dust puffs left by the player's steps
     this._dustTimer = 0;
@@ -434,6 +436,17 @@ export class CourtyardScene {
   // it connects to — this is how the church and the two basement crypts link.
   // A lock keeps you from bouncing straight back: it clears only once you walk
   // off the destination stair.
+  // Walking into the gap at the foot of the cross leaves the abbey. The gap is
+  // drawn as a hole in the wall, so it has to behave like one rather than
+  // needing an A press at a station a few tiles short of it.
+  _checkExit() {
+    if (this._exiting) return;
+    const pcol = Math.floor(this.pc.x / TILE), prow = Math.floor(this.pc.y / TILE);
+    if (prow !== EXIT_ROW || !EXIT_COLS.includes(pcol)) return;
+    this._exiting = true;
+    this._handleSaveExit();
+  }
+
   _checkStairs() {
     const pcol = Math.floor(this.pc.x / TILE), prow = Math.floor(this.pc.y / TILE);
     const onStair = STAIRS.find((s) => s.col === pcol && s.row === prow);
@@ -648,6 +661,7 @@ export class CourtyardScene {
     } catch (e) {
       sfx.error();
       this.onToast(e.message);
+      this._exiting = false;   // save failed — don't trap the player on the threshold
     }
   }
 
@@ -732,6 +746,7 @@ export class CourtyardScene {
       }
     }
     this._checkStairs();
+    this._checkExit();
     if (this._chant) this._updateChant(dt);
     if (this.crowd.length) this._updateCrowd(dt);
     this._updateCamera(dt);
@@ -855,6 +870,7 @@ export class CourtyardScene {
           if (n % 17 === 0) { ctx.fillStyle = R.d; ctx.fillRect(x + 3, y + 4, 4, 1); }  // hairline crack
           if (n % 23 === 0) { ctx.fillStyle = R.h; ctx.fillRect(x + 5, y + 2, 2, 2); }  // mica fleck
         } else if (ch !== '#') {
+          // void, and the exit threshold cut through the south wall — both black
           ctx.fillStyle = VOID;
           ctx.fillRect(x, y, TILE, TILE);
         }
@@ -1350,8 +1366,10 @@ export class CourtyardScene {
         // isn't there: a flat black gap exactly the depth of the masonry course,
         // with the two cut wall ends picked out in gold so it reads as an exit
         // rather than as a hole someone forgot to fill in.
-        const gw = 22;
-        const wallTop = (NAVE.y1 + 1) * TILE, wallBot = wallTop + TILE;
+        // Width comes from the tiles actually carved out of the wall, so the
+        // gilded ends land on the masonry rather than floating inside the gap.
+        const gw = EXIT_COLS.length * TILE;
+        const wallTop = EXIT_ROW * TILE, wallBot = wallTop + TILE;
         ctx.fillStyle = VOID;
         ctx.fillRect(x - gw / 2, wallTop, gw, wallBot - wallTop);
         // threshold: the floor darkens as it runs into the opening

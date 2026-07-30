@@ -45,6 +45,13 @@ export const NAVE = { x0: 51, y0: 8, x1: 68, y1: 77 };      // long stem
 export const TRANSEPT = { x0: 27, y0: 52, x1: 92, y1: 64 };  // low crossbar
 export const NAVE_CX = 59;                                   // nave centre column
 
+// The way out. These tiles are cut clean through the south wall as walkable
+// threshold cells ('x'), so stepping into the gap returns you to the entry
+// lobby — the gap reads as an opening, so it has to behave like one. The
+// 'gate' station's A-press still works for anyone who stops short of it.
+export const EXIT_ROW = NAVE.y1 + 1;              // the south wall course
+export const EXIT_COLS = [NAVE_CX - 1, NAVE_CX, NAVE_CX + 1];
+
 // Ten fire alcoves down the nave, five per side. The niche used to be a plain
 // 4x4 box with a pointed-arch prop drawn inside it; the point is now the SHAPE
 // of the room itself — the floor runs full height at the nave opening and
@@ -126,6 +133,8 @@ function buildGrid() {
   wallRing(grid, SKULL_ROOM.x0 - 1, SKULL_ROOM.y0 - 1, SKULL_ROOM.x1 + 1, SKULL_ROOM.y1 + 1);
   // re-open the doorways the rings may have sealed
   for (const d of DOORS) grid[d.row][d.col] = 'c';
+  // cut the exit threshold through the south wall
+  for (const c of EXIT_COLS) grid[EXIT_ROW][c] = 'x';
 
   return grid.map((row) => row.join(''));
 }
@@ -175,7 +184,7 @@ export const CATHEDRAL_ALCOVES = [];
 // Stairs the player can step onto to teleport between the church and crypts.
 export const STAIRS = PROPS.filter((p) => p.type === 'stair-down' || p.type === 'stair-up');
 
-const SOLID_CHARS = new Set(['#', ' ']);
+const SOLID_CHARS = new Set(['#', ' ']);   // 'x' (exit threshold) is walkable
 const solidProps = new Set();
 for (const p of PROPS) if (p.solid) solidProps.add(`${p.col},${p.row}`);
 
