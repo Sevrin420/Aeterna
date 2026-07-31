@@ -784,6 +784,31 @@ function bakeCity() {
       const v = n % 3;
       const fill = v === 0 ? R.b : v === 1 ? shade(R.b, -6) : shade(R.b, 5);
       drawQuad(g, x, y, 1, 1, fill);
+
+      // RULE 3 — slab construction. Grout every TWO cells so paving reads as
+      // big slabs rather than a busy per-cell checker, with a lit lip on the
+      // far side of each seam. Same pass the abbey's flagstone floor uses.
+      if (sf === SURF.PAVE || sf === SURF.LOT) {
+        const seamS = toScreen(x, y + 1), seamE = toScreen(x + 1, y + 1);
+        const lipN = toScreen(x, y), lipE = toScreen(x + 1, y);
+        if (y % 2 === 1) {
+          g.strokeStyle = R.o; g.lineWidth = 1.4;
+          g.beginPath(); g.moveTo(seamS.x, seamS.y); g.lineTo(seamE.x, seamE.y); g.stroke();
+        } else {
+          g.strokeStyle = shade(R.b, 14); g.lineWidth = 1;
+          g.beginPath(); g.moveTo(lipN.x, lipN.y); g.lineTo(lipE.x, lipE.y); g.stroke();
+        }
+        const seamW = toScreen(x + 1, y), seamSW = toScreen(x + 1, y + 1);
+        if (x % 2 === 1) {
+          g.strokeStyle = R.d; g.lineWidth = 1.2;
+          g.beginPath(); g.moveTo(seamW.x, seamW.y); g.lineTo(seamSW.x, seamSW.y); g.stroke();
+        }
+        // mica fleck / hairline crack, sparse
+        if (n % 23 === 0) {
+          const c0 = toScreen(x + 0.5, y + 0.5);
+          g.fillStyle = R.h; g.fillRect(c0.x - 1, c0.y - 1, 2, 2);
+        }
+      }
       // lane markings down the middle of each road
       if (sf === SURF.ROAD) {
         const onX = (x % ROAD_PITCH) === 0, onY = (y % ROAD_PITCH) === 0;
@@ -793,6 +818,35 @@ function bakeCity() {
           g.fillRect(p0.x - 2, p0.y - 1, 4, 2);
         }
       }
+    }
+  }
+
+  // RULE 4 — contact shadow. The ground darkens hard where it meets a building,
+  // and each block casts a soft shadow to the south-east (away from the
+  // upper-left key light everything else in the game is lit by). This is the
+  // cheapest depth cue there is and its absence was why the city read as
+  // boxes sitting ON a floor rather than buildings standing IN one.
+  for (const bl of BUILDINGS) {
+    // cast shadow: the footprint, offset away from the light
+    const off = 0.55 + Math.min(2.2, bl.h * 0.08);
+    g.save();
+    g.globalAlpha = 0.42;
+    drawQuad(g, bl.x + off, bl.y + off, bl.w, bl.d, '#02040a');
+    g.restore();
+  }
+  // hard contact band on the ground cells immediately around each footprint
+  for (let y = 0; y < CH; y++) {
+    for (let x = 0; x < CW; x++) {
+      if (height[idx(x, y)] > 0) continue;
+      const up = y > 0 && height[idx(x, y - 1)] > 0;
+      const left = x > 0 && height[idx(x - 1, y)] > 0;
+      const right = x < CW - 1 && height[idx(x + 1, y)] > 0;
+      const down = y < CH - 1 && height[idx(x, y + 1)] > 0;
+      if (!up && !left && !right && !down) continue;
+      g.save();
+      g.globalAlpha = up || left ? 0.34 : 0.18;
+      drawQuad(g, x, y, 1, 1, '#01030a');
+      g.restore();
     }
   }
 
