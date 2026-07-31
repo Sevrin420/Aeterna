@@ -321,6 +321,25 @@ export function stepFootAI(e, dt, world) {
   const p = world.player;
   const d = Math.hypot(p.x - e.x, p.y - e.y);
 
+  // A passive guard is part of a stealth objective: it patrols, and only turns
+  // hostile once it has actually SEEN the player (range + facing arc + line of
+  // sight, sustained for a beat) or the alarm has gone up some other way.
+  if (e.passive && !e.alerted) {
+    const w2 = world.stealth;
+    e.wander += (Math.random() - 0.5) * dt * 2;
+    stepPerson(e, dt, Math.cos(e.wander) * 0.5, Math.sin(e.wander) * 0.5);
+    if (!w2 || w2.blown) { e.alerted = true; e.passive = false; return; }
+    const seen = canSee(e, p, 13);
+    e.suspicion = Math.max(0, (e.suspicion || 0) + (seen ? dt : -dt * 1.4));
+    if (e.suspicion > 0.7) {
+      w2.blown = true;
+      e.alerted = true; e.passive = false;
+      for (const o of world.people) if (o.passive) { o.passive = false; o.alerted = true; }
+      world.onAlarm?.();
+    }
+    return;
+  }
+
   if (e.faction === 'cabal' || e.faction === 'cop') {
     const range = e.weapon === 'gun' ? 11 : 1.6;
     if (d < 26) {
@@ -398,6 +417,25 @@ export function stepFootAI(e, dt, world) {
       stepPerson(e, dt, ux, uy, d > 9);
     } else stepPerson(e, dt, 0, 0);
   }
+}
+
+// Line of sight on the grid: walk the segment and stop at the first wall. Cheap
+// enough at these ranges and it means a guard genuinely can't see through a
+// building, which is what makes sneaking readable rather than arbitrary.
+export function canSee(from, to, range) {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const d = Math.hypot(dx, dy);
+  if (d > range) return false;
+  // facing arc: guards don't have eyes in the back of their heads
+  const f = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0],
+    ne: [0.7, -0.7], nw: [-0.7, -0.7], se: [0.7, 0.7], sw: [-0.7, 0.7] }[from.dir] || [0, 1];
+  if ((dx / d) * f[0] + (dy / d) * f[1] < 0.35) return false;   // ~140 degree cone
+  const steps = Math.ceil(d * 2);
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    if (solidAt(from.x + dx * t, from.y + dy * t)) return false;
+  }
+  return true;
 }
 
 // --- spawning -------------------------------------------------------------

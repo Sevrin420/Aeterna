@@ -46,6 +46,16 @@ addEventListener('keydown', (e) => {
   if (KEYMAP[e.code] || ['Space', 'KeyE', 'ShiftLeft', 'Enter'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyE') world.tryAction();
   if (e.code === 'KeyM') ui.map = !ui.map;
+  if (e.code === 'Escape' || e.code === 'KeyP') toggleMenu();
+  if (ui.menu) {
+    if (e.code === 'ArrowLeft') { ui.tab = (ui.tab + 2) % 3; ui.sel = 0; }
+    if (e.code === 'ArrowRight') { ui.tab = (ui.tab + 1) % 3; ui.sel = 0; }
+    if (e.code === 'ArrowUp') ui.sel = Math.max(0, ui.sel - 1);
+    if (e.code === 'ArrowDown') ui.sel++;
+    if (e.code === 'Enter' && ui.tab === 1) replaySelected();
+    e.preventDefault();
+    return;
+  }
   if (e.code === 'KeyQ') cycleWeapon();
   if (/^Digit[1-4]$/.test(e.code)) {
     const w2 = WEAPON_ORDER[+e.code.slice(5) - 1];
@@ -154,6 +164,35 @@ export const WEAPONS = {
 };
 export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'rifle'];
 
+function toggleMenu() {
+  ui.menu = ui.menu ? null : 'pause';
+  if (ui.menu) {
+    // pull fresh server data each time it opens — the leaderboard and the
+    // points ledger are both server-authoritative, so there is nothing local
+    // worth showing instead.
+    api.leaderboard().then((r) => { ui.board = r; }).catch(() => { ui.board = []; });
+    api.profile().then((pr) => {
+      ui.ledger = pr.ledger || [];
+      if (typeof pr.points === 'number') world.points = pr.points;
+    }).catch(() => { ui.ledger = []; });
+  }
+}
+
+// Replaying a finished mission re-runs it for practice. It pays no points, and
+// not because the client withholds them: the ledger is keyed (wallet, type,
+// ref), so the server has already recorded mission N and simply ignores it the
+// second time. Worth surfacing in the UI so the rule is visible, not a trap.
+function replaySelected() {
+  const done = MISSIONS.filter((m) => campaign.completed.includes(m.id));
+  const next = campaign.available();
+  const list = next ? [...done, next] : done;
+  const m = list[Math.min(ui.sel, list.length - 1)];
+  if (!m) return;
+  if (campaign.active) { world.toast('Finish the current job first.'); return; }
+  ui.menu = null;
+  campaign.start(m);
+}
+
 function cycleWeapon() {
   const have = WEAPON_ORDER.filter((w) => w === 'pistol' || (world.ammo[w] || 0) > 0);
   const i = have.indexOf(world.player.weaponId || 'pistol');
@@ -162,7 +201,14 @@ function cycleWeapon() {
 }
 
 // --- world ----------------------------------------------------------------
-const ui = { map: false, toasts: [], brief: null, briefT: 0 };
+const ui = {
+  map: false, toasts: [], brief: null, briefT: 0,
+  menu: null,          // null | 'pause'
+  tab: 0,              // 0 stats · 1 missions · 2 leaderboard
+  sel: 0,
+  board: null,         // cached leaderboard rows
+  ledger: null,        // cached points ledger
+};
 
 const world = {
   t: 0,
@@ -180,6 +226,9 @@ const world = {
   blasts: [],         // expanding shockwave rings
   // free-play bookkeeping — all of these feed server-priced point events
   rampage: { kills: 0, t: 0 },
+  stealth: null,      // { on, blown, seen } while a stealth objective is live
+  hostage: null,      // a crew member bleeding out (mission 9)
+  andyDead: false,
   jacked: new Set(),
   peakWanted: 0,
   ammo: {},
@@ -251,6 +300,12 @@ const world = {
     if (Math.hypot(p.x - pump.x, p.y - pump.y) < 6 && !campaign.active) {
       if (!campaign.start()) this.toast('Nothing on the board right now.');
     }
+  },
+
+  onAlarm() {
+    this.toast('SPOTTED — it just went loud');
+    sfx('hit');
+    this.shake = Math.max(this.shake, 4);
   },
 
   claimed(id) {
@@ -381,6 +436,7 @@ function sfx(kind) {
 
 // --- update ---------------------------------------------------------------
 function update(dt) {
+  if (ui.menu) { readInput(); return; }
   // Hitstop: a few frames of frozen time when you land a kill. Costs nothing
   // and is most of why a hit reads as a hit.
   if (world.hitstop > 0) { world.hitstop -= dt; return; }
@@ -441,6 +497,12 @@ function update(dt) {
         const cs = Math.cos(sp), sn = Math.sin(sp);
         world.bullets.push(makeBullet(p.x, p.y, ax * cs - ay * sn, ax * sn + ay * cs, 'player', wpn.dmg));
       }
+      // A gunshot ends any stealth attempt outright, wherever you are.
+      if (world.stealth && !world.stealth.blown) {
+        world.stealth.blown = true;
+        for (const e of world.people) if (e.passive) { e.passive = false; e.alerted = true; }
+        world.onAlarm();
+      }
       burst(p.x + ax * 0.6, p.y + ay * 0.6, 2, '#ffd45c', 3, 0.25);   // brass
       world.shake = Math.max(world.shake, wpn.shake);
       world.panic = 4;
@@ -451,6 +513,13 @@ function update(dt) {
   if (p.flash > 0) p.flash -= dt;
   if (world.panic > 0) world.panic -= dt;
   for (const e of world.people) if (e.hurt > 0) e.hurt -= dt;
+  // a downed crew member bleeds out on a timer — reach them or lose them
+  const hg = world.hostage;
+  if (hg && !hg.dead && hg.hostage) {
+    hg.bleed -= dt;
+    world.hudTimer = Math.max(0, hg.bleed);
+    if (hg.bleed <= 0) { hg.dead = true; world.toast('ANDY BLED OUT'); }
+  }
 
   // vehicle physics: separate cars, then cook off anything wrecked
   resolveCarCollisions(world.cars, (a, b, ix, iy, rel) => {
@@ -839,6 +908,7 @@ function render() {
 
   drawHUD();
   if (ui.map) drawMap();
+  if (ui.menu) drawMenu();
 }
 
 // Buildings draw in the sorted pass so cars and people can pass behind them.
@@ -1123,6 +1193,22 @@ function drawHUD() {
     ctx.globalAlpha = 1;
   });
 
+  // stealth indicator
+  if (world.stealth) {
+    const blown = world.stealth.blown;
+    ctx.font = 'bold 11px "Courier New", monospace';
+    const txt = blown ? 'DETECTED' : 'UNSEEN';
+    const tw2 = ctx.measureText(txt).width;
+    ctx.fillStyle = 'rgba(6,10,18,0.8)';
+    ctx.fillRect(VW / 2 - tw2 / 2 - 10, pad + 30, tw2 + 20, 20);
+    ctx.strokeStyle = blown ? '#e0233a' : NEON.boyz.mid;
+    ctx.strokeRect(VW / 2 - tw2 / 2 - 9.5, pad + 30.5, tw2 + 19, 19);
+    ctx.fillStyle = blown ? '#ff7d8c' : NEON.boyz.core;
+    ctx.textAlign = 'center';
+    ctx.fillText(txt, VW / 2, pad + 44);
+    ctx.textAlign = 'left';
+  }
+
   drawMinimap();
 
   // weapon + ammo readout
@@ -1147,6 +1233,121 @@ function drawHUD() {
       ctx.fillText(nm ? `[E] START — ${nm.title}` : 'ALL MISSIONS DONE — THE BLOCK IS YOURS',
         VW / 2, VH - 34);
       ctx.textAlign = 'left';
+    }
+  }
+}
+
+// The pause screen: three tabs over the same frame. Stats, the mission board
+// (which doubles as replay), and the live leaderboard.
+function drawMenu() {
+  ctx.fillStyle = 'rgba(4,6,11,0.93)';
+  ctx.fillRect(0, 0, VW, VH);
+  const W2 = Math.min(560, VW - 40), H2 = Math.min(430, VH - 40);
+  const x0 = VW / 2 - W2 / 2, y0 = VH / 2 - H2 / 2;
+  ctx.fillStyle = 'rgba(8,12,20,0.96)';
+  ctx.fillRect(x0, y0, W2, H2);
+  ctx.strokeStyle = NEON.boyz.mid; ctx.lineWidth = 2;
+  ctx.strokeRect(x0 + 1, y0 + 1, W2 - 2, H2 - 2);
+
+  const tabs = ['STATS', 'MISSIONS', 'LEADERBOARD'];
+  ctx.font = 'bold 11px "Courier New", monospace';
+  tabs.forEach((t, i) => {
+    const tx = x0 + 18 + i * 150;
+    const on = ui.tab === i;
+    ctx.fillStyle = on ? NEON.boyz.core : 'rgba(150,165,195,0.45)';
+    ctx.fillText(t, tx, y0 + 26);
+    if (on) { ctx.fillStyle = NEON.boyz.mid; ctx.fillRect(tx, y0 + 31, ctx.measureText(t).width, 2); }
+  });
+  // help sits along the bottom edge — at the top right it collided with the
+  // LEADERBOARD tab label on narrower viewports
+  ctx.font = '9px "Courier New", monospace';
+  ctx.fillStyle = 'rgba(140,155,185,0.55)';
+  ctx.textAlign = 'center';
+  ctx.fillText('← →  tabs      ↑ ↓  select      ENTER  start      ESC  close', x0 + W2 / 2, y0 + H2 - 14);
+  ctx.textAlign = 'left';
+
+  const bx = x0 + 18, by = y0 + 54, bw = W2 - 36;
+  const listBottom = y0 + H2 - 30;
+
+  if (ui.tab === 0) {
+    const rows = [
+      ['POINTS (server)', Math.floor(world.points)],
+      ['Cash', '$' + Math.floor(world.cash)],
+      ['Missions done', `${campaign.completed.length} / ${MISSIONS.length}`],
+      ['Turf held', `${owned.size} / ${DISTRICTS.length}`],
+      ['Turf income', `$${world.income}/s`],
+      ['Whips boosted', world.jacked.size],
+      ['Wanted', '★'.repeat(world.wanted) || 'clean'],
+      ['Crew', world.andyDead ? 'Andy is gone' : `${world.crew.length + 1} strong`],
+    ];
+    ctx.font = '11px "Courier New", monospace';
+    rows.forEach((r, i) => {
+      ctx.fillStyle = 'rgba(160,175,205,0.75)';
+      ctx.fillText(r[0], bx, by + 18 + i * 21);
+      ctx.fillStyle = i === 0 ? NEON.boyz.core : '#dbe4f5';
+      ctx.textAlign = 'right';
+      ctx.fillText(String(r[1]), bx + bw, by + 18 + i * 21);
+      ctx.textAlign = 'left';
+    });
+    ctx.fillStyle = 'rgba(140,155,185,0.5)';
+    ctx.font = '9px "Courier New", monospace';
+    wrap(ctx, 'Points are held by the server and are the basis for any future token distribution. The client only displays them.', bx, by + 200, bw, 13);
+    if (ui.ledger?.length) {
+      ctx.fillStyle = NEON.boyz.mid;
+      ctx.font = 'bold 10px "Courier New", monospace';
+      ctx.fillText('RECENT LEDGER', bx, by + 236);
+      ctx.font = '9px "Courier New", monospace';
+      ui.ledger.slice(0, 6).forEach((l, i) => {
+        ctx.fillStyle = 'rgba(160,175,205,0.7)';
+        ctx.fillText(`${l.type} ${l.ref}`.slice(0, 34), bx, by + 252 + i * 13);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#f0ca4e';
+        ctx.fillText('+' + l.points, bx + bw, by + 252 + i * 13);
+        ctx.textAlign = 'left';
+      });
+    }
+  } else if (ui.tab === 1) {
+    const done = MISSIONS.filter((m) => campaign.completed.includes(m.id));
+    const next = campaign.available();
+    const list = next ? [...done, next] : done;
+    ui.sel = Math.max(0, Math.min(ui.sel, Math.max(0, list.length - 1)));
+    if (!list.length) {
+      ctx.fillStyle = 'rgba(160,175,205,0.7)';
+      ctx.font = '11px "Courier New", monospace';
+      ctx.fillText('No jobs on the board yet. Head to the Pump Lounge.', bx, by + 20);
+    }
+    ctx.font = '11px "Courier New", monospace';
+    list.forEach((m, i) => {
+      const yy = by + 18 + i * 26;
+      if (yy > listBottom) return;
+      const isDone = campaign.completed.includes(m.id);
+      const on = i === ui.sel;
+      if (on) { ctx.fillStyle = 'rgba(143,224,33,0.12)'; ctx.fillRect(bx - 6, yy - 13, bw + 12, 22); }
+      ctx.fillStyle = on ? NEON.boyz.core : isDone ? 'rgba(160,175,205,0.8)' : '#f0ca4e';
+      ctx.fillText(`${String(m.id).padStart(2, '0')}  ${m.title}`, bx, yy);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = isDone ? 'rgba(140,155,185,0.55)' : NEON.boyz.mid;
+      ctx.fillText(isDone ? 'REPLAY · no points' : `NEW · ${m.points} pts`, bx + bw, yy);
+      ctx.textAlign = 'left';
+    });
+  } else {
+    ctx.font = '11px "Courier New", monospace';
+    if (!ui.board) {
+      ctx.fillStyle = 'rgba(160,175,205,0.7)';
+      ctx.fillText('Loading…', bx, by + 20);
+    } else if (!ui.board.length) {
+      ctx.fillStyle = 'rgba(160,175,205,0.7)';
+      ctx.fillText('Nobody on the board yet. Be first.', bx, by + 20);
+    } else {
+      ui.board.slice(0, 14).forEach((r, i) => {
+        const yy = by + 18 + i * 22;
+        ctx.fillStyle = i === 0 ? NEON.boyz.core : 'rgba(180,195,225,0.85)';
+        ctx.fillText(`${String(i + 1).padStart(2, ' ')}.  ${String(r.name).slice(0, 18)}`, bx, yy);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#f0ca4e';
+        ctx.fillText(String(r.points), bx + bw, yy);
+        ctx.textAlign = 'left';
+      });
     }
   }
 }

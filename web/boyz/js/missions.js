@@ -80,6 +80,48 @@ const say = (who, text) => ({
   check() { return true; },
 });
 
+// STEALTH. A real alternative route, not a label. While a stealth objective is
+// live, enemies get a vision cone: they only notice you inside a range, within
+// a facing arc, and with line of sight — and even then it takes a beat, so
+// breaking away resets it. Firing a gun anywhere nearby blows it instantly.
+// If nobody has raised the alarm by the time you're out, the mission pays a
+// bonus and skips the fight entirely.
+const stealthStart = () => ({
+  label: null, instant: true,
+  enter(w) { w.stealth = { on: true, blown: false, seen: 0 }; w.toast('STEALTH — stay out of sight'); },
+  check() { return true; },
+});
+const stealthEnd = (bonusPoints, bonusCash) => ({
+  label: null, instant: true,
+  enter(w) {
+    if (w.stealth && !w.stealth.blown) {
+      w.award(bonusPoints, 'Ghosted it');
+      w.cash += bonusCash;
+      w.toast('CLEAN — nobody saw a thing');
+    }
+    w.stealth = null;
+  },
+  check() { return true; },
+});
+// Spawn guards that only fight once the alarm goes up.
+const spawnGuards = (x, y, n, opts) => ({
+  label: null, instant: true,
+  enter(w) {
+    w.missionEnemies = spawnCabal(w, x, y, n, opts);
+    for (const e of w.missionEnemies) { e.passive = true; e.alerted = false; }
+    w.setMarker(x, y, 'Guards');
+  },
+  check() { return true; },
+});
+// Either sneak past them, or drop them all if it went loud.
+const clearOrGhost = (label) => ({
+  label,
+  check(w) {
+    if (w.stealth && !w.stealth.blown) return true;
+    return w.people.filter((p) => p.faction === 'cabal' && !p.dead).length === 0;
+  },
+});
+
 const claimTurf = (id) => ({
   label: null, instant: true,
   enter(w) {
@@ -137,12 +179,14 @@ export const MISSIONS = [
     id: 4, title: 'Seen It All', giver: 'landwolf', points: 700, cash: 1500,
     brief: 'A snitch is holed up in the Sunset Motel. Bring him out. Quiet if you can.',
     objectives: [
-      say('landwolf', 'I’ve seen how this ends when it goes loud. Your call.'),
-      gotoLandmark('motel', 'Infiltrate the motel'),
-      spawnEnemies(LM.motel.x, LM.motel.y, 5, { hp: 60 }),
-      killAll('Deal with the guards'),
+      say('landwolf', 'I’ve seen how this ends when it goes loud. Stay off their sightlines and nobody has to die.'),
+      stealthStart(),
+      spawnGuards(LM.motel.x, LM.motel.y, 6, { hp: 60 }),
+      gotoLandmark('motel', 'Infiltrate the motel — unseen', 5),
+      clearOrGhost('Get past the guards'),
       collect(LM.motel.x, LM.motel.y, 'Extract the snitch'),
       goto(48, 108, 'Escape via the docks', 4),
+      stealthEnd(400, 1200),
       say('landwolf', 'He talked. The Cabal’s planning a dump on the whole block.'),
     ],
     unlock: 'Suppressed weapons',
@@ -232,18 +276,61 @@ export const MISSIONS = [
       gotoLandmark('cashhouse', 'Reach the warehouse'),
       spawnEnemies(LM.cashhouse.x + 4, LM.cashhouse.y + 4, 12, { hp: 70 }),
       killAll('Break the holding force'),
-      collect(LM.cashhouse.x + 2, LM.cashhouse.y + 2, 'Free Andy'),
+      {
+        label: 'Free Andy — he bleeds out if you take too long',
+        enter(w) {
+          // Andy is a real body in the world with a real bleed-out timer. If he
+          // dies here he is gone for the rest of the campaign, which is the
+          // only way a "crew member can die" beat means anything.
+          const a = makePerson(LM.cashhouse.x + 2, LM.cashhouse.y + 2, BOYZ.andy, {
+            faction: 'crew', hp: 100, speed: 0, name: 'ANDY',
+          });
+          a.hostage = true; a.bleed = 75;
+          w.people.push(a);
+          w.hostage = a;
+          w.setMarkerEntity(a, 'ANDY');
+        },
+        check(w) {
+          const a = w.hostage;
+          if (!a) return true;
+          if (a.dead) { w.andyDead = true; return true; }
+          return Math.hypot(w.player.x - a.x, w.player.y - a.y) < 2.5;
+        },
+      },
+      {
+        label: null, instant: true,
+        enter(w) {
+          const a = w.hostage;
+          if (a && !a.dead) { a.hostage = false; a.speed = 3.6; a.weapon = 'gun'; w.crew.push(a); }
+        },
+        check() { return true; },
+      },
       goto(LM.pump.x, LM.pump.y, 'Get him home', 4),
-      say('landwolf', 'He’s breathing. Now we finish it.'),
+      {
+        label: null, instant: true,
+        enter(w) {
+          if (w.andyDead) w.briefing('landwolf', 'We were too slow. Andy\'s gone. That one stays with us.');
+          else w.briefing('landwolf', 'He\'s breathing. Now we finish it.');
+        },
+        check() { return true; },
+      },
     ],
     unlock: 'Finale',
   },
   {
     id: 10, title: 'Take the Hood', giver: 'brett', points: 5000, cash: 25000,
     brief: 'Full war. Breach the compound, fight through, and put the last banner up.',
-    crew: ['pepe', 'brett', 'andy', 'landwolf'],
+    crewFn: (w) => (w.andyDead ? ['pepe', 'brett', 'landwolf'] : ['pepe', 'brett', 'andy', 'landwolf']),
     objectives: [
-      say('brett', 'Four Boyz. One block. Everything we did was for this door.'),
+      {
+        label: null, instant: true,
+        enter(w) {
+          w.briefing('brett', w.andyDead
+            ? 'Three of us now. We finish this for the one who isn\'t here.'
+            : 'Four Boyz. One block. Everything we did was for this door.');
+        },
+        check() { return true; },
+      },
       gotoLandmark('hq', 'Breach the outer defences'),
       spawnEnemies(LM.hq.x - 6, LM.hq.y + 6, 10, { hp: 70 }),
       killAll('Break the outer line'),
@@ -298,7 +385,8 @@ export class Campaign {
     this.w.missionEnemies = [];
     this.w.boss = null;
     this.w.missionVan = null;
-    if (mission.crew) this.w.spawnCrew(mission.crew);
+    const crew = mission.crewFn ? mission.crewFn(this.w) : mission.crew;
+    if (crew) this.w.spawnCrew(crew);
     this.w.toast(`MISSION ${mission.id}: ${mission.title}`);
     this.advance();
     return true;
