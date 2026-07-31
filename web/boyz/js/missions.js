@@ -216,7 +216,7 @@ export const MISSIONS = [
         label: 'Intercept the armored van',
         enter(w) {
           const p = nearestRoad(LM.cashhouse.x, LM.cashhouse.y + 8);
-          const van = makeCar(p.x, p.y, 0, { ai: 'traffic', hp: 260, topSpeed: 12, len: 2.6, wid: 1.2 });
+          const van = makeCar(p.x, p.y, 0, { ai: 'traffic', cls: 'van', hp: 260 });
           van.isVan = true;
           w.cars.push(van);
           w.missionVan = van;

@@ -404,7 +404,7 @@ function enterCar(c) {
     world.award(15, 'Whip boosted');
     sendEvent('carjack', `${getWalletId().slice(-6)}-${c.id}`).catch(() => {});
   }
-  world.toast('Whip acquired');
+  world.toast(`${c.className || 'Whip'} acquired`);
   if (c.siren) world.setWanted(Math.max(world.wanted, 2));
   else if (Math.random() < 0.5) world.setWanted(Math.max(world.wanted, 1));
 }
@@ -1110,13 +1110,14 @@ function drawBullet(b) {
 function drawCarEnt(c) {
   if (c.dead) {
     drawCar(ctx, c.x, c.y, c.ang, { o: '#0a0708', d: '#170f0c', b: '#241713', l: '#31201a', h: '#3f2a22' },
-      { lights: false, len: c.len, wid: c.wid });
+      { lights: false, len: c.len, wid: c.wid, ht: c.ht, cab: c.cab, glassW: c.glassW });
     const s = toScreen(c.x, c.y, 0.8);
     pointLight(ctx, s.x, s.y, 30 + Math.sin(world.t * 9) * 6, '#ff7a2a', 0.5);
     return;
   }
   drawCar(ctx, c.x, c.y, c.ang, c.paint, {
-    siren: c.siren, sirenPhase: world.t, len: c.len, wid: c.wid, brake: c.braking,
+    siren: c.siren, sirenPhase: world.t, len: c.len, wid: c.wid, ht: c.ht,
+    cab: c.cab, glassW: c.glassW, stripe: c.stripe, bed: c.bed, brake: c.braking,
   });
 }
 
@@ -1310,6 +1311,22 @@ function drawHUD() {
   }
 
   drawMinimap();
+
+  // vehicle readout — the class name and a condition bar, so you can tell at a
+  // glance whether the whip you're in is about to cook off
+  if (world.player.inCar) {
+    const c = world.player.inCar;
+    ctx.font = 'bold 10px "Courier New", monospace';
+    ctx.fillStyle = 'rgba(6,10,18,0.72)';
+    ctx.fillRect(pad + 138, VH - pad - 16, 108, 12);
+    const cond = Math.max(0, c.hp) / (c.maxHp || 100);
+    ctx.fillStyle = cond > 0.5 ? '#8fe021' : cond > 0.25 ? '#f0a020' : '#e0233a';
+    ctx.fillRect(pad + 139, VH - pad - 15, 106 * cond, 10);
+    ctx.fillStyle = 'rgba(6,10,18,0.85)';
+    ctx.fillText((c.className || 'CAR').toUpperCase(), pad + 143, VH - pad - 6);
+    ctx.strokeStyle = 'rgba(180,200,230,0.4)'; ctx.lineWidth = 1;
+    ctx.strokeRect(pad + 138.5, VH - pad - 16.5, 108, 12);
+  }
 
   // weapon + ammo readout
   {

@@ -27,20 +27,79 @@ export const PAINTS = [
 ];
 export const COP_PAINT = ramp('#05070c', '#0d1626', '#16233c', '#203457', '#2f4a77');
 
+// --- vehicle classes ------------------------------------------------------
+// One handling model for every car meant a stolen van drove exactly like a
+// stolen sports car, which quietly removed the whole reason to steal a
+// different one. Each class trades along a different axis: the sports car is
+// fast and grippy but folds on the first serious impact, the van is slow and
+// clumsy but shrugs off a pursuit, muscle is quick in a straight line and
+// terrible at corners.
+//
+// len/wid/ht are HALF-extents in world cells (the renderer draws corners at
+// ±len, ±wid), so wid must stay under 0.5 — lane centres sit 1.0 apart and a
+// wider car permanently overlaps its oncoming neighbour.
+export const VEHICLES = {
+  sedan: {
+    name: 'Sedan', len: 1.22, wid: 0.45, ht: 0.55,
+    topSpeed: 15, accel: 24, brake: 28, drag: 1.6, handling: 2.6, mass: 1.0, hp: 100,
+    cab: [-0.45, 0.5], glassW: 0.72,
+  },
+  muscle: {
+    name: 'Muscle', len: 1.4, wid: 0.46, ht: 0.5,
+    topSpeed: 20, accel: 36, brake: 24, drag: 1.4, handling: 2.0, mass: 1.25, hp: 120,
+    cab: [-0.55, 0.18], glassW: 0.7, stripe: true,
+  },
+  sports: {
+    name: 'Sports', len: 1.18, wid: 0.42, ht: 0.38,
+    topSpeed: 23, accel: 40, brake: 36, drag: 1.5, handling: 3.3, mass: 0.8, hp: 78,
+    cab: [-0.6, 0.1], glassW: 0.74,
+  },
+  van: {
+    name: 'Van', len: 1.56, wid: 0.46, ht: 0.98,
+    topSpeed: 12, accel: 16, brake: 22, drag: 1.9, handling: 1.9, mass: 1.9, hp: 185,
+    cab: [0.34, 0.86], glassW: 0.8,
+  },
+  pickup: {
+    name: 'Pickup', len: 1.46, wid: 0.45, ht: 0.72,
+    topSpeed: 14, accel: 21, brake: 25, drag: 1.7, handling: 2.2, mass: 1.5, hp: 145,
+    cab: [-0.05, 0.6], glassW: 0.76, bed: [-0.92, -0.12],
+  },
+  cruiser: {
+    name: 'Cruiser', len: 1.3, wid: 0.45, ht: 0.55,
+    topSpeed: 19, accel: 31, brake: 33, drag: 1.5, handling: 3.0, mass: 1.15, hp: 145,
+    cab: [-0.45, 0.45], glassW: 0.72,
+  },
+};
+
+// Weighted draw for street traffic — sedans are the background, the fast and
+// heavy classes are the ones worth going out of your way for.
+const TRAFFIC_MIX = [
+  ['sedan', 42], ['pickup', 16], ['van', 14], ['muscle', 16], ['sports', 12],
+];
+export function rollVehicleClass() {
+  let n = Math.random() * TRAFFIC_MIX.reduce((a, r) => a + r[1], 0);
+  for (const [id, w] of TRAFFIC_MIX) { n -= w; if (n <= 0) return id; }
+  return 'sedan';
+}
+
 export function makeCar(x, y, ang = 0, opts = {}) {
+  const cls = VEHICLES[opts.cls] || VEHICLES.sedan;
+  const hp = opts.hp || cls.hp;
   return {
     id: uid(), kind: 'car', x, y, ang,
     vx: 0, vy: 0, speed: 0,
     paint: opts.paint || PAINTS[(Math.random() * PAINTS.length) | 0],
-    hp: opts.hp || 100, maxHp: opts.hp || 100,
+    hp, maxHp: hp,
     driver: null,               // entity currently driving
     ai: opts.ai || null,        // 'traffic' | 'chase' | null
     siren: !!opts.siren,
-    // Sized to fit a lane. Roads are 2 cells wide, so lane centres sit 1.0
-    // apart — a car half-width of 1.0 (the old value) meant every car
-    // permanently overlapped its oncoming neighbour.
-    len: opts.len || 1.5, wid: opts.wid || 0.45,
-    topSpeed: opts.topSpeed || 16,
+    cls: opts.cls && VEHICLES[opts.cls] ? opts.cls : 'sedan',
+    className: cls.name,
+    len: opts.len || cls.len, wid: opts.wid || cls.wid, ht: cls.ht,
+    cab: cls.cab, glassW: cls.glassW, stripe: !!cls.stripe, bed: cls.bed || null,
+    topSpeed: opts.topSpeed || cls.topSpeed,
+    accel: cls.accel, brake: cls.brake, drag: cls.drag,
+    handling: cls.handling, mass: cls.mass,
     dead: false, burn: 0, exploded: false, braking: false,
   };
 }
@@ -128,13 +187,21 @@ export function resolveCarCollisions(cars, onImpact) {
         }
       }
       if (!best) continue;
-      const dx = best[0], dy = best[1];
-      const d = 1;
-      const nx = dx, ny = dy;
-      const push = bestPen / 2;
-      // separate, weighting the moving car less so parked cars get shoved
-      a.x -= nx * push; a.y -= ny * push;
-      b.x += nx * push; b.y += ny * push;
+      let [nx, ny] = best;
+      // Once two bodies overlap DEEPLY, the deepest circle pair can be one that
+      // has already passed through the other — a nose sitting behind a tail —
+      // and its normal points backwards. Resolving along it drives the cars
+      // further into each other instead of apart, and they swap places. Guard
+      // by flipping any normal that opposes the centre-to-centre direction,
+      // which is always a valid separation axis.
+      const cx = b.x - a.x, cy = b.y - a.y;
+      if (nx * cx + ny * cy < 0) { nx = -nx; ny = -ny; }
+      // Separate by mass share: a van shunts a sports car most of the way out
+      // of the contact and barely moves itself, which is the whole point of
+      // having classes.
+      const ma = a.mass || 1, mb = b.mass || 1, mt = ma + mb;
+      a.x -= nx * bestPen * (mb / mt); a.y -= ny * bestPen * (mb / mt);
+      b.x += nx * bestPen * (ma / mt); b.y += ny * bestPen * (ma / mt);
 
       // closing speed along the contact normal decides the damage
       const av = a.speed, bv = b.speed;
@@ -143,11 +210,12 @@ export function resolveCarCollisions(cars, onImpact) {
       const rel = (aVx - bVx) * nx + (aVy - bVy) * ny;
       if (rel <= 0) continue;
 
-      a.speed -= rel * 0.55;
-      b.speed += rel * 0.55;
+      // The lighter car loses more of its speed and takes more of the damage.
+      a.speed -= rel * 1.1 * (mb / mt);
+      b.speed += rel * 1.1 * (ma / mt);
       const dmg = Math.max(0, rel - 4) * 2.4;
       if (dmg > 0) {
-        a.hp -= dmg; b.hp -= dmg;
+        a.hp -= dmg * 2 * (mb / mt); b.hp -= dmg * 2 * (ma / mt);
         onImpact?.(a, b, (a.x + b.x) / 2, (a.y + b.y) / 2, rel);
       }
     }
@@ -172,14 +240,18 @@ export function stepWreck(car, dt, onExplode) {
 export function stepCar(car, dt, throttle, steer) {
   if (car.dead) { car.burn += dt; return; }
   car.braking = throttle < 0 && car.speed > 0.5;
-  const accel = 26, brake = 30, drag = 1.6;
+  const accel = car.accel || 26, brake = car.brake || 30, drag = car.drag || 1.6;
   if (throttle > 0) car.speed += accel * throttle * dt;
   else if (throttle < 0) car.speed += brake * throttle * dt;
   car.speed -= car.speed * drag * dt;
   car.speed = Math.max(-car.topSpeed * 0.4, Math.min(car.topSpeed, car.speed));
 
-  const authority = Math.min(1, Math.abs(car.speed) / 4);
-  car.ang += steer * 2.6 * dt * authority * Math.sign(car.speed || 1);
+  // Steering authority falls off with speed as well as up from a standstill:
+  // a van at full tilt understeers, which is what makes the heavy classes feel
+  // heavy rather than just slow.
+  const authority = Math.min(1, Math.abs(car.speed) / 4)
+    * (1 - Math.min(0.45, Math.abs(car.speed) / car.topSpeed * 0.45));
+  car.ang += steer * (car.handling || 2.6) * dt * authority * Math.sign(car.speed || 1);
 
   const nx = car.x + Math.cos(car.ang) * car.speed * dt;
   const ny = car.y + Math.sin(car.ang) * car.speed * dt;
@@ -278,7 +350,10 @@ export function stepTrafficCar(car, dt, cars) {
 
   // Brake for whatever is directly ahead, but only if it is genuinely in front
   // and close — a fat radius made every car brake for its neighbours and the
-  // whole grid ground to a halt.
+  // whole grid ground to a halt. Both windows are sized off the two cars
+  // involved rather than fixed, so a long van doesn't nose into the car ahead
+  // and, more importantly, the side window stays UNDER the 1.0 lane spacing so
+  // nobody brakes for oncoming traffic.
   let throttle = 0.9;
   if (cars) {
     const fx = Math.cos(car.ang), fy = Math.sin(car.ang);
@@ -286,13 +361,14 @@ export function stepTrafficCar(car, dt, cars) {
       if (o === car || o.exploded) continue;
       const rx = o.x - car.x, ry = o.y - car.y;
       const ahead = rx * fx + ry * fy;
-      if (ahead < 0.5 || ahead > 3.6) continue;
+      if (ahead < car.len * 0.6 || ahead > car.len + o.len + 1.4) continue;
       const side = Math.abs(rx * -fy + ry * fx);
-      if (side < 1.1) { throttle = -0.3; break; }
+      if (side < (car.wid + o.wid) * 0.98) { throttle = -0.3; break; }
     }
   }
-  // and don't drive into a building
-  if (carSolidAt(car.x + Math.cos(car.ang) * 2.0, car.y + Math.sin(car.ang) * 2.0)) {
+  // and don't drive into a building — look further ahead the faster you're going
+  const look = Math.max(2.0, car.len + Math.abs(car.speed) * 0.14);
+  if (carSolidAt(car.x + Math.cos(car.ang) * look, car.y + Math.sin(car.ang) * look)) {
     throttle = -0.4;
     if (car.junctionCd <= 0) {
       car.junctionCd = 1.4;
@@ -442,7 +518,8 @@ export function canSee(from, to, range) {
 export function spawnTraffic(world, n) {
   for (let i = 0; i < n; i++) {
     const p = nearestRoad(6 + Math.random() * (CW - 12), 6 + Math.random() * (CH - 12));
-    const c = initTraffic(makeCar(p.x, p.y, Math.floor(Math.random() * 4) * (Math.PI / 2), { ai: 'traffic' }));
+    const c = initTraffic(makeCar(p.x, p.y, Math.floor(Math.random() * 4) * (Math.PI / 2),
+      { ai: 'traffic', cls: rollVehicleClass() }));
     c.speed = 4 + Math.random() * 4;
     world.cars.push(c);
   }
@@ -500,7 +577,7 @@ export function spawnCops(world, x, y, n) {
 export function spawnCopCar(world, x, y) {
   const p = nearestRoad(x + (Math.random() - 0.5) * 40, y + (Math.random() - 0.5) * 40);
   const c = makeCar(p.x, p.y, Math.random() * Math.PI * 2, {
-    paint: COP_PAINT, ai: 'chase', siren: true, topSpeed: 18, hp: 140,
+    paint: COP_PAINT, ai: 'chase', siren: true, cls: 'cruiser',
   });
   world.cars.push(c);
   return c;

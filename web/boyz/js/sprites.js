@@ -139,6 +139,12 @@ export function drawCar(ctx, wx, wy, ang, paint, opts = {}) {
   const s = toScreen(wx, wy, 0);
   const x = Math.round(s.x), y = Math.round(s.y);
   const L = opts.len || 2.1, Wd = opts.wid || 1.0, Ht = opts.ht || 0.55;
+  // Where the glasshouse sits along the body, as a fraction of L. This is what
+  // separates the classes at a glance: a van's cab is jammed against the nose
+  // over a tall blank box, a sports car's is a sliver set right back, a sedan's
+  // sits centred. Handling differences you feel; these you see.
+  const cab = opts.cab || [-0.45, 0.5];
+  const glassW = opts.glassW || 0.72;
 
   // Corners of the footprint in world space, rotated, then projected. Doing it
   // this way (rather than rotating the canvas) keeps the iso foreshortening
@@ -183,9 +189,43 @@ export function drawCar(ctx, wx, wy, ang, paint, opts = {}) {
   ctx.strokeStyle = paint.h; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(rp[0][0], rp[0][1]); ctx.lineTo(rp[3][0], rp[3][1]); ctx.stroke();
 
+  const quad = (pts, fill) => {
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath(); ctx.fill();
+  };
+
+  // A pickup's bed is an open box: the floor sits a step down in the paint's
+  // shadow tone with a lit rim along the upper-left wall, so the shape reads as
+  // hollow rather than as a flat panel.
+  if (opts.bed) {
+    const [b0, b1] = opts.bed, bw = Wd * 0.78, drop = Ht * 0.42;
+    quad([corner(b0 * L, -bw, Ht - drop), corner(b1 * L, -bw, Ht - drop),
+      corner(b1 * L, bw, Ht - drop), corner(b0 * L, bw, Ht - drop)], paint.o);
+    // inner wall on the light side
+    quad([corner(b0 * L, -bw, Ht), corner(b1 * L, -bw, Ht),
+      corner(b1 * L, -bw, Ht - drop), corner(b0 * L, -bw, Ht - drop)], paint.d);
+    ctx.strokeStyle = paint.l; ctx.lineWidth = 1;
+    const r0 = corner(b0 * L, -bw, Ht), r1 = corner(b1 * L, -bw, Ht);
+    ctx.beginPath(); ctx.moveTo(r0[0], r0[1]); ctx.lineTo(r1[0], r1[1]); ctx.stroke();
+  }
+
+  // A muscle car wears twin stripes down the bonnet — the one graphic it gets,
+  // and enough to read it apart from a sedan even in the same paint. Drawn in
+  // the paint's own highlight step so it stays inside the ramp.
+  if (opts.stripe) {
+    for (const off of [-0.3, 0.3]) {
+      quad([corner(L * 0.97, (off - 0.11) * Wd, Ht), corner(L * 0.97, (off + 0.11) * Wd, Ht),
+        corner(cab[1] * L, (off + 0.11) * Wd, Ht), corner(cab[1] * L, (off - 0.11) * Wd, Ht)],
+      paint.h);
+    }
+  }
+
   // glasshouse: a smaller quad inset on the roof
-  const gc = [corner(-L * 0.45, -Wd * 0.72, Ht), corner(L * 0.5, -Wd * 0.72, Ht),
-    corner(L * 0.5, Wd * 0.72, Ht), corner(-L * 0.45, Wd * 0.72, Ht)];
+  const gc = [corner(cab[0] * L, -Wd * glassW, Ht), corner(cab[1] * L, -Wd * glassW, Ht),
+    corner(cab[1] * L, Wd * glassW, Ht), corner(cab[0] * L, Wd * glassW, Ht)];
   ctx.fillStyle = GLASS.d;
   ctx.beginPath();
   ctx.moveTo(gc[0][0], gc[0][1]);
