@@ -1729,8 +1729,8 @@ export class CourtyardScene {
       ctx.fillStyle = `rgba(200,190,160,${a * 0.3})`;
       ctx.beginPath(); ctx.ellipse(d.x, d.y, r, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
     }
-    // During the shrine rite the habit is off, so the naked sheet is swapped in
-    // and a dark wrap is painted over the hips on top of it.
+    // During the shrine rite the habit is off: the naked sheet is swapped in and
+    // nothing is painted back over it.
     const bare = this.shrine.naked;
     this._drawRobedFigure(
       ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving,
@@ -1738,12 +1738,7 @@ export class CourtyardScene {
       bare ? this._nakedSheet() : this.mySheet,
       null, this.localEmoji, this.localChat, undefined, this._streakAura()
     );
-    if (bare) {
-      const bx = Math.round(this.pc.x), by = Math.round(this.pc.y);
-      ctx.fillStyle = '#171220'; ctx.fillRect(bx - 4, by - 3.5, 8, 3.4);
-      ctx.fillStyle = '#2b2438'; ctx.fillRect(bx - 3.5, by - 3, 7, 2.2);
-      ctx.fillStyle = '#3b3350'; ctx.fillRect(bx - 3.5, by - 3, 7, 0.7);
-    }
+
     if (this.carrying) {
       if (this.carrying.kind === 'stick') this.sticks.drawCarried(ctx, this.pc.x, this.pc.y - 6);
       else this.fire.drawCarried(ctx, this.pc.x, this.pc.y - 6, this.carrying.kind, this.t);

@@ -806,22 +806,28 @@ export function traitsForConfessor() {
 // A cultist with the habit off, for the rite at the shrine — the only time
 // anyone in the abbey is out of their robe.
 //
-// Built by recolouring rather than by new sprite rows: every cloth material on
-// the figure is set to the wearer's own skin, so the existing body and leg
-// glyphs render as bare torso and bare legs with correct shading, and the
-// hood comes off in favour of a plain head. The scene paints a dark wrap over
-// the hips on top of this; at twenty-one pixels tall that is the whole of the
-// modesty the sprite needs, and it keeps the silhouette readable as a person
-// rather than a smear of skin tone.
+// Built by recolouring rather than by new sprite rows: every material on the
+// figure — habit, shirt, legs, shoes, trim — is set to the wearer's own skin,
+// and the hood comes off in favour of a plain head. Nothing is added back on
+// top: the figure is bare skin from the crown down.
+//
+// It stays readable because the glyph rows still carry three shading steps, so
+// the ramp puts a lit side, a base and a shadow on what is now one colour, and
+// the body keeps its form instead of flattening into a silhouette. No anatomy
+// is drawn at any point — at twenty-one pixels tall there is nothing there to
+// draw, and skin tone is the whole of it.
 export function traitsForNaked(seed, sex) {
   const t = traitsForSeed(seed, sex);
   const skin = t.skin;
   return {
     ...t,
     head: sex === 'female' ? 'wavy' : 'bald',
-    body: sex === 'female' ? 'dress' : 'vest',
-    hat: skin, coat: skin, pants: skin, shirt: skin,
-    shoes: mixc(skin, '#2c1e3e', 0.30),      // bare soles, in shadow
+    // Both sexes take the vest/suit construction rather than the gown one.
+    // A dress glyph recoloured to skin is still a dress SHAPE — it would read
+    // as a skin-coloured robe rather than as a body — whereas vest over suit
+    // legs gives a torso and two legs, which is what a bare figure needs.
+    body: 'vest', legs: 'suit',
+    hat: skin, coat: skin, pants: skin, shirt: skin, shoes: skin,
     leather: skin, trim: skin, tie: skin,
     cloak: null,
     headAcc: 'none', faceAcc: 'none',
