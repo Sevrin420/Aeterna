@@ -89,6 +89,41 @@ export function flame(ctx, x, y, s, t, seed) {
   ctx.beginPath(); ctx.ellipse(x, y + 1.2 * s, 0.9 * s * f, 1.9 * s * f, 0, 0, Math.PI * 2); ctx.fill();
 }
 
+// Corpse-light: the cold blue fire that rings the shrine skull. Built off the
+// SOUL ramp's cool end rather than introducing a fresh hue — SOUL is already
+// the abbey's violet, so pushing its highlights toward cyan gives a fire that
+// is unmistakably blue while still belonging to the same box of paints. It is
+// allowed to be a second saturated accent because it is confined to one object
+// in one room; anywhere else it would break the crimson-and-gold pairing.
+export const SOULFIRE = {
+  core: '#e6f8ff', hot: '#8fdcff', mid: '#3a86e8', deep: '#1a3f9c',
+  glow: (a) => `rgba(110,180,255,${a})`,
+};
+
+// The blue twin of flame(). Same construction — additive halo, then four
+// nested ellipses from deep to core — so the two fires read as the same kind
+// of thing lit by different powers.
+export function blueFlame(ctx, x, y, s, t, seed) {
+  const f = 0.80 + Math.sin(t * 10 + seed) * 0.20;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 1, x, y, 22 * s * f);
+  g.addColorStop(0, 'rgba(140,205,255,0.50)');
+  g.addColorStop(0.45, 'rgba(58,134,232,0.20)');
+  g.addColorStop(1, 'rgba(58,134,232,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(x - 26 * s, y - 28 * s, 52 * s, 52 * s);
+  ctx.restore();
+  ctx.fillStyle = SOULFIRE.deep;
+  ctx.beginPath(); ctx.ellipse(x, y, 3.2 * s * f, 6.4 * s * f, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = SOULFIRE.mid;
+  ctx.beginPath(); ctx.ellipse(x, y, 2.4 * s * f, 5.0 * s * f, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = SOULFIRE.hot;
+  ctx.beginPath(); ctx.ellipse(x, y + 0.6 * s, 1.5 * s * f, 3.2 * s * f, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = SOULFIRE.core;
+  ctx.beginPath(); ctx.ellipse(x, y + 1.1 * s, 0.8 * s * f, 1.7 * s * f, 0, 0, Math.PI * 2); ctx.fill();
+}
+
 // A small unlit flame for candles and votives (no halo blowout).
 export function candleFlame(ctx, x, y, t, seed) {
   const f = 0.75 + Math.sin(t * 11 + seed) * 0.2;

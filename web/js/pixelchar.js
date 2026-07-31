@@ -802,3 +802,29 @@ export function traitsForConfessor() {
     cloak: BONE.l,
   };
 }
+
+// A cultist with the habit off, for the rite at the shrine — the only time
+// anyone in the abbey is out of their robe.
+//
+// Built by recolouring rather than by new sprite rows: every cloth material on
+// the figure is set to the wearer's own skin, so the existing body and leg
+// glyphs render as bare torso and bare legs with correct shading, and the
+// hood comes off in favour of a plain head. The scene paints a dark wrap over
+// the hips on top of this; at twenty-one pixels tall that is the whole of the
+// modesty the sprite needs, and it keeps the silhouette readable as a person
+// rather than a smear of skin tone.
+export function traitsForNaked(seed, sex) {
+  const t = traitsForSeed(seed, sex);
+  const skin = t.skin;
+  return {
+    ...t,
+    head: sex === 'female' ? 'wavy' : 'bald',
+    body: sex === 'female' ? 'dress' : 'vest',
+    hat: skin, coat: skin, pants: skin, shirt: skin,
+    shoes: mixc(skin, '#2c1e3e', 0.30),      // bare soles, in shadow
+    leather: skin, trim: skin, tie: skin,
+    cloak: null,
+    headAcc: 'none', faceAcc: 'none',
+  };
+}
+

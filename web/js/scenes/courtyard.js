@@ -5,16 +5,17 @@
 
 import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
-import { drawCharacter, getCultistSprite, getGuruSprite, getConfessorSprite, getCultistSpriteVariant } from '../spritesheet.js';
+import { drawCharacter, getCultistSprite, getGuruSprite, getConfessorSprite, getNakedSprite, getCultistSpriteVariant } from '../spritesheet.js';
 import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
 import { DialogueBox, drawBang } from '../dialogue.js';
 import { LORE, bulletinPages } from '../lore.js';
 import { FireRite } from '../firerite.js';
 import { Scourge, StickPile } from '../scourge.js';
+import { SkullShrine } from '../skullrite.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
-  ALCOVES, DOORS, ROOMS, SKULL_ROOM, NAVE, TRANSEPT, NAVE_CX, SKULL_WALL_ROW,
-  EXIT_ROW, EXIT_COLS, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW,
+  ALCOVES, DOORS, ROOMS, SKULL_ROOM, NAVE, TRANSEPT, NAVE_CX,
+  EXIT_ROW, EXIT_COLS, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW, SKULL_SHRINE,
 } from '../abbeyMap.js';
 import {
   FLOOR, WALL, EARTH, VOID, BLOOD, GOLD, WOOD, IRON, BONE, CLOTH, SOUL, MOSS,
@@ -55,8 +56,9 @@ const STATIONS = [
   { id: 'leaderboard', kind: 'leaderboard', label: 'View the Devout', x: px(TRANSEPT.x1 - 3), y: px(58), r: 13 },
   { id: 'gate', kind: 'gate', label: 'Save & Exit', x: px(NAVE_CX), y: px(75), r: 14 },
   { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: px(NAVE.x0 + 1), y: px(11), r: 12 },
-  // east skull chamber — the daily chant (was "tend the ossuary")
-  { id: 'garden', kind: 'chant', label: 'Chant to the Skulls', x: px(Math.round((SKULL_ROOM.x0 + SKULL_ROOM.x1) / 2)), y: px(SKULL_WALL_ROW + 3), r: 14 },
+  // The skull chamber's daily rite is worshipping the shrine, not chanting at
+  // the wall. It is deliberately NOT a station: a station opens a box and runs
+  // a rite, and the shrine takes over the whole scene instead. See _shrineAction().
   { id: 'nursery', kind: 'nursery', label: 'Approach the Cradle', x: px(ROOMS[0].x0 + 3), y: px(ROOMS[0].y0 + 3), r: 12 },
   { id: 'soul-altar', kind: 'soul-altar', label: 'Approach the Soul Altar', x: px(SKULL_ROOM.x0 + 4), y: px(SKULL_ROOM.y1 - 2), r: 12 },
   { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(SKULL_ROOM.x1 - 4), y: px(SKULL_ROOM.y1 - 2), r: 12 },
@@ -119,7 +121,14 @@ export class CourtyardScene {
     this.carrying = null;
     this.doors = new Map(DOORS.map((d) => [`${d.col},${d.row}`, false])); // closed
 
-    this._chant = null;   // { n, line, t } while chanting
+    this.shrine = new SkullShrine({
+      x: px(SKULL_SHRINE.col), y: px(SKULL_SHRINE.row),
+      onChant: (line) => { this.showChat('local', line); sfx.click(); },
+      onDone: () => this._endWorship(),
+    });
+    // Already done today: the skull is on the floor with its eyes lit when you
+    // walk in, rather than aloft and waiting to be worshipped a second time.
+    if (this.player.garden_today) this.shrine.settle();
 
     this.pc = {
       // The abbey's SOUTH entrance — you walked north out of the courtyard to
@@ -586,27 +595,42 @@ export class CourtyardScene {
     return true;
   }
 
-  // Daily chant before the wall of skulls: the cultist intones the litany five
-  // times, then the rite completes (mapped to the "garden" duty slot).
-  _handleChant() {
-    if (this._chant) return;
-    if (this.player.garden_today) { this.onToast('You have already chanted today.'); return; }
-    this._chant = { n: 0, t: 0.9 }; // fire the first line immediately
+  // Standing before the shrine and pressing A. There is no dialogue box and no
+  // instruction: the robe comes off, the chant starts, and the skull answers.
+  _shrineAction() {
+    if (this.shrine.active || this.shrine.grounded) return false;
+    if (this.carrying || !this.shrine.inReach(this.pc.x, this.pc.y)) return false;
+    if (!this.shrine.begin(this.pc.x, this.pc.y)) return false;
+    document.body.classList.add('rite-open');
+    this.pc.dir = 'up';          // you face it
+    this.pc.moving = false;
+    sfx.confession();
+    return true;
   }
 
-  _updateChant(dt) {
-    const c = this._chant;
-    c.t += dt;
-    if (c.t < 0.9) return;
-    c.t = 0;
-    if (c.n >= 5) { // rite finished
-      this._chant = null;
-      this._handleDuty('garden');
-      return;
+  _endWorship() {
+    document.body.classList.remove('rite-open');
+    sfx.streakBonus();
+    this._handleDuty('garden');
+  }
+
+  _updateShrine(dt, input) {
+    this.shrine.update(dt);
+    this.t += dt;
+    this.fire.update(dt);
+    this.sticks.update(dt);
+    if (this.crowd.length) this._updateCrowd(dt);
+    this.pc.dir = 'up';
+    this.pc.moving = false;
+    this._activeStation = null;
+    this._activeDoor = null;
+    if (this.localChat) {
+      this.localChat.t -= dt;
+      if (this.localChat.t <= 0) this.localChat = null;
     }
-    c.n += 1;
-    this.showChat('local', 'Sanguis Aeternus, Vita Aeterna');
-    sfx.click();
+    this._updateCamera();
+    input.consumeAPress();
+    input.consumeBPress();
   }
 
   async _handleDuty(id) {
@@ -761,7 +785,6 @@ export class CourtyardScene {
   // dispatch in two places.
   _runStation(s) {
     if (s.kind === 'duty') this._handleDuty(s.id);
-    else if (s.kind === 'chant') this._handleChant();
     else if (s.kind === 'guru') this._handleGuru();
     else if (s.kind === 'confession') this._handleConfession();
     else if (s.kind === 'leaderboard') this._handleLeaderboard();
@@ -815,6 +838,7 @@ export class CourtyardScene {
     // while it plays — flames slow with the fifth lash and stop dead on every
     // impact, because a hit-stop that only freezes the fighters looks broken.
     if (this.scourge.active) { this._updateScourge(dt, input); return; }
+    if (this.shrine.active) { this._updateShrine(dt, input); return; }
 
     this.t += dt;
 
@@ -851,7 +875,7 @@ export class CourtyardScene {
     this._checkExit();
     this.fire.update(dt);
     this.sticks.update(dt);
-    if (this._chant) this._updateChant(dt);
+    this.shrine.update(dt);
     if (this.crowd.length) this._updateCrowd(dt);
     this._updateCamera(dt);
 
@@ -867,7 +891,9 @@ export class CourtyardScene {
     this._activeDoor = this._nearestDoor();
 
     if (input.consumeAPress()) {
-      if (this._stickAction()) {
+      if (this._shrineAction()) {
+        // knelt to the shrine
+      } else if (this._stickAction()) {
         // took a switch from the bundle
       } else if (this._fireAction()) {
         // handled by the fire rite
@@ -1185,6 +1211,7 @@ export class CourtyardScene {
       case 'fountain': this._drawFountain(ctx, p.col, p.row); break;
       case 'fountain-block': break; // covered by the fountain draw above
       case 'booth-block': break;    // covered by the confessional draw below
+      case 'shrine-block': break;   // the shrine is scene-owned, not a prop
       case 'confessional': this._drawConfessional(ctx, x, y); break;
       case 'pillar': this._drawPillar(ctx, p.col, p.row); this._drawLantern(ctx, p.col, p.row); break;
       case 'torch': this._drawTorch(ctx, p.col, p.row); break;
@@ -1616,26 +1643,7 @@ export class CourtyardScene {
   _drawStation(ctx, s) {
     ctx.save();
     ctx.translate(s.x, s.y);
-    if (s.id === 'garden') {
-      // the ossuary reliquary you tend: a stone trough of skulls, lit red
-      // when tended today
-      this._dropShadow(ctx, 0, 5, 9.5, 2.6);
-      block(ctx, -8, -3, 16, 8, WALL);            // stone trough
-      const tended = this.player.garden_today;
-      ctx.fillStyle = BONE.o;
-      for (let i = -5; i <= 5; i += 3.4) {
-        ctx.beginPath(); ctx.arc(i, -2, 2.4, 0, Math.PI * 2); ctx.fill();
-      }
-      ctx.fillStyle = tended ? BONE.l : BONE.d;
-      for (let i = -5; i <= 5; i += 3.4) {
-        ctx.beginPath(); ctx.arc(i, -2, 1.8, 0, Math.PI * 2); ctx.fill();
-      }
-      if (tended) {
-        const g = 0.4 + Math.sin(this.t * 3) * 0.25;
-        ctx.fillStyle = `rgba(232,90,74,${g})`;
-        ctx.fillRect(-8, 3, 16, 1.4);
-      }
-    } else if (s.id === 'guru') {
+    if (s.id === 'guru') {
       if (this.scourge.active) {
         this.scourge.drawAbbot(ctx, getGuruSprite(), this.t, () => this._dropShadow(ctx, 0, 7, 6, 2.4));
       } else {
@@ -1705,6 +1713,7 @@ export class CourtyardScene {
       }
       return false;
     }
+    if (this.shrine.inReach(p.x, p.y) && !this.shrine.grounded) return true;
     if (this.fire.woodAt(p.x, p.y) >= 0) return true;
     if (this.fire.torchAt(p.x, p.y) >= 0) return true;
     if (this.sticks.at(p.x, p.y) >= 0) return true;
@@ -1720,15 +1729,30 @@ export class CourtyardScene {
       ctx.fillStyle = `rgba(200,190,160,${a * 0.3})`;
       ctx.beginPath(); ctx.ellipse(d.x, d.y, r, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
     }
+    // During the shrine rite the habit is off, so the naked sheet is swapped in
+    // and a dark wrap is painted over the hips on top of it.
+    const bare = this.shrine.naked;
     this._drawRobedFigure(
       ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving,
-      this.pc.moving ? this.pc.bob : this.t, this.mySheet,
+      this.pc.moving ? this.pc.bob : this.t,
+      bare ? this._nakedSheet() : this.mySheet,
       null, this.localEmoji, this.localChat, undefined, this._streakAura()
     );
+    if (bare) {
+      const bx = Math.round(this.pc.x), by = Math.round(this.pc.y);
+      ctx.fillStyle = '#171220'; ctx.fillRect(bx - 4, by - 3.5, 8, 3.4);
+      ctx.fillStyle = '#2b2438'; ctx.fillRect(bx - 3.5, by - 3, 7, 2.2);
+      ctx.fillStyle = '#3b3350'; ctx.fillRect(bx - 3.5, by - 3, 7, 0.7);
+    }
     if (this.carrying) {
       if (this.carrying.kind === 'stick') this.sticks.drawCarried(ctx, this.pc.x, this.pc.y - 6);
       else this.fire.drawCarried(ctx, this.pc.x, this.pc.y - 6, this.carrying.kind, this.t);
     }
+  }
+
+  _nakedSheet() {
+    if (!this._naked) this._naked = getNakedSprite(getWalletId(), this.player.sex);
+    return this._naked;
   }
 
   _drawRemotePlayer(ctx, net, rp) {
@@ -1755,6 +1779,10 @@ export class CourtyardScene {
         const tx = px(a.torch.col), ty = px(a.torch.row);
         items.push({ y: ty, draw: () => this.fire.drawWallTorch(ctx, tx, ty, this.t, i * 3) });
       }
+    }
+    items.push({ y: this.shrine.y + 8, draw: () => this.shrine.draw(ctx) });
+    if (this.shrine.robeAt) {
+      items.push({ y: this.shrine.robeAt.y, draw: () => this.shrine.drawRobe(ctx) });
     }
     for (let i = 0; i < STICKS.length; i++) {
       if (!this.sticks.has(i)) continue;
@@ -1952,7 +1980,7 @@ export class CourtyardScene {
     this.scourge.drawWorldFx(ctx);
     // After the depth sort, so a pillar or a pew can never hide it. Still in
     // world space, so it tracks the player rather than floating in a corner.
-    if (this._hasAction() && !this.dialogue.active && !this.scourge.active) {
+    if (this._hasAction() && !this.dialogue.active && !this.scourge.active && !this.shrine.active) {
       drawBang(ctx, Math.round(this.pc.x), Math.round(this.pc.y) - 24, this.t);
     }
     this._drawFireflies(ctx);

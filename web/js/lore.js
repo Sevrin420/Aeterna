@@ -19,14 +19,14 @@ export const LORE = {
         + 'Spirits gather in the sanctuary beneath the inverted cross to earn '
         + 'Devotion. Devotion is the only thing the abbey counts, and it counts '
         + 'everything.\n\n'
-        + 'Kneel in prayer. Light the black candles. Chant to the skulls. Carry '
-        + 'a gift to the Abbot.',
+        + 'Kneel in prayer. Feed the braziers. Worship the skull. Put a switch '
+        + 'in the Abbot\'s hands.',
     },
     {
       text: 'Four rites, every day.\n\n'
         + 'Keep them unbroken and your streak multiplies every Devotion you earn '
         + 'thereafter. Miss a day and the streak falls to nothing — though the '
-        + 'confessional in the transept will restore it once, for a price.\n\n'
+        + 'confessor in the west arm will mend it once, for a price.\n\n'
         + 'The abbey does not forgive. It keeps accounts.',
     },
     {
@@ -73,18 +73,13 @@ export const LORE = {
       // and seven lines to a page, so the two-part mantra would wrap to twelve
       // lines and split the prayer across two pages — which would need a page
       // turn in the middle of a rite that is supposed to be one held breath.
-      // The full "Sanguis Aeternus, Vita Aeterna" still belongs to the chant
-      // at the skulls, where it is spoken rather than read.
+      // The full "Sanguis Aeternus, Vita Aeterna" still belongs to the shrine,
+      // where it is spoken aloud rather than read.
       text: Array(6).fill('Sanguis aeternus.').join('\n'),
     },
     candles: {
       speaker: 'The Brazier',
       text: 'Cold iron, and the smell of the last burning still in it.',
-    },
-    garden: {
-      speaker: 'The Skulls',
-      text: 'Five hundred of them, set into the wall in rows, each one facing '
-        + 'out.\n\nChant, and they chant with you.',
     },
     // Three lines for one man, chosen by what is in your hands. None of them
     // tells you where the switches are or what he will do with one — that is

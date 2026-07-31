@@ -127,17 +127,25 @@ for (const [cx0, cx1] of ROOM_COLS) {
 }
 for (const rm of ROOMS) DOORS.push(rm.door);
 
-// EAST chamber: a single room whose north wall is a rack of skulls.
-export const SKULL_ROOM = { x0: 78, y0: 98, x1: 102, y1: 116 };
+// EAST chamber: a single room whose north wall is a rack of skulls, and whose
+// centre is now held by the shrine. Pulled in by a fifth on both axes (25x19
+// tiles down to 20x15) so the floating skull dominates the room instead of
+// hanging in the middle of a hall.
+export const SKULL_ROOM = { x0: 78, y0: 98, x1: 97, y1: 112 };
 export const SKULL_WALL_ROW = 98;
+
+// The shrine skull floats over the centre of the chamber. Its tile and the
+// ring of tiles around it are solid: it is a large object, and walking through
+// one would read as a bug however convincingly it hovers.
+export const SKULL_SHRINE = { col: 88, row: 105 };
 
 // Bundles of cut switches left standing against the skull chamber's west wall
 // (the wall course is col 77, so col 78 is the floor tile they lean on). The
 // abbey does not say what they are for; the Abbot's empty hands do.
 export const STICKS = [
-  { col: SKULL_ROOM.x0, row: 103 },
-  { col: SKULL_ROOM.x0, row: 107 },
-  { col: SKULL_ROOM.x0, row: 111 },
+  { col: SKULL_ROOM.x0, row: 102 },
+  { col: SKULL_ROOM.x0, row: 105 },
+  { col: SKULL_ROOM.x0, row: 108 },
 ];
 
 function buildGrid() {
@@ -226,6 +234,13 @@ prop('skull-wall', Math.round((SKULL_ROOM.x0 + SKULL_ROOM.x1) / 2), SKULL_WALL_R
   { x0: SKULL_ROOM.x0, x1: SKULL_ROOM.x1 });
 prop('soul-altar', SKULL_ROOM.x0 + 4, SKULL_ROOM.y1 - 2, false);
 prop('mancala-table', SKULL_ROOM.x1 - 4, SKULL_ROOM.y1 - 2);
+// The shrine's footprint. Nothing draws from these — the skull is scene-owned
+// because it floats, spins, wakes and descends — they exist only to be solid.
+for (let dc = -1; dc <= 1; dc++) {
+  for (let dr = -1; dr <= 1; dr++) {
+    prop('shrine-block', SKULL_SHRINE.col + dc, SKULL_SHRINE.row + dr);
+  }
+}
 
 // No claimable Cathedral alcoves in this layout (the fire alcoves replace them).
 export const CATHEDRAL_ALCOVES = [];
