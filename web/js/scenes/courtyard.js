@@ -102,10 +102,16 @@ export class CourtyardScene {
     this._chant = null;   // { n, line, t } while chanting
 
     this.pc = {
-      x: px(NAVE_CX), y: px(74), // just inside the door, at the foot of the cross
+      // The north entrance, at the head of the nave, facing south down the
+      // church. Arriving used to drop the player on row 74 — the south
+      // threshold, which is also the Save & Exit station, so you spawned
+      // standing on the gate and a stray A press ended the session before it
+      // started. Coming in at the north puts the whole nave in front of you
+      // and the exit at the far end where an exit belongs.
+      x: px(NAVE_CX), y: px(16),
       w: 7, h: 7,
       speed: 60, // +30% walk speed (was 46)
-      dir: 'up',
+      dir: 'down',
       moving: false,
       bob: 0,
     };
