@@ -83,13 +83,22 @@ for (const r of ALCOVE_ROWS) {
   ALCOVES.push({
     side: 'W', x0: 51 - ALCOVE_DEPTH, y0: r, x1: 50, y1: r + ALCOVE_HALF * 2, cy,
     cells: alcoveCells('W', r),
-    brazier: { col: 48, row: cy }, wood: { col: 49, row: cy + 1 },
+    brazier: { col: 48, row: cy },
+    // The fuel sits OUT in the aisle rather than in the niche: it has to be a
+    // thing you walk to and carry back, so it cannot live where it is used.
+    wood: { col: 52, row: cy },
+    // Wall bracket just south of the alcove mouth. Col 50 is the nave wall,
+    // and the niche only breaks through it across rows cy-2..cy+2, so cy+3 is
+    // solid stone with a torch on it.
+    torch: { col: 50, row: cy + 3 },
   });
   // east niche (opens west; tapers to a point in the EAST)
   ALCOVES.push({
     side: 'E', x0: 69, y0: r, x1: 68 + ALCOVE_DEPTH, y1: r + ALCOVE_HALF * 2, cy,
     cells: alcoveCells('E', r),
-    brazier: { col: 71, row: cy }, wood: { col: 70, row: cy + 1 },
+    brazier: { col: 71, row: cy },
+    wood: { col: 67, row: cy },
+    torch: { col: 69, row: cy + 3 },
   });
 }
 
@@ -162,7 +171,9 @@ prop('door', NAVE_CX, 76, false);
 // own and the shrine reads as one object instead of three light sources.
 for (const a of ALCOVES) {
   prop('brazier', a.brazier.col, a.brazier.row, false, { side: a.side, cy: a.cy });
-  prop('wood-stack', a.wood.col, a.wood.row, false);
+  // The wood stack and the wall torch are NOT props any more — they are
+  // carryable objects the scene owns, because a prop is scenery and these have
+  // to be picked up, moved, consumed and respawned. See courtyard.js.
   // No arch prop: the niche's own tapered floor plan is the point.
 }
 

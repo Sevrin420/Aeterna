@@ -758,18 +758,28 @@ export function traitsForSeed(seed, sex) {
 // pair at full strength -- a saturated soul-violet cloak over crimson, with
 // true gold trim (the mark of his office). Everyone else wears undyed wool, so
 // he is the only figure in the room carrying the same colours as the altar.
+// The Abbot is the only figure in the abbey dressed in white, and that is the
+// whole point of him: every cultist, spirit and NPC here wears near-black under
+// violet stone, so a white robe is the one silhouette that reads instantly from
+// across the nave.
+//
+// White is built off the BONE ramp rather than pure #ffffff — a flat white
+// would blow out against the palette and lose every fold, while BONE's warm
+// off-whites still shade and still belong to the abbey. Only the outline and
+// the deepest shadow stay dark, so the robe keeps an edge against the pale
+// flagstones behind him.
 export function traitsForGuru() {
   return {
     head: 'cowl',
     body: 'vest',
     legs: 'suit',
-    skin: '#e6bd92', hair: '#8a837a',
-    hat: '#332f28', coat: '#332f28', pants: '#252119',
-    shoes: '#120d10',
-    metal: GOLD.b, jewel: BLOOD.d, tie: BLOOD.d,
-    shirt: BONE.l, leather: WOOD.o, iris: '#1a1216', trim: GOLD.b,
+    skin: '#e6bd92', hair: '#cfc8b4',
+    hat: BONE.h, coat: BONE.h, pants: BONE.l,
+    shoes: BONE.d,
+    metal: GOLD.b, jewel: BLOOD.d, tie: BONE.d,
+    shirt: '#fbf8e6', leather: BONE.d, iris: '#1a1216', trim: GOLD.b,
     mouth: '#8e4a42', feather: GOLD.b,
     headAcc: 'none', faceAcc: 'none',
-    cloak: SOUL.d,
+    cloak: BONE.h,
   };
 }

@@ -9,6 +9,7 @@ import { drawCharacter, getCultistSprite, getGuruSprite, getCultistSpriteVariant
 import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
 import { DialogueBox, drawBang } from '../dialogue.js';
 import { LORE, bulletinPages } from '../lore.js';
+import { FireRite } from '../firerite.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, DOORS, ROOMS, SKULL_ROOM, NAVE, TRANSEPT, NAVE_CX, SKULL_WALL_ROW,
@@ -56,13 +57,24 @@ const STATIONS = [
   { id: 'nursery', kind: 'nursery', label: 'Approach the Cradle', x: px(ROOMS[0].x0 + 3), y: px(ROOMS[0].y0 + 3), r: 12 },
   { id: 'soul-altar', kind: 'soul-altar', label: 'Approach the Soul Altar', x: px(SKULL_ROOM.x0 + 4), y: px(SKULL_ROOM.y1 - 2), r: 12 },
   { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(SKULL_ROOM.x1 - 4), y: px(SKULL_ROOM.y1 - 2), r: 12 },
-  // the fire-shrine duty: light any brazier down the nave (was "light candles")
-  ...ALCOVES.map((a, i) => ({
-    id: 'candles', kind: 'fire', label: 'Light the Brazier', alcove: i,
-    x: px(a.brazier.col), y: px(a.brazier.row), r: 14,
-  })),
+  // The braziers are deliberately NOT stations. A station opens a box and runs
+  // a rite; a brazier is a container you put things in, and it has to behave
+  // differently depending on what you are carrying. See _fireAction().
 ];
 const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
+
+// Praying is the one station whose box is the rite rather than a preface to
+// it. The mantra prints six times over a mandatory ten seconds: A cannot rush
+// it and cannot dismiss it, because a prayer you can mash through is not a
+// prayer. The print rate is derived from the text so the last character lands
+// exactly as the hold expires, however the mantra is later reworded.
+const PRAYER_HOLD = 10;
+
+function boxOpts(station) {
+  if (station.id !== 'pray') return {};
+  const chars = LORE.stations.pray.text.replace(/\n/g, '').length;
+  return { hold: PRAYER_HOLD, cps: chars / PRAYER_HOLD };
+}
 
 export class CourtyardScene {
   constructor({ player, onPlayerUpdate, onToast, socket, onLeaderboard, onSaveExit, onChatOpen, onMancala, onFinalCommunion, crowd }) {
@@ -96,22 +108,25 @@ export class CourtyardScene {
 
     // fire-alcove braziers that have been lit (keyed "col,row"), the openable
     // room doors (keyed "col,row" -> open?), and the running skull chant.
-    this.litBraziers = new Set();
+    this.litBraziers = new Set();   // legacy: kept for the prop renderer's key lookup
+    this.fire = new FireRite(ALCOVES, px);
+    this.carrying = null;           // null | { kind: 'wood' | 'torch', alcove: i }
     this.doors = new Map(DOORS.map((d) => [`${d.col},${d.row}`, false])); // closed
-    this._fireStep = 0;   // 0 = need wood, 1 = wood laid (need torch)
+
     this._chant = null;   // { n, line, t } while chanting
 
     this.pc = {
-      // The north entrance, at the head of the nave, facing south down the
-      // church. Arriving used to drop the player on row 74 — the south
-      // threshold, which is also the Save & Exit station, so you spawned
-      // standing on the gate and a stray A press ended the session before it
-      // started. Coming in at the north puts the whole nave in front of you
-      // and the exit at the far end where an exit belongs.
-      x: px(NAVE_CX), y: px(16),
+      // The abbey's SOUTH entrance — you walked north out of the courtyard to
+      // get here, so you come in at the near end and the nave runs away from
+      // you toward the altar.
+      //
+      // Row 72, not 74: the gate station sits at row 75 with a 14px radius, so
+      // row 74 spawned the player inside its trigger with a "!" already up and
+      // one careless A press between them and the exit. Row 72 clears it.
+      x: px(NAVE_CX), y: px(72),
       w: 7, h: 7,
       speed: 60, // +30% walk speed (was 46)
-      dir: 'down',
+      dir: 'up',
       moving: false,
       bob: 0,
     };
@@ -132,15 +147,6 @@ export class CourtyardScene {
   }
 
   enter() {
-    // Shown once ever, on the first walk into the abbey. The whole control
-    // scheme and the daily rites in four pages, so nobody has to guess what
-    // the "!" means the first time they see one.
-    try {
-      if (!localStorage.getItem('aeterna_taught')) {
-        localStorage.setItem('aeterna_taught', '1');
-        this.dialogue.show(LORE.instructions);
-      }
-    } catch { /* private mode — just skip the lesson */ }
     this.mySheet = getCultistSprite(getWalletId(), this.player.sex);
     this._refreshGifts();
     this._refreshSeason();
@@ -532,23 +538,65 @@ export class CourtyardScene {
     this.onToast(open ? 'The door creaks open.' : 'You pull the door shut.');
   }
 
-  // Fire-shrine duty (replaces "light the candles"): lay wood, then take the
-  // torch and set the brazier ablaze. Lighting the first brazier of the day
-  // completes the required "candles" duty; later ones just burn for ambience.
-  async _handleFire(station) {
-    const br = ALCOVES[station.alcove].brazier;
-    const key = `${br.col},${br.row}`;
-    if (this.litBraziers.has(key)) { this.onToast('This brazier already burns.'); return; }
-    if (this._fireArmed !== key) {
-      this._fireArmed = key;
-      sfx.click();
-      this.onToast('You lay wood in the brazier. Press A with the torch to light it.');
-      return;
+  // The whole fire rite, driven by what the player is carrying and what is in
+  // reach. Returns true if it consumed the press.
+  //
+  // No branch here tells the player anything about sequence: laying wood on an
+  // empty bowl and touching a burning torch to laid wood are both just things
+  // that happen when you do them.
+  _fireAction() {
+    const p = this.pc;
+
+    // holding something -> the only question is where it goes
+    if (this.carrying) {
+      const b = this.fire.brazierAt(p.x, p.y);
+      if (b >= 0) {
+        if (this.carrying.kind === 'wood' && !this.fire.isLaid(b) && !this.fire.isLit(b)) {
+          this.fire.lay(b);
+          this.carrying = null;
+          sfx.click();
+          return true;
+        }
+        if (this.carrying.kind === 'torch' && this.fire.isLaid(b) && !this.fire.isLit(b)) {
+          this.fire.light(b);
+          this.fire.returnTorch(this.carrying.alcove);
+          this.carrying = null;
+          this.litBraziers.add(`${ALCOVES[b].brazier.col},${ALCOVES[b].brazier.row}`);
+          if (this.player.candles_today) sfx.dutyComplete();
+          else this._handleDuty('candles');
+          return true;
+        }
+      }
+      return false;
     }
-    this._fireArmed = null;
-    this.litBraziers.add(key);
-    if (this.player.candles_today) { sfx.dutyComplete(); this.onToast('The brazier roars to life.'); }
-    else await this._handleDuty('candles');
+
+    // empty-handed -> pick up whichever is nearer
+    const w = this.fire.woodAt(p.x, p.y);
+    if (w >= 0 && !this.holdingGift) {
+      this.fire.takeWood(w);
+      this.carrying = { kind: 'wood', alcove: w };
+      sfx.click();
+      return true;
+    }
+    const tc = this.fire.torchAt(p.x, p.y);
+    if (tc >= 0 && !this.holdingGift) {
+      this.fire.takeTorch(tc);
+      this.carrying = { kind: 'torch', alcove: tc };
+      sfx.click();
+      return true;
+    }
+    return false;
+  }
+
+  // B, or walking off with something you should not have. A torch always finds
+  // its way back to its own bracket; wood dropped anywhere is simply gone, and
+  // another stack appears at the source two minutes later.
+  _dropCarried() {
+    if (!this.carrying) return false;
+    if (this.carrying.kind === 'torch') this.fire.returnTorch(this.carrying.alcove);
+    this.carrying = null;
+    sfx.click();
+    return true;
   }
 
   // Daily chant before the wall of skulls: the cultist intones the litany five
@@ -716,7 +764,6 @@ export class CourtyardScene {
   // dispatch in two places.
   _runStation(s) {
     if (s.kind === 'duty') this._handleDuty(s.id);
-    else if (s.kind === 'fire') this._handleFire(s);
     else if (s.kind === 'chant') this._handleChant();
     else if (s.kind === 'guru') this._handleGuru();
     else if (s.kind === 'confession') this._handleConfession();
@@ -784,6 +831,7 @@ export class CourtyardScene {
     }
     this._checkStairs();
     this._checkExit();
+    this.fire.update(dt);
     if (this._chant) this._updateChant(dt);
     if (this.crowd.length) this._updateCrowd(dt);
     this._updateCamera(dt);
@@ -801,7 +849,9 @@ export class CourtyardScene {
     this._activeDoor = this._nearestDoor();
 
     if (input.consumeAPress()) {
-      if (this._activeDoor) {
+      if (this._fireAction()) {
+        // handled by the fire rite
+      } else if (this._activeDoor) {
         this._toggleDoor(this._activeDoor);
       } else if (this._activeGift && !this.holdingGift) {
         this._handlePickup(this._activeGift);
@@ -813,7 +863,7 @@ export class CourtyardScene {
         if (intro && this._lastIntro !== this._activeStation.id) {
           this._lastIntro = this._activeStation.id;
           const st = this._activeStation;
-          this.dialogue.show([intro], { onClose: () => this._runStation(st) });
+          this.dialogue.show([intro], { onClose: () => this._runStation(st), ...boxOpts(st) });
         } else {
           this._runStation(this._activeStation);
         }
@@ -824,7 +874,8 @@ export class CourtyardScene {
       }
     }
     if (input.consumeBPress()) {
-      if (this.holdingGift) this._handleDrop();
+      if (this._dropCarried()) { /* put it down */ }
+      else if (this.holdingGift) this._handleDrop();
       else this._noActionHint(dt);
     }
 
@@ -1135,12 +1186,11 @@ export class CourtyardScene {
         ctx.fillStyle = GOLD.d; ctx.fillRect(x - 7, y - 4, 14, 2);   // gilded rim
         ctx.fillStyle = GOLD.b; ctx.fillRect(x - 7, y - 4, 14, 1);
         ctx.fillStyle = GOLD.h; ctx.fillRect(x - 7, y - 4, 4, 0.8);
-        if (lit) {
-          flame(ctx, x, y - 7, 1.05, this.t, p.col);
-        } else {
-          ctx.fillStyle = WOOD.d; ctx.fillRect(x - 3.5, y - 3.5, 7, 1.6);
-          ctx.fillStyle = WOOD.b; ctx.fillRect(x - 2.5, y - 4.8, 5, 1.4);
-        }
+        // The bowl shows exactly its own state and nothing else: empty iron,
+        // wood waiting, or fire. That is the only instruction the player gets.
+        const ai = ALCOVES.findIndex((a) => a.brazier.col === p.col && a.brazier.row === p.row);
+        if (ai >= 0 && this.fire.isLit(ai)) this.fire.drawFlame(ctx, x, y - 7, ai, this.t);
+        else if (ai >= 0 && this.fire.isLaid(ai)) this.fire.drawLaid(ctx, x, y);
         break;
       }
       case 'wood-stack': {
@@ -1569,6 +1619,18 @@ export class CourtyardScene {
   // handler read the same answer, so the mark can never promise an action that
   // the button will not perform.
   _hasAction() {
+    const p = this.pc;
+    if (this.carrying) {
+      // carrying something: the mark means "this bowl will take it"
+      const b = this.fire.brazierAt(p.x, p.y);
+      if (b >= 0 && !this.fire.isLit(b)) {
+        if (this.carrying.kind === 'wood') return !this.fire.isLaid(b);
+        if (this.carrying.kind === 'torch') return this.fire.isLaid(b);
+      }
+      return false;
+    }
+    if (this.fire.woodAt(p.x, p.y) >= 0) return true;
+    if (this.fire.torchAt(p.x, p.y) >= 0) return true;
     return !!(this._activeDoor
       || (this._activeGift && !this.holdingGift)
       || this._activeStation);
@@ -1586,6 +1648,9 @@ export class CourtyardScene {
       this.pc.moving ? this.pc.bob : this.t, this.mySheet, this.holdingGift,
       null, this.localEmoji, this.localChat, undefined, this._streakAura()
     );
+    if (this.carrying) {
+      this.fire.drawCarried(ctx, this.pc.x, this.pc.y - 6, this.carrying.kind, this.t);
+    }
   }
 
   _drawRemotePlayer(ctx, net, rp) {
@@ -1598,6 +1663,23 @@ export class CourtyardScene {
   // sorts by ground (y) position so a player standing "in front of" a
   // pillar/pew/bed draws over it, and one standing "behind" it is hidden —
   // a simple top-down painter's-algorithm depth sort.
+  // Wood stacks and wall torches are drawn from live state rather than from
+  // the prop list, because they come and go — a stack that has been carried
+  // off must not still be standing there.
+  _fireDrawables(items, ctx) {
+    for (let i = 0; i < ALCOVES.length; i++) {
+      const a = ALCOVES[i];
+      if (this.fire.hasWood(i)) {
+        const wx = px(a.wood.col), wy = px(a.wood.row);
+        items.push({ y: wy, draw: () => this.fire.drawWood(ctx, wx, wy) });
+      }
+      if (this.fire.hasTorch(i)) {
+        const tx = px(a.torch.col), ty = px(a.torch.row);
+        items.push({ y: ty, draw: () => this.fire.drawWallTorch(ctx, tx, ty, this.t, i * 3) });
+      }
+    }
+  }
+
   _collectDrawables(ctx) {
     const items = [];
     for (const p of PROPS) {
@@ -1620,6 +1702,7 @@ export class CourtyardScene {
     }
     for (const n of this.crowd) items.push({ y: n.y, draw: () => this._drawCultist(ctx, n) });
     items.push({ y: this.pc.y, draw: () => this._drawLocalPlayer(ctx) });
+    this._fireDrawables(items, ctx);
     items.sort((a, b) => a.y - b.y);
     return items;
   }

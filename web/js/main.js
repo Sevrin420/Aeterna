@@ -312,14 +312,17 @@ let chosenCultist = null;
 
 // Save & Exit from the game returns to the entry lobby (not power off). Devotion
 // was already saved by the scene before this runs.
+// Leaving the abbey means walking out of its SOUTH door, so the player comes
+// back into the courtyard at its north end — under the arch they went in by.
+// Arriving fresh (or after a reload) starts them in the middle of the yard.
 function returnToEntrance() {
   if (scene && scene.exit) scene.exit();
   if (socket) { socket.disconnect(); socket = null; }
   hud.hidden = true;
-  revealTransition(() => enterEntrance(entrancePlayer));
+  revealTransition(() => enterEntrance(entrancePlayer, 'north'));
 }
 
-function enterEntrance(player) {
+function enterEntrance(player, spawn = 'centre') {
   entrancePlayer = player;
   // Entry-lobby music: the title hymn plays here (the in-game hymn is paused).
   if (_gameBgm) try { _gameBgm.pause(); } catch {}
@@ -335,6 +338,7 @@ function enterEntrance(player) {
   }
   scene = new EntranceScene({
     player,
+    spawn,
     onWallet: openWalletFlow,
     isBusy: entranceOverlaysOpen,
   });

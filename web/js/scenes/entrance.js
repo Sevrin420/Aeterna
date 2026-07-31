@@ -32,14 +32,27 @@ const TABLES = [
 ];
 
 export class EntranceScene {
-  constructor({ player, onWallet, isBusy }) {
+  constructor({ player, onWallet, isBusy, spawn = 'centre' }) {
     this.player = player;
     this.onWallet = onWallet || (() => {});
     this.isBusy = isBusy || (() => false);
 
     this.t = 0;
     this.locked = false;
-    this.pc = { x: 104, y: 168, w: 7, h: 7, speed: 42, dir: 'up', moving: false, bob: 0 };
+    // 'centre' — arriving in the courtyard for the first time, in the middle
+    // of the yard with the two tables to either side and the arch ahead.
+    // 'north' — walking back out of the abbey, which puts you at the arch you
+    //           left by, facing south into the yard.
+    // The north spawn sits at y=60, clear of the arch trigger at y<30, so
+    // stepping out of the abbey does not immediately re-fire it and bounce the
+    // player straight back in.
+    const north = spawn === 'north';
+    this.pc = {
+      x: 104, y: north ? IN.y0 + 34 : (IN.y0 + IN.y1) / 2,
+      w: 7, h: 7, speed: 42,
+      dir: north ? 'down' : 'up',
+      moving: false, bob: 0,
+    };
     this.dialogue = new DialogueBox();
     this.sheet = getCultistSprite(getWalletId(), player?.sex || 'male');
     this._prompt = null;

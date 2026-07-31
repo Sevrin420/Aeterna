@@ -38,10 +38,15 @@ const IN_Y = BOX_Y + TILE + PAD;
 const IN_W = BOX_W - (TILE + PAD) * 2;
 const IN_H = BOX_H - (TILE + PAD) * 2;
 
-const FONT = '6px "Courier New", monospace';
-const LINE_H = 9;
-const SPEAKER_H = 12;            // extra top offset when a page names a speaker
-const CPS = 42;                  // characters per second — a readable crawl
+// Text is set at twice the old 6px. On a 208px screen scaled 4x by the console
+// bezel that lands around 48 CSS pixels — large enough to read at arm's length
+// on a phone, which is what the box is for. (Tripling it instead would fit
+// about fifteen characters to a line and break the prose into confetti; if a
+// literal 3x is ever wanted, this constant and LINE_H are the only knobs.)
+const FONT = '12px "Courier New", monospace';
+const LINE_H = 17;
+const SPEAKER_H = 22;            // extra top offset when a page names a speaker
+const CPS = 14;                  // characters per second — a third of the old 42
 
 // A single frame square. The bevel is drawn rather than blitted so the frame
 // can be any size without a spritesheet, and so every tile is guaranteed to
@@ -73,6 +78,9 @@ export class DialogueBox {
     this._lines = [];
     this._blink = 0;
     this._clickT = 0;
+    this.hold = 0;         // seconds the box refuses to be dismissed
+    this.held = 0;
+    this.cps = CPS;        // per-show print rate; the prayer overrides it
   }
 
   get active() { return this.open; }
@@ -80,7 +88,10 @@ export class DialogueBox {
   // `pages` is a string, or an array of strings, or an array of
   // { speaker, text }. Anything longer than the box is split across pages
   // automatically, so callers never have to think about layout.
-  show(pages, { speaker = null, onClose = null } = {}) {
+  // `hold` makes the box mandatory: A will not rush the printing and will not
+  // close it, and it stays up until at least `hold` seconds have passed. Used
+  // by the prayer, where the point is that the rite takes as long as it takes.
+  show(pages, { speaker = null, onClose = null, hold = 0, cps = CPS } = {}) {
     const raw = Array.isArray(pages) ? pages : [pages];
     this.pages = [];
     for (const p of raw) {
@@ -97,6 +108,9 @@ export class DialogueBox {
     this.t = 0;
     this.open = true;
     this.onClose = onClose;
+    this.hold = hold;
+    this.held = 0;
+    this.cps = cps;
     this._lines = this.pages[0]?.lines || [];
     // The box is meant to be the only thing you are looking at, so the DOM
     // HUD sitting above the canvas steps aside. A class on <body> rather than
@@ -108,6 +122,8 @@ export class DialogueBox {
   close() {
     this.open = false;
     this.pages = [];
+    this.hold = 0;
+    this.cps = CPS;
     document.body.classList.remove('dialogue-open');
     const cb = this.onClose;
     this.onClose = null;
@@ -138,7 +154,7 @@ export class DialogueBox {
     return this._lines.reduce((n, l) => n + l.length, 0);
   }
 
-  get _printed() { return Math.floor(this.t * CPS); }
+  get _printed() { return Math.floor(this.t * this.cps); }
   get _pageDone() { return this._printed >= this._charsOnPage; }
 
   // Returns true if it consumed the input, so the scene underneath knows not
@@ -146,6 +162,7 @@ export class DialogueBox {
   update(dt, input) {
     if (!this.open) return false;
     this.t += dt;
+    this.held += dt;
     this._blink += dt;
 
     // a soft tick while letters land, throttled so it reads as a voice rather
@@ -155,9 +172,16 @@ export class DialogueBox {
       if (this._clickT > 0.055) { this._clickT = 0; sfx.click(); }
     }
 
+    // A mandatory box swallows both buttons for its whole duration — the
+    // player cannot skim it, and cannot leave it early.
+    if (this.hold > 0 && this.held < this.hold) {
+      input.consumeAPress(); input.consumeBPress();
+      return true;
+    }
+
     if (input.consumeAPress()) {
       if (!this._pageDone) {
-        this.t = this._charsOnPage / CPS;      // first press finishes the page
+        this.t = this._charsOnPage / this.cps;  // first press finishes the page
       } else if (this.page < this.pages.length - 1) {
         this.page++;
         this.t = 0;
@@ -229,8 +253,10 @@ export class DialogueBox {
       y += LINE_H;
     }
 
-    // continue / close indicator, only once the page has finished printing
-    if (this._pageDone && Math.floor(this._blink * 2) % 2 === 0) {
+    // continue / close indicator, only once the page has finished printing —
+    // and never while the box is holding, since there is nothing to press
+    const holding = this.hold > 0 && this.held < this.hold;
+    if (this._pageDone && !holding && Math.floor(this._blink * 2) % 2 === 0) {
       const last = this.page >= this.pages.length - 1;
       ctx.fillStyle = GOLD.h;
       const cx = BOX_X + BOX_W - TILE - 9;

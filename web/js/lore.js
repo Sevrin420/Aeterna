@@ -61,45 +61,25 @@ export const LORE = {
     },
   ],
 
-  // Shown once, the first time a player walks into the abbey proper.
-  instructions: [
-    {
-      speaker: 'The Abbey',
-      text: 'Walk with the arrows, or with W A S D.\n\n'
-        + 'A acts on whatever you are standing at. B sets down what you are '
-        + 'carrying.\n\n'
-        + 'A gold ! above your head means A will do something here. No mark '
-        + 'means there is nothing at your feet — walk on.',
-    },
-    {
-      text: 'Four rites each day:\n\n'
-        + '  Kneel and pray at the altar.\n'
-        + '  Light a brazier in any alcove.\n'
-        + '  Chant to the skulls in the east.\n'
-        + '  Carry a gift to the Abbot.\n\n'
-        + 'Do all four before the day turns and your streak grows. The streak '
-        + 'multiplies everything you earn after it.',
-    },
-    {
-      text: 'Break the streak and the confessional in the transept will restore '
-        + 'it — once, and it will cost you Devotion to ask.\n\n'
-        + 'Read the bulletin by the nave to see how many days remain before '
-        + 'Final Communion, when the season collects what it is owed.',
-    },
-  ],
 
   // Read at each duty station, before the rite is performed.
   stations: {
     pray: {
       speaker: 'The Altar',
-      text: 'You kneel on the cold flags beneath the inverted cross.\n\n'
-        + '"Sanguis aeternus. Vita aeterna. What is given is not lost."',
+      // Six repetitions, and the box holds for a full ten seconds — see
+      // PRAYER_HOLD in courtyard.js. The rite is the waiting.
+      //
+      // Short form deliberately. At 12px the box fits 22 characters to a line
+      // and seven lines to a page, so the two-part mantra would wrap to twelve
+      // lines and split the prayer across two pages — which would need a page
+      // turn in the middle of a rite that is supposed to be one held breath.
+      // The full "Sanguis Aeternus, Vita Aeterna" still belongs to the chant
+      // at the skulls, where it is spoken rather than read.
+      text: Array(6).fill('Sanguis aeternus.').join('\n'),
     },
     candles: {
       speaker: 'The Brazier',
-      text: 'Dry wood, laid in iron.\n\n'
-        + 'It takes the flame the way everything in this abbey takes what it is '
-        + 'given — completely, and without thanks.',
+      text: 'Cold iron, and the smell of the last burning still in it.',
     },
     garden: {
       speaker: 'The Skulls',
