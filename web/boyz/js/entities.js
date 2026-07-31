@@ -7,7 +7,7 @@
 
 import {
   solidAt, carSolidAt, nearestRoad, districtAtCell, surfaceAt as surfaceOf, CW, CH,
-  signalOpen, stopLineDist,
+  signalOpen, stopLineDist, SURF,
 } from './city.js';
 import { BOYZ, CABAL, COP, ramp, NEON } from './palette.js';
 import { dirFromVec } from './sprites.js';
@@ -443,6 +443,33 @@ export function stepChaseCar(car, dt, tx, ty) {
 
 // Foot AI: hostiles advance and shoot inside their range; peds wander and flee
 // when something goes off nearby.
+// Shortest walkable way off the carriageway. Samples a ring of directions and
+// takes the first that reaches pavement without a wall in between, preferring
+// whichever is closest to the way the ped is already facing so they don't spin
+// on the spot.
+function escapeRoad(e) {
+  let best = null, bestScore = -1e9;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const ax = Math.cos(a), ay = Math.sin(a);
+    if (solidAt(e.x + ax * 1.6, e.y + ay * 1.6)) continue;
+    if (surfaceOf(e.x + ax * 1.6, e.y + ay * 1.6) === SURF.ROAD) continue;
+    const score = ax * Math.cos(e.wander) + ay * Math.sin(e.wander);
+    if (score > bestScore) { bestScore = score; best = [ax, ay]; }
+  }
+  return best;
+}
+
+// Is anything moving fast enough to matter within `r`? Used to decide whether
+// stepping off the kerb is a crossing or a suicide.
+function trafficNear(e, world, r) {
+  for (const c of world.cars) {
+    if (c.exploded || Math.abs(c.speed) < 3) continue;
+    if (Math.hypot(c.x - e.x, c.y - e.y) < r) return true;
+  }
+  return false;
+}
+
 export function stepFootAI(e, dt, world) {
   if (e.dead) { e.deadT += dt; return; }
   const p = world.player;
@@ -508,16 +535,44 @@ export function stepFootAI(e, dt, world) {
       stepPerson(e, dt, ux, uy, true);
       return;
     }
-    // amble, but prefer the pavement — steer back if we drift into the road
+    // Already committed to a crossing: hold the line and run, rather than
+    // dithering in the carriageway. Ends once the far kerb is underfoot.
+    if (e.crossing) {
+      const [cx, cy] = e.crossing;
+      stepPerson(e, dt, cx, cy, true);
+      e.crossT -= dt;
+      if (surfaceOf(e.x + cx * 0.9, e.y + cy * 0.9) !== SURF.ROAD || e.crossT <= 0) e.crossing = null;
+      return;
+    }
+
+    // Shoved or spawned into the carriageway: get out by the shortest route
+    // that is actually walkable. The old version aimed at the centre of the
+    // block, which is the middle of a building — so the ped walked into a wall
+    // and stood in the road, which is where most of them ended up.
+    if (surfaceOf(e.x, e.y) === SURF.ROAD) {
+      const esc = escapeRoad(e);
+      if (esc) { stepPerson(e, dt, esc[0], esc[1], true); return; }
+    }
+
+    // Amble along the pavement, treating the kerb as a wall. Looking one step
+    // AHEAD rather than reacting once already in the road is the whole fix:
+    // a ped never enters the carriageway by accident, only on purpose.
     e.wander += (Math.random() - 0.5) * dt * 3;
     let wx = Math.cos(e.wander), wy = Math.sin(e.wander);
-    if (surfaceOf(e.x, e.y) === 0) {           // SURF.ROAD — get off it
-      const bx = Math.floor(e.x / 8) * 8 + 4, by = Math.floor(e.y / 8) * 8 + 4;
-      wx = bx - e.x; wy = by - e.y;
-      const l2 = Math.hypot(wx, wy) || 1;
-      wx /= l2; wy /= l2;
-      stepPerson(e, dt, wx, wy, true);
-      return;
+    const AHEAD = 0.9;
+    const roadAt = (ax, ay) => surfaceOf(e.x + ax * AHEAD, e.y + ay * AHEAD) === SURF.ROAD;
+    if (roadAt(wx, wy)) {
+      // At the kerb. Now and then commit to crossing — a city where nobody
+      // ever steps off the pavement is as wrong as one where everybody does —
+      // but only when nothing quick is coming.
+      if (Math.random() < dt * 0.7 && !trafficNear(e, world, 9)) {
+        e.crossing = [wx, wy];
+        e.crossT = 4;
+      } else {
+        // otherwise turn and follow the kerb, whichever way stays on pavement
+        const turn = [[-wy, wx], [wy, -wx], [-wx, -wy]].find(([ax, ay]) => !roadAt(ax, ay));
+        if (turn) { [wx, wy] = turn; e.wander = Math.atan2(wy, wx); }
+      }
     }
     stepPerson(e, dt, wx, wy);
     return;
