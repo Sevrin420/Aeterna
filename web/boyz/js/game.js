@@ -18,7 +18,9 @@ import {
 } from './entities.js';
 import { Campaign, MISSIONS } from './missions.js';
 import { Hustle } from './hustle.js';
-import { api, sendEvent, flush, getWalletId } from './api.js';
+import {
+  api, sendEvent, flush, getWalletId, linkWallet, unlinkWallet, isLinked,
+} from './api.js';
 import {
   sfx as audioSfx, engine as audioEngine, ambience, siren, toggleMute, isMuted, setPaused,
 } from './audio.js';
@@ -51,6 +53,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyE') world.tryAction();
   if (e.code === 'KeyM') ui.map = !ui.map;
   if (e.code === 'KeyN') { toggleMute(); world.toast(isMuted() ? 'SOUND OFF' : 'SOUND ON'); }
+  if (e.code === 'KeyL' && ui.menu) doLink();
   if (e.code === 'Escape' || e.code === 'KeyP') toggleMenu();
   if (ui.menu) {
     if (e.code === 'ArrowLeft') { ui.tab = (ui.tab + 2) % 3; ui.sel = 0; }
@@ -184,6 +187,41 @@ function toggleMenu() {
   }
 }
 
+// Link flow, driven from the pause menu. Every failure mode gets a readable
+// line rather than a silent no-op: no wallet installed, the signature refused,
+// a stale nonce. A points system whose linking step fails invisibly is worse
+// than one that has no linking step at all.
+async function doLink() {
+  if (ui.linkBusy) return;
+  if (isLinked()) {
+    ui.linkBusy = true;
+    await unlinkWallet();
+    ui.walletAddr = null;
+    ui.linkState = 'unlinked';
+    ui.linkBusy = false;
+    world.toast('WALLET UNLINKED');
+    return;
+  }
+  ui.linkBusy = true;
+  ui.linkState = 'check your wallet…';
+  try {
+    const res = await linkWallet();
+    ui.walletAddr = res.wallet;
+    ui.linkState = null;
+    world.points = res.points ?? world.points;
+    world.toast(res.migrated
+      ? `WALLET LINKED — ${res.migrated} pts carried over`
+      : 'WALLET LINKED');
+    sfx('good');
+    api.profile().then((pr) => { ui.ledger = pr.ledger || []; }).catch(() => {});
+  } catch (err) {
+    ui.linkState = String(err?.message || 'link failed').slice(0, 34);
+    sfx('bad');
+  } finally {
+    ui.linkBusy = false;
+  }
+}
+
 // Replaying a finished mission re-runs it for practice. It pays no points, and
 // not because the client withholds them: the ledger is keyed (wallet, type,
 // ref), so the server has already recorded mission N and simply ignores it the
@@ -213,6 +251,7 @@ const ui = {
   tab: 0,              // 0 stats · 1 missions · 2 leaderboard
   sel: 0,
   hint: null, hintT: 0,   // one transient line at the bottom of the screen
+  linkState: null, linkBusy: false, walletAddr: null,
   board: null,         // cached leaderboard rows
   ledger: null,        // cached points ledger
 };
@@ -1459,7 +1498,7 @@ function drawMenu() {
   ctx.font = '9px "Courier New", monospace';
   ctx.fillStyle = 'rgba(140,155,185,0.55)';
   ctx.textAlign = 'center';
-  ctx.fillText('← →  tabs      ↑ ↓  select      ENTER  start      ESC  close', x0 + W2 / 2, y0 + H2 - 14);
+  ctx.fillText('← →  tabs    ↑ ↓  select    ENTER  start    L  wallet    ESC  close', x0 + W2 / 2, y0 + H2 - 14);
   ctx.textAlign = 'left';
 
   const bx = x0 + 18, by = y0 + 54, bw = W2 - 36;
@@ -1468,6 +1507,7 @@ function drawMenu() {
   if (ui.tab === 0) {
     const rows = [
       ['POINTS (server)', Math.floor(world.points)],
+      ['Wallet', ui.linkState || (isLinked() ? `linked ${(ui.walletAddr || '').slice(0, 6)}…${(ui.walletAddr || '').slice(-4)}` : 'not linked — [L]')],
       ['Cash', '$' + Math.floor(world.cash)],
       ['Missions done', `${campaign.completed.length} / ${MISSIONS.length}`],
       ['Turf held', `${owned.size} / ${DISTRICTS.length}`],
@@ -1477,29 +1517,38 @@ function drawMenu() {
       ['Wanted', '★'.repeat(world.wanted) || 'clean'],
       ['Crew', world.andyDead ? 'Andy is gone' : `${world.crew.length + 1} strong`],
     ];
+    // The blocks below FLOW from the row count rather than sitting at fixed
+    // offsets. Adding two rows to this list used to push it straight through
+    // the explanatory paragraph underneath.
+    const ROW_H = 19;
     ctx.font = '11px "Courier New", monospace';
     rows.forEach((r, i) => {
       ctx.fillStyle = 'rgba(160,175,205,0.75)';
-      ctx.fillText(r[0], bx, by + 18 + i * 21);
+      ctx.fillText(r[0], bx, by + 16 + i * ROW_H);
       ctx.fillStyle = i === 0 ? NEON.boyz.core : '#dbe4f5';
       ctx.textAlign = 'right';
-      ctx.fillText(String(r[1]), bx + bw, by + 18 + i * 21);
+      ctx.fillText(String(r[1]), bx + bw, by + 16 + i * ROW_H);
       ctx.textAlign = 'left';
     });
+    let cy = by + 16 + rows.length * ROW_H + 12;
     ctx.fillStyle = 'rgba(140,155,185,0.5)';
     ctx.font = '9px "Courier New", monospace';
-    wrap(ctx, 'Points are held by the server and are the basis for any future token distribution. The client only displays them.', bx, by + 200, bw, 13);
-    if (ui.ledger?.length) {
+    cy = wrap(ctx, isLinked()
+      ? 'Points are held by the server and are the basis for any future token distribution. This wallet is verified by signature, so it is payable.'
+      : 'Points are held by the server and are the basis for any future token distribution. This is an anonymous account — press L to link a wallet by signature and carry these points over. Unlinked accounts are not payable.',
+    bx, cy, bw, 12) + 14;
+    if (ui.ledger?.length && cy < listBottom - 20) {
       ctx.fillStyle = NEON.boyz.mid;
       ctx.font = 'bold 10px "Courier New", monospace';
-      ctx.fillText('RECENT LEDGER', bx, by + 236);
+      ctx.fillText('RECENT LEDGER', bx, cy);
       ctx.font = '9px "Courier New", monospace';
-      ui.ledger.slice(0, 6).forEach((l, i) => {
+      const room = Math.max(0, Math.floor((listBottom - cy - 6) / 13));
+      ui.ledger.slice(0, Math.min(6, room)).forEach((l, i) => {
         ctx.fillStyle = 'rgba(160,175,205,0.7)';
-        ctx.fillText(`${l.type} ${l.ref}`.slice(0, 34), bx, by + 252 + i * 13);
+        ctx.fillText(`${l.type} ${l.ref}`.slice(0, 34), bx, cy + 14 + i * 13);
         ctx.textAlign = 'right';
         ctx.fillStyle = '#f0ca4e';
-        ctx.fillText('+' + l.points, bx + bw, by + 252 + i * 13);
+        ctx.fillText('+' + l.points, bx + bw, cy + 14 + i * 13);
         ctx.textAlign = 'left';
       });
     }
@@ -1536,12 +1585,21 @@ function drawMenu() {
       ctx.fillStyle = 'rgba(160,175,205,0.7)';
       ctx.fillText('Nobody on the board yet. Be first.', bx, by + 20);
     } else {
-      ui.board.slice(0, 14).forEach((r, i) => {
+      ui.board.slice(0, 13).forEach((r, i) => {
         const yy = by + 18 + i * 22;
         ctx.fillStyle = i === 0 ? NEON.boyz.core : 'rgba(180,195,225,0.85)';
-        ctx.fillText(`${String(i + 1).padStart(2, ' ')}.  ${String(r.name).slice(0, 18)}`, bx, yy);
+        ctx.fillText(`${String(i + 1).padStart(2, ' ')}.  ${String(r.name).slice(0, 16)}`, bx, yy);
+        // An unverified account is a scratch run, not a payout claim. Saying so
+        // on the board is the honest place for it — a leaderboard that hides
+        // the difference implies every row is payable.
+        if (!r.verified) {
+          ctx.font = '9px "Courier New", monospace';
+          ctx.fillStyle = 'rgba(150,165,195,0.45)';
+          ctx.fillText('unlinked', bx + 170, yy);
+          ctx.font = '11px "Courier New", monospace';
+        }
         ctx.textAlign = 'right';
-        ctx.fillStyle = '#f0ca4e';
+        ctx.fillStyle = r.verified ? '#f0ca4e' : 'rgba(240,202,78,0.45)';
         ctx.fillText(String(r.points), bx + bw, yy);
         ctx.textAlign = 'left';
       });
@@ -1679,6 +1737,7 @@ function wrap(c, text, x, y, maxW, lh) {
     else line = t;
   }
   if (line) c.fillText(line, x, yy);
+  return yy;   // the baseline of the last line, so callers can flow after it
 }
 
 // Full-screen map (M / Tab) — the reference image, live.

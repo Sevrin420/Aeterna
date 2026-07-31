@@ -24,17 +24,41 @@ function walletId() {
 }
 export const getWalletId = walletId;
 
+// --- session --------------------------------------------------------------
+// Once a wallet is linked, the session token IS the identity: the server reads
+// the wallet off the token and ignores the one in the body. Until then the
+// `dev-…` id in the body identifies an anonymous scratch account, which the
+// server will happily accumulate points for but will not pay out.
+const TOKEN_KEY = 'boyz_token';
+function token() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
+function setToken(t) {
+  try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+}
+export function isLinked() { return !!token(); }
+
+function headers(json = true) {
+  const h = json ? { 'Content-Type': 'application/json' } : {};
+  const t = token();
+  if (t) h.Authorization = `Bearer ${t}`;
+  return h;
+}
+
 async function post(path, body) {
   const res = await fetch(BASE + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers(),
     body: JSON.stringify({ wallet: walletId(), ...body }),
   });
+  if (res.status === 401 && token()) {
+    // the session expired or was revoked — drop back to anonymous rather than
+    // failing every call from here on
+    setToken('');
+  }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
   return res.json();
 }
 async function get(path) {
-  const res = await fetch(BASE + path);
+  const res = await fetch(BASE + path, { headers: headers(false) });
   if (!res.ok) throw new Error(res.statusText);
   return res.json();
 }
@@ -47,6 +71,36 @@ export const api = {
   save: (state) => post('/save', { state }),
   leaderboard: () => get('/leaderboard'),
 };
+
+// --- linking a real wallet -------------------------------------------------
+// Sign-in-with-Ethereum, in three steps: connect, ask the server for a
+// single-use challenge, sign it. The signature never authorises a transaction
+// and costs no gas — it only proves control of the address, which is the one
+// thing a client cannot fake and the one thing a payout has to be sure of.
+//
+// The anonymous id is passed along so the server can migrate a run's points
+// onto the wallet, once. That is why you can play the whole game before you
+// ever connect anything.
+export async function linkWallet() {
+  const eth = window.ethereum;
+  if (!eth) throw new Error('No wallet found in this browser');
+
+  const accounts = await eth.request({ method: 'eth_requestAccounts' });
+  const address = String(accounts?.[0] || '').toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error('No account returned');
+
+  const { nonce, message } = await post('/nonce', { wallet: address });
+  const signature = await eth.request({ method: 'personal_sign', params: [message, address] });
+
+  const res = await post('/link', { wallet: address, nonce, signature, from: walletId() });
+  setToken(res.token);
+  return res;
+}
+
+export async function unlinkWallet() {
+  try { await post('/unlink', {}); } catch { /* the token is going either way */ }
+  setToken('');
+}
 
 // Queue events so a dropped connection doesn't lose points; flush on the next
 // success. Everything is idempotent server-side via (wallet, type, ref).
