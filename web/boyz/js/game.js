@@ -1298,6 +1298,17 @@ function drawHUD() {
     ctx.textAlign = 'left';
   }
 
+  // off-screen waypoints — the minimap only shows 46 cells, and a drop is
+  // routinely twice that away
+  {
+    const tgt = world.marker
+      || (world.markerEntity?.e && !world.markerEntity.e.dead ? world.markerEntity.e : null);
+    if (tgt) drawWaypoint(tgt.x, tgt.y, NEON.boyz, tgt.label || 'GO');
+    if (hustle?.job?.stage === 'offer') {
+      drawWaypoint(hustle.job.x, hustle.job.y, { core: '#ffeeae', mid: '#f0ca4e', deep: '#7a5410' }, 'CARGO');
+    }
+  }
+
   drawMinimap();
 
   // weapon + ammo readout
@@ -1454,6 +1465,66 @@ function drawMenu() {
       });
     }
   }
+}
+
+// An arrow pinned to the screen edge when a waypoint is off-screen, so you
+// always know which way to drive without opening the map. Nothing draws while
+// the target is on screen — the marker column already says where it is.
+//
+// Built to the same rules as the world art: the arrow is filled with its own
+// mid tone, outlined in the DEEP step of that same hue rather than black, and
+// carries a highlight along its upper-left edge so it reads as a solid object
+// lit from the same direction as everything else.
+function drawWaypoint(wx, wy, col, label) {
+  const s = toScreen(wx, wy, 0);
+  // same transform render() uses, minus the shake
+  const sx = s.x + VW / 2 - cam.x, sy = s.y + VH / 2 - cam.y;
+  const inset = 54;
+  if (sx > inset && sx < VW - inset && sy > inset && sy < VH - inset) return;
+
+  const cx = VW / 2, cy = VH / 2;
+  let dx = sx - cx, dy = sy - cy;
+  const len = Math.hypot(dx, dy) || 1;
+  // scale the direction until it hits the inset rectangle, so the arrow slides
+  // along the edge instead of orbiting on a circle and bunching in the corners
+  const k = Math.min((VW / 2 - inset) / Math.abs(dx || 1e-6), (VH / 2 - inset) / Math.abs(dy || 1e-6));
+  const ax = cx + dx * k, ay = cy + dy * k;
+  const ang = Math.atan2(dy, dx);
+  // world distance, in blocks — a block is ROAD_PITCH cells
+  const p = world.player;
+  const blocks = Math.round(Math.hypot(wx - p.x, wy - p.y) / ROAD_PITCH);
+
+  ctx.save();
+  ctx.translate(ax, ay);
+  ctx.rotate(ang);
+  const r = 13;
+  ctx.beginPath();
+  ctx.moveTo(r, 0); ctx.lineTo(-r * 0.7, r * 0.62);
+  ctx.lineTo(-r * 0.35, 0); ctx.lineTo(-r * 0.7, -r * 0.62);
+  ctx.closePath();
+  ctx.fillStyle = col.mid;
+  ctx.fill();
+  ctx.strokeStyle = col.deep; ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // lit edge — the side the key light would catch
+  ctx.beginPath();
+  ctx.moveTo(r - 1, 0); ctx.lineTo(-r * 0.62, -r * 0.52);
+  ctx.strokeStyle = col.core; ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  // the label rides outside the arrow, unrotated so it stays readable
+  const lx = Math.max(30, Math.min(VW - 30, ax - Math.cos(ang) * 28));
+  const ly = Math.max(20, Math.min(VH - 12, ay - Math.sin(ang) * 28));
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(6,10,18,0.75)';
+  const txt = `${label} ${blocks}`;
+  const tw = ctx.measureText(txt).width;
+  ctx.fillRect(lx - tw / 2 - 4, ly - 9, tw + 8, 13);
+  ctx.fillStyle = col.core;
+  ctx.fillText(txt, lx, ly + 1);
+  ctx.textAlign = 'left';
 }
 
 // Corner minimap — turf colours, roads implied by district fill, the player and
