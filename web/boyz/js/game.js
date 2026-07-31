@@ -17,6 +17,7 @@ import {
   spawnCopCar, PAINTS, RUN_SPEED, resolveCarCollisions, stepWreck,
 } from './entities.js';
 import { Campaign, MISSIONS } from './missions.js';
+import { Hustle } from './hustle.js';
 import { api, sendEvent, flush, getWalletId } from './api.js';
 
 const cv = document.getElementById('game');
@@ -206,6 +207,7 @@ const ui = {
   menu: null,          // null | 'pause'
   tab: 0,              // 0 stats · 1 missions · 2 leaderboard
   sel: 0,
+  hint: null, hintT: 0,   // one transient line at the bottom of the screen
   board: null,         // cached leaderboard rows
   ledger: null,        // cached points ledger
 };
@@ -238,6 +240,12 @@ const world = {
   sfx(kind) { sfx(kind); },
 
   toast(text) { ui.toasts.push({ text, t: 3.4 }); },
+
+  // A prompt rather than a notification — it re-arms every frame the condition
+  // holds and fades the moment it stops, so it never queues up behind toasts.
+  hint(text) { ui.hint = text; ui.hintT = 0.25; },
+
+  get campaignActive() { return !!campaign?.active; },
   briefing(who, text) {
     const b = BOYZ[who];
     ui.brief = { name: b ? b.name.toUpperCase() : who.toUpperCase(), role: b?.role || '', text, tag: b?.tag || '#8fe021' };
@@ -312,6 +320,14 @@ const world = {
     sendEvent('district', id).catch(() => {});
   },
 
+  // The ref is the drop site plus a second-resolution stamp: unique enough that
+  // two different runs never collide, stable enough that a retry after a
+  // dropped connection lands on the same ledger row instead of paying twice.
+  onDelivery(siteId) {
+    sendEvent('delivery', `${siteId}-${Math.floor(Date.now() / 1000)}`).catch(() => {});
+    this.award(60, 'Delivery');
+  },
+
   onMissionComplete(m) {
     sendEvent('mission', String(m.id)).catch(() => {});
     ui.brief = null;
@@ -377,6 +393,7 @@ function explode(x, y) {
 }
 
 let campaign;
+let hustle;
 
 function enterCar(c) {
   const p = world.player;
@@ -719,11 +736,16 @@ function update(dt) {
     world.wanted = 0;
     world.cash = Math.max(0, world.cash - 500);
     world.toast('Wasted — patched up. -$500');
+    if (hustle?.carrying) hustle.abandon('Wasted with the cargo');
   }
+
+  // side hustles run in the gaps between missions
+  hustle.update(dt);
 
   for (const t of ui.toasts) t.t -= dt;
   ui.toasts = ui.toasts.filter((t) => t.t > 0).slice(-4);
   if (ui.briefT > 0) { ui.briefT -= dt; if (ui.briefT <= 0) ui.brief = null; }
+  if (ui.hintT > 0) { ui.hintT -= dt; if (ui.hintT <= 0) ui.hint = null; }
 }
 
 function onKill(e) {
@@ -949,6 +971,9 @@ function render() {
     if (Math.hypot(sh.x - world.player.x, sh.y - world.player.y) > 40) continue;
     if (sh.district && !isOwned(sh.district)) continue;
     items.push({ d: depth(sh.x, sh.y, 0.1), f: () => drawSafehouse(sh) });
+  }
+  if (hustle?.job?.stage === 'offer') {
+    items.push({ d: depth(hustle.job.x, hustle.job.y, 0.5), f: () => hustle.draw(ctx, world.t) });
   }
   if (world.marker) items.push({ d: 1e9, f: () => drawMarker(ctx, world.marker.x, world.marker.y, NEON.boyz, world.t, world.marker.label) });
   if (world.markerEntity?.e && !world.markerEntity.e.dead) {
@@ -1179,8 +1204,9 @@ function drawHUD() {
   ctx.strokeStyle = 'rgba(180,200,230,0.4)';
   ctx.strokeRect(pad + 0.5, VH - pad - 16.5, hw, 12);
 
-  // objective
-  const label = campaign.objectiveLabel();
+  // objective — the campaign owns this line, and courier work borrows it when
+  // no mission is running so there is only ever one thing to read up there.
+  const label = campaign.objectiveLabel() || hustle?.label();
   if (label) {
     ctx.font = 'bold 12px "Courier New", monospace';
     const tw = ctx.measureText(label).width;
@@ -1194,11 +1220,20 @@ function drawHUD() {
     ctx.fillText(label, VW / 2, pad + 16);
     ctx.textAlign = 'left';
   }
-  if (world.hudTimer > 0) {
+  const clock = world.hudTimer > 0 ? world.hudTimer : (hustle?.timer() || 0);
+  if (clock > 0) {
     ctx.font = 'bold 17px "Courier New", monospace';
-    ctx.fillStyle = world.hudTimer < 10 ? '#e0233a' : '#f0ca4e';
+    ctx.fillStyle = clock < 10 ? '#e0233a' : '#f0ca4e';
     ctx.textAlign = 'center';
-    ctx.fillText(world.hudTimer.toFixed(1), VW / 2, pad + 46);
+    ctx.fillText(clock.toFixed(1), VW / 2, pad + 46);
+    ctx.textAlign = 'left';
+  }
+  // courier streak — only shown once it's actually multiplying the payout
+  if (hustle?.streak > 1) {
+    ctx.font = 'bold 10px "Courier New", monospace';
+    ctx.fillStyle = '#f0ca4e';
+    ctx.textAlign = 'center';
+    ctx.fillText(`RUN STREAK x${(1 + hustle.streak * 0.25).toFixed(2)}`, VW / 2, pad + 62);
     ctx.textAlign = 'left';
   }
 
@@ -1276,6 +1311,20 @@ function drawHUD() {
     ctx.fillText(`${WEAPONS[wid].name}  ${am}`, pad + 6, VH - pad - 25);
   }
 
+  // transient prompt (courier warnings, "need a car", …)
+  if (ui.hint) {
+    ctx.font = 'bold 11px "Courier New", monospace';
+    const tw = ctx.measureText(ui.hint).width;
+    ctx.fillStyle = 'rgba(6,10,18,0.82)';
+    ctx.fillRect(VW / 2 - tw / 2 - 10, VH - 60, tw + 20, 19);
+    ctx.strokeStyle = '#f0ca4e'; ctx.lineWidth = 1;
+    ctx.strokeRect(VW / 2 - tw / 2 - 9.5, VH - 59.5, tw + 19, 18);
+    ctx.fillStyle = '#ffeeae';
+    ctx.textAlign = 'center';
+    ctx.fillText(ui.hint, VW / 2, VH - 47);
+    ctx.textAlign = 'left';
+  }
+
   // action hint
   if (!campaign.active) {
     const pump = LANDMARKS.find((l) => l.id === 'pump');
@@ -1331,6 +1380,7 @@ function drawMenu() {
       ['Turf held', `${owned.size} / ${DISTRICTS.length}`],
       ['Turf income', `$${world.income}/s`],
       ['Whips boosted', world.jacked.size],
+      ['Deliveries', `${hustle?.done || 0}${hustle?.streak > 1 ? ` (streak ${hustle.streak})` : ''}`],
       ['Wanted', '★'.repeat(world.wanted) || 'clean'],
       ['Crew', world.andyDead ? 'Andy is gone' : `${world.crew.length + 1} strong`],
     ];
@@ -1442,6 +1492,15 @@ function drawMinimap() {
     ctx.fillStyle = '#f0a020';
     ctx.fillRect(mx + (g.x - p.x) * sc - 2, my + (g.y - p.y) * sc - 2, 4, 4);
   }
+  // waiting courier crate — gold, distinct from the lime objective blip
+  if (hustle?.job?.stage === 'offer') {
+    const j = hustle.job;
+    let dx = (j.x - p.x) * sc, dy = (j.y - p.y) * sc;
+    const l = Math.hypot(dx, dy) || 1;
+    if (l > R / 2 - 4) { dx = dx / l * (R / 2 - 4); dy = dy / l * (R / 2 - 4); }
+    ctx.fillStyle = '#f0ca4e';
+    ctx.fillRect(mx + dx - 2, my + dy - 2, 4, 4);
+  }
   const tgt = world.marker || (world.markerEntity?.e && !world.markerEntity.e.dead ? world.markerEntity.e : null);
   if (tgt) {
     // clamp the objective blip to the rim so it always points somewhere
@@ -1518,6 +1577,7 @@ function startGame(boyId) {
   spawnTraffic(world, 16);
   spawnPeds(world, 26);
   campaign = new Campaign(world);
+  hustle = new Hustle(world);
   const restored = restore();
   world.briefing(boyId, restored && restored.mission
     ? `Back on the block. ${restored.mission} of ${MISSIONS.length} jobs done.`
@@ -1547,6 +1607,7 @@ function snapshot() {
     owned: [...owned],
     weapon: world.player.weaponId || 'pistol',
     ammo: world.ammo,
+    hustle: hustle ? hustle.snapshot() : null,
   };
 }
 let saveT = 0;
@@ -1567,6 +1628,7 @@ function restore() {
   for (const id of st.owned || []) owned.add(id);
   campaign.index = st.mission || 0;
   campaign.completed = st.completed || [];
+  hustle.restore(st.hustle);
   cityDirty = true;
   return st;
 }
@@ -1625,6 +1687,6 @@ document.getElementById('boot')?.addEventListener('click', () => {});
 resize();
 bindTouch();
 buildSelect();
-window.__boyz = { world, get campaign() { return campaign; }, MISSIONS };
+window.__boyz = { world, get campaign() { return campaign; }, get hustle() { return hustle; }, MISSIONS };
 window.__boyzGarages = GARAGES;
 window.__boyzSafehouses = SAFEHOUSES;
