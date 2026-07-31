@@ -19,6 +19,9 @@ import {
 import { Campaign, MISSIONS } from './missions.js';
 import { Hustle } from './hustle.js';
 import { api, sendEvent, flush, getWalletId } from './api.js';
+import {
+  sfx as audioSfx, engine as audioEngine, ambience, siren, toggleMute, isMuted, setPaused,
+} from './audio.js';
 
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
@@ -47,6 +50,7 @@ addEventListener('keydown', (e) => {
   if (KEYMAP[e.code] || ['Space', 'KeyE', 'ShiftLeft', 'Enter'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyE') world.tryAction();
   if (e.code === 'KeyM') ui.map = !ui.map;
+  if (e.code === 'KeyN') { toggleMute(); world.toast(isMuted() ? 'SOUND OFF' : 'SOUND ON'); }
   if (e.code === 'Escape' || e.code === 'KeyP') toggleMenu();
   if (ui.menu) {
     if (e.code === 'ArrowLeft') { ui.tab = (ui.tab + 2) % 3; ui.sel = 0; }
@@ -167,6 +171,7 @@ export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'rifle'];
 
 function toggleMenu() {
   ui.menu = ui.menu ? null : 'pause';
+  setPaused(!!ui.menu);
   if (ui.menu) {
     // pull fresh server data each time it opens — the leaderboard and the
     // points ledger are both server-authoritative, so there is nothing local
@@ -237,7 +242,7 @@ const world = {
   shake: 0,           // screen shake magnitude
   hitstop: 0,         // brief freeze on a kill, so hits land
 
-  sfx(kind) { sfx(kind); },
+  sfx(kind, arg) { sfx(kind, arg); },
 
   toast(text) { ui.toasts.push({ text, t: 3.4 }); },
 
@@ -333,7 +338,7 @@ const world = {
     ui.brief = null;
     if (m.id === MISSIONS.length) this.toast('THE BLOCK BELONGS TO THE BOYZ');
   },
-  onMissionFail() { this.despawnMissionEnemies(); },
+  onMissionFail() { this.despawnMissionEnemies(); sfx('bad'); },
 };
 
 // Impact particles. Cheap, short-lived, and the single biggest contributor to
@@ -433,23 +438,10 @@ function updateCamera(dt) {
   else { cam.x += (cam.tx - cam.x) * k; cam.y += (cam.ty - cam.y) * k; }
 }
 
-// --- audio (tiny WebAudio blips; no assets) -------------------------------
-let actx = null;
-function sfx(kind) {
-  try {
-    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
-    if (actx.state === 'suspended') actx.resume();
-    const o = actx.createOscillator(), g = actx.createGain();
-    o.connect(g); g.connect(actx.destination);
-    const n = actx.currentTime;
-    if (kind === 'shot') { o.type = 'square'; o.frequency.setValueAtTime(220, n); o.frequency.exponentialRampToValueAtTime(60, n + 0.09); g.gain.setValueAtTime(0.07, n); g.gain.exponentialRampToValueAtTime(0.001, n + 0.1); o.start(n); o.stop(n + 0.11); }
-    else if (kind === 'hit') { o.type = 'sawtooth'; o.frequency.setValueAtTime(120, n); g.gain.setValueAtTime(0.06, n); g.gain.exponentialRampToValueAtTime(0.001, n + 0.14); o.start(n); o.stop(n + 0.15); }
-    else if (kind === 'pickup') { o.type = 'triangle'; o.frequency.setValueAtTime(560, n); o.frequency.exponentialRampToValueAtTime(1100, n + 0.12); g.gain.setValueAtTime(0.07, n); g.gain.exponentialRampToValueAtTime(0.001, n + 0.16); o.start(n); o.stop(n + 0.17); }
-    else if (kind === 'boom') { o.type='sawtooth'; o.frequency.setValueAtTime(90,n); o.frequency.exponentialRampToValueAtTime(24,n+0.5); g.gain.setValueAtTime(0.16,n); g.gain.exponentialRampToValueAtTime(0.001,n+0.6); o.start(n); o.stop(n+0.62); }
-    else if (kind === 'crash') { o.type='square'; o.frequency.setValueAtTime(160,n); o.frequency.exponentialRampToValueAtTime(50,n+0.14); g.gain.setValueAtTime(0.07,n); g.gain.exponentialRampToValueAtTime(0.001,n+0.16); o.start(n); o.stop(n+0.17); }
-    else if (kind === 'good') { o.type = 'triangle'; o.frequency.setValueAtTime(440, n); o.frequency.setValueAtTime(660, n + 0.1); g.gain.setValueAtTime(0.08, n); g.gain.exponentialRampToValueAtTime(0.001, n + 0.3); o.start(n); o.stop(n + 0.32); }
-  } catch { /* audio is optional */ }
-}
+// --- audio ----------------------------------------------------------------
+// All of it lives in audio.js; this is the seam the rest of the game calls
+// through, kept so every existing sfx('kind') call site still works.
+function sfx(kind, arg) { audioSfx(kind, arg); }
 
 // --- update ---------------------------------------------------------------
 function update(dt) {
@@ -486,6 +478,13 @@ function update(dt) {
       throttle = Math.cos(diff) > -0.3 ? 1 : -1;
       steer = Math.max(-1, Math.min(1, diff * 2));
     }
+    // Tyres let go when the heading is being forced round faster than the
+    // car's grip wants at speed. One skid per slide, not one per frame.
+    const slip = Math.abs(steer) * Math.min(1, Math.abs(c.speed) / (c.topSpeed || 16));
+    if (slip > 0.62 && Math.abs(c.speed) > 6) {
+      world.skidT = (world.skidT || 0) - dt;
+      if (world.skidT <= 0) { world.skidT = 0.3; sfx('skid', slip); }
+    } else world.skidT = 0;
     stepCar(c, dt, throttle, steer);
     p.x = c.x; p.y = c.y;
     if (c.dead) { exitCar(); p.hp -= 25; world.toast('Bail out!'); }
@@ -523,7 +522,7 @@ function update(dt) {
       burst(p.x + ax * 0.6, p.y + ay * 0.6, 2, '#ffd45c', 3, 0.25);   // brass
       world.shake = Math.max(world.shake, wpn.shake);
       world.panic = 4;
-      sfx('shot');
+      sfx('shot', world.player.weaponId || 'pistol');
     }
   }
   if (p.fireCd > 0) p.fireCd -= dt;
@@ -543,7 +542,7 @@ function update(dt) {
     burst(ix, iy, Math.min(10, 2 + rel), '#ffd45c', 5, 0.3, 0.8);
     if (rel > 8) world.shake = Math.max(world.shake, Math.min(6, rel * 0.4));
     if (a.driver === p || b.driver === p) p.hp -= Math.max(0, rel - 9) * 1.4;
-    sfx('crash');
+    sfx('crash', rel / 9);
   });
   for (const c of world.cars) {
     if (c.dead && !c.exploded) {
@@ -743,6 +742,19 @@ function update(dt) {
 
   // side hustles run in the gaps between missions
   hustle.update(dt);
+
+  // Continuous audio: the engine tracks the car you are actually in, the city
+  // bed rises with heat, and one siren voice carries the nearest pursuer
+  // rather than one per cop car — a dozen overlapping wails is just noise.
+  audioEngine(p.inCar && !p.inCar.dead ? p.inCar : null);
+  ambience(world.wanted);
+  let nearSiren = null;
+  for (const c of world.cars) {
+    if (!c.siren || c.dead) continue;
+    const sd = Math.hypot(c.x - p.x, c.y - p.y);
+    if (nearSiren == null || sd < nearSiren) nearSiren = sd;
+  }
+  siren(nearSiren);
 
   for (const t of ui.toasts) t.t -= dt;
   ui.toasts = ui.toasts.filter((t) => t.t > 0).slice(-4);
@@ -1385,6 +1397,11 @@ function drawHUD() {
     ctx.fillRect(pad, VH - pad - 38, 130, 18);
     ctx.fillStyle = '#f0ca4e';
     ctx.fillText(`${WEAPONS[wid].name}  ${am}`, pad + 6, VH - pad - 25);
+    if (isMuted()) {
+      ctx.fillStyle = 'rgba(160,175,205,0.7)';
+      ctx.font = '9px "Courier New", monospace';
+      ctx.fillText('MUTE [N]', pad + 92, VH - pad - 25);
+    }
   }
 
   // transient prompt (courier warnings, "need a car", …)

@@ -508,7 +508,7 @@ export function stepFootAI(e, dt, world) {
           const sp = 0.12;   // a little spread so they're not laser-accurate
           world.bullets.push(makeBullet(e.x, e.y,
             ux + (Math.random() - 0.5) * sp, uy + (Math.random() - 0.5) * sp, e.faction, 9));
-          world.sfx('shot');
+          world.sfx('shot', 'pistol');
         } else {
           p.hp -= 7; world.sfx('hit');
         }
