@@ -36,6 +36,22 @@ export const DISTRICTS = [
   { id: 'port', name: 'The Port', neon: 'jimothys', bounds: [76, 100, 120, 118], hostile: true },
 ];
 
+// Spray shops and safehouses. A spray shop resets the wanted level for cash —
+// without one the only way to shed heat is to drive in circles until the timer
+// runs out, which is the least interesting thing the game can ask of you.
+// Safehouses are respawn points, so dying stops teleporting you across the map.
+export const GARAGES = [
+  { id: 'g-boyz', name: 'Pay & Spray', x: 60, y: 68 },
+  { id: 'g-west', name: 'Pay & Spray', x: 26, y: 76 },
+  { id: 'g-east', name: 'Pay & Spray', x: 104, y: 74 },
+  { id: 'g-north', name: 'Pay & Spray', x: 62, y: 20 },
+];
+export const SAFEHOUSES = [
+  { id: 's-pump', name: 'The Pump', x: 66, y: 56, district: 'boyz' },
+  { id: 's-strip', name: 'Strip House', x: 100, y: 64, district: 'jimothys' },
+  { id: 's-ware', name: 'Row Lockup', x: 70, y: 38, district: 'warehouse' },
+];
+
 // Named landmarks — mission targets and map labels.
 export const LANDMARKS = [
   { id: 'pump', name: 'Pump Lounge', x: 66, y: 50, district: 'boyz' },
@@ -136,6 +152,19 @@ function build() {
     }
   }
 
+  // Garages and safehouses are open bays cut out of a block, reachable from the
+  // road, with a low surround so they read as a structure rather than a hole.
+  for (const g of [...GARAGES, ...SAFEHOUSES]) {
+    for (let y = g.y - 2; y <= g.y + 2; y++) {
+      for (let x = g.x - 2; x <= g.x + 2; x++) {
+        if (x < 0 || y < 0 || x >= CW || y >= CH) continue;
+        const i = idx(x, y);
+        height[i] = 0;
+        surf[i] = SURF.LOT;
+      }
+    }
+  }
+
   // Landmarks get a taller, distinct footprint so they're findable from a distance.
   for (const lm of LANDMARKS) {
     const hi = lm.id === 'tower' ? 26 : lm.id === 'hq' ? 18 : lm.id === 'pump' ? 9 : 7;
@@ -201,11 +230,13 @@ export function solidAt(x, y) {
   if (height[i] > 0) return true;
   return surf[i] === SURF.WATER;
 }
-// Cars can't mount buildings, water, or parks (railings/trees).
+// Cars can't mount buildings, water, parks (railings/trees) or the beach —
+// without the sand rule traffic wanders onto Bayview and pins itself against
+// the surf, where it sits stuck forever.
 export function carSolidAt(x, y) {
   if (solidAt(x, y)) return true;
   const s = surf[idx(x | 0, y | 0)];
-  return s === SURF.PARK;
+  return s === SURF.PARK || s === SURF.SAND;
 }
 
 // Nearest road cell to a point — used for car spawns and cop pathing.

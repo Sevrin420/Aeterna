@@ -3,7 +3,7 @@
 import {
   CW, CH, SURF, surf, height, idx, DISTRICTS, LANDMARKS, ROAD_PITCH, ROAD_W,
   surfaceAt, solidAt, districtAtCell, nearestRoad, isOwned, owned, ownedIncome,
-  districtOutline, BUILDINGS,
+  districtOutline, BUILDINGS, GARAGES, SAFEHOUSES,
 } from './city.js';
 import { toScreen, toWorld, depth, drawBox, drawQuad, projectPath, TW, TH, ZH } from './iso.js';
 import {
@@ -14,7 +14,7 @@ import { drawPerson, drawCar, drawMarker, dirFromVec } from './sprites.js';
 import {
   makePerson, makeCar, makeBullet, makePickup, stepPerson, stepCar, stepTrafficCar,
   stepChaseCar, stepFootAI, spawnTraffic, spawnPeds, spawnCabal, spawnCops,
-  spawnCopCar, PAINTS, RUN_SPEED,
+  spawnCopCar, PAINTS, RUN_SPEED, resolveCarCollisions, stepWreck,
 } from './entities.js';
 import { Campaign, MISSIONS } from './missions.js';
 import { api, sendEvent, flush, getWalletId } from './api.js';
@@ -177,6 +177,7 @@ const world = {
   crew: [],
   income: 0,
   parts: [],          // blood, sparks, brass, smoke
+  blasts: [],         // expanding shockwave rings
   // free-play bookkeeping — all of these feed server-priced point events
   rampage: { kills: 0, t: 0 },
   jacked: new Set(),
@@ -287,6 +288,39 @@ function stepParts(dt) {
   if (world.parts.length > 320) world.parts.splice(0, world.parts.length - 320);
 }
 
+// An explosion: radius damage to people and cars (so wrecks chain), a fireball,
+// smoke, and a shove on anything close. Chains are capped by the wreck timer —
+// each car has to burn for a couple of seconds before it goes, so a pile-up
+// cooks off in sequence rather than all at once.
+function explode(x, y) {
+  const R = 4.2;
+  burst(x, y, 26, '#ffd45c', 11, 0.6, 1);
+  burst(x, y, 18, '#ff7a2a', 7, 0.9, 1.4);
+  burst(x, y, 14, '#3a3a44', 4, 1.6, 2);
+  world.shake = Math.max(world.shake, 9);
+  world.hitstop = Math.max(world.hitstop, 0.05);
+  world.panic = 6;
+  world.blasts.push({ x, y, t: 0 });
+  sfx('boom');
+  for (const e of world.people) {
+    if (e.dead) continue;
+    const d = Math.hypot(e.x - x, e.y - y);
+    if (d > R) continue;
+    const f = 1 - d / R;
+    e.hp -= 90 * f;
+    e.x += ((e.x - x) / (d || 1)) * f * 1.6;
+    e.y += ((e.y - y) / (d || 1)) * f * 1.6;
+    if (e.hp <= 0) { e.dead = true; onKill(e); }
+  }
+  for (const c of world.cars) {
+    if (c.exploded) continue;
+    const d = Math.hypot(c.x - x, c.y - y);
+    if (d > R + 1) continue;
+    c.hp -= 70 * (1 - d / (R + 1));
+    if (c.hp <= 0 && !c.dead) { c.dead = true; c.speed = 0; }
+  }
+}
+
 let campaign;
 
 function enterCar(c) {
@@ -339,6 +373,8 @@ function sfx(kind) {
     if (kind === 'shot') { o.type = 'square'; o.frequency.setValueAtTime(220, n); o.frequency.exponentialRampToValueAtTime(60, n + 0.09); g.gain.setValueAtTime(0.07, n); g.gain.exponentialRampToValueAtTime(0.001, n + 0.1); o.start(n); o.stop(n + 0.11); }
     else if (kind === 'hit') { o.type = 'sawtooth'; o.frequency.setValueAtTime(120, n); g.gain.setValueAtTime(0.06, n); g.gain.exponentialRampToValueAtTime(0.001, n + 0.14); o.start(n); o.stop(n + 0.15); }
     else if (kind === 'pickup') { o.type = 'triangle'; o.frequency.setValueAtTime(560, n); o.frequency.exponentialRampToValueAtTime(1100, n + 0.12); g.gain.setValueAtTime(0.07, n); g.gain.exponentialRampToValueAtTime(0.001, n + 0.16); o.start(n); o.stop(n + 0.17); }
+    else if (kind === 'boom') { o.type='sawtooth'; o.frequency.setValueAtTime(90,n); o.frequency.exponentialRampToValueAtTime(24,n+0.5); g.gain.setValueAtTime(0.16,n); g.gain.exponentialRampToValueAtTime(0.001,n+0.6); o.start(n); o.stop(n+0.62); }
+    else if (kind === 'crash') { o.type='square'; o.frequency.setValueAtTime(160,n); o.frequency.exponentialRampToValueAtTime(50,n+0.14); g.gain.setValueAtTime(0.07,n); g.gain.exponentialRampToValueAtTime(0.001,n+0.16); o.start(n); o.stop(n+0.17); }
     else if (kind === 'good') { o.type = 'triangle'; o.frequency.setValueAtTime(440, n); o.frequency.setValueAtTime(660, n + 0.1); g.gain.setValueAtTime(0.08, n); g.gain.exponentialRampToValueAtTime(0.001, n + 0.3); o.start(n); o.stop(n + 0.32); }
   } catch { /* audio is optional */ }
 }
@@ -379,7 +415,7 @@ function update(dt) {
     }
     stepCar(c, dt, throttle, steer);
     p.x = c.x; p.y = c.y;
-    if (c.dead) { exitCar(); p.hp -= 25; }
+    if (c.dead) { exitCar(); p.hp -= 25; world.toast('Bail out!'); }
     // running people down
     for (const q of world.people) {
       if (q.dead || q === p) continue;
@@ -416,10 +452,41 @@ function update(dt) {
   if (world.panic > 0) world.panic -= dt;
   for (const e of world.people) if (e.hurt > 0) e.hurt -= dt;
 
+  // vehicle physics: separate cars, then cook off anything wrecked
+  resolveCarCollisions(world.cars, (a, b, ix, iy, rel) => {
+    burst(ix, iy, Math.min(10, 2 + rel), '#ffd45c', 5, 0.3, 0.8);
+    if (rel > 8) world.shake = Math.max(world.shake, Math.min(6, rel * 0.4));
+    if (a.driver === p || b.driver === p) p.hp -= Math.max(0, rel - 9) * 1.4;
+    sfx('crash');
+  });
+  for (const c of world.cars) {
+    if (c.dead && !c.exploded) {
+      // smoke while it burns down
+      if (Math.random() < dt * 14) burst(c.x, c.y, 1, '#4a4a54', 1.5, 1.2, 1);
+      if (c.burn > 1.6 && Math.random() < dt * 20) burst(c.x, c.y, 1, '#ff7a2a', 2, 0.5, 1);
+    }
+    stepWreck(c, dt, (car) => explode(car.x, car.y));
+  }
+  world.cars = world.cars.filter((c) => !c.exploded || (c.burn += dt) < 6);
+  for (const bl of world.blasts) bl.t += dt;
+  world.blasts = world.blasts.filter((bl) => bl.t < 0.5);
+
   // entities
   for (const c of world.cars) {
     if (c.driver) continue;
-    if (c.ai === 'traffic') stepTrafficCar(c, dt);
+    if (c.ai === 'traffic') {
+      stepTrafficCar(c, dt, world.cars);
+      // A background car that has been pinned for a few seconds is stuck on
+      // geometry no steering rule will get it off. Recycle it onto a road
+      // rather than leaving a dead prop in the middle of the city.
+      if (Math.abs(c.speed) < 0.6) {
+        c.stuck = (c.stuck || 0) + dt;
+        if (c.stuck > 3) {
+          const r = nearestRoad(p.x + (Math.random() - 0.5) * 70, p.y + (Math.random() - 0.5) * 70);
+          c.x = r.x; c.y = r.y; c.speed = 4; c.stuck = 0; c.axis = null;
+        }
+      } else c.stuck = 0;
+    }
     else if (c.ai === 'chase') {
       stepChaseCar(c, dt, p.x, p.y);
       if (Math.hypot(c.x - p.x, c.y - p.y) < 2.2 && Math.abs(c.speed) > 6) { p.hp -= 12; c.speed *= -0.3; }
@@ -508,6 +575,32 @@ function update(dt) {
     if (world.wantedDecay <= 0) { world.wanted--; world.wantedDecay = 16; hudDirty = true; }
   }
 
+  // Pay & Spray: drive in with heat on you and it comes off for cash.
+  if (p.inCar && world.wanted > 0) {
+    for (const g of GARAGES) {
+      if (Math.hypot(p.x - g.x, p.y - g.y) > 2.6) continue;
+      const cost = 200 * world.wanted;
+      if (world.cash >= cost) {
+        world.cash -= cost;
+        const shed = world.wanted;
+        world.wanted = 0; world.wantedDecay = 0;
+        // clear the pursuit so it doesn't instantly re-acquire
+        for (const c of world.cars) if (c.ai === 'chase') c.ai = 'traffic';
+        world.people = world.people.filter((e) => e.faction !== 'cop');
+        if (world.peakWanted >= 3) {
+          world.award(90, `Lost ${world.peakWanted} stars`);
+          sendEvent('escape', `${Math.floor(Date.now() / 1000)}`).catch(() => {});
+        }
+        world.peakWanted = 0;
+        world.toast(`Resprayed — ${shed} stars gone, -$${cost}`);
+        sfx('good');
+      } else {
+        world.toast(`Respray costs $${cost}`);
+      }
+      break;
+    }
+  }
+
   // territory income
   world.income = ownedIncome();
   world.cash += world.income * dt;
@@ -545,12 +638,18 @@ function update(dt) {
 
   // player death -> respawn at the Pump Lounge
   if (p.hp <= 0) {
-    const pump = LANDMARKS.find((l) => l.id === 'pump');
-    p.hp = 100; p.x = pump.x; p.y = pump.y + 5;
+    // respawn at the nearest safehouse you actually control, not always home
+    let best = SAFEHOUSES[0], bd = 1e9;
+    for (const sh of SAFEHOUSES) {
+      if (sh.district && !isOwned(sh.district)) continue;
+      const d = Math.hypot(sh.x - p.x, sh.y - p.y);
+      if (d < bd) { bd = d; best = sh; }
+    }
+    p.hp = 100; p.x = best.x; p.y = best.y + 3;
     if (p.inCar) exitCar();
     world.wanted = 0;
     world.cash = Math.max(0, world.cash - 500);
-    world.toast('Wasted — patched up at the Pump. -$500');
+    world.toast('Wasted — patched up. -$500');
   }
 
   for (const t of ui.toasts) t.t -= dt;
@@ -718,6 +817,16 @@ function render() {
   }
   for (const b of world.bullets) items.push({ d: depth(b.x, b.y, 1.2), f: () => drawBullet(b) });
   for (const q of world.parts) items.push({ d: depth(q.x, q.y, q.z), f: () => drawPart(q) });
+  for (const bl of world.blasts) items.push({ d: depth(bl.x, bl.y, 3), f: () => drawBlast(bl) });
+  for (const g of GARAGES) {
+    if (Math.hypot(g.x - world.player.x, g.y - world.player.y) > 40) continue;
+    items.push({ d: depth(g.x, g.y, 0.1), f: () => drawGarage(g) });
+  }
+  for (const sh of SAFEHOUSES) {
+    if (Math.hypot(sh.x - world.player.x, sh.y - world.player.y) > 40) continue;
+    if (sh.district && !isOwned(sh.district)) continue;
+    items.push({ d: depth(sh.x, sh.y, 0.1), f: () => drawSafehouse(sh) });
+  }
   if (world.marker) items.push({ d: 1e9, f: () => drawMarker(ctx, world.marker.x, world.marker.y, NEON.boyz, world.t, world.marker.label) });
   if (world.markerEntity?.e && !world.markerEntity.e.dead) {
     const m = world.markerEntity;
@@ -782,6 +891,54 @@ function drawPickup(pk) {
   ctx.fillRect(s.x - 4, s.y - 9 + bob, 8, 2);
 }
 
+function drawBlast(bl) {
+  const s = toScreen(bl.x, bl.y, 0.6);
+  const k = bl.t / 0.5;
+  const r = 8 + k * 74;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 1 - k;
+  const g = ctx.createRadialGradient(s.x, s.y, r * 0.35, s.x, s.y, r);
+  g.addColorStop(0, 'rgba(255,240,190,0.85)');
+  g.addColorStop(0.4, 'rgba(255,140,40,0.5)');
+  g.addColorStop(1, 'rgba(255,90,20,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(s.x, s.y, r, r * (TH / TW), 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+// A spray bay: open front, neon sign, and a floor pad you drive onto.
+function drawGarage(g) {
+  const col = NEON.tungtungs;
+  drawQuad(ctx, g.x - 1.6, g.y - 1.6, 3.2, 3.2, withAlpha(col.deep, 0.45));
+  ctx.strokeStyle = col.mid; ctx.lineWidth = 1.4;
+  const pts = projectPath([[g.x - 1.6, g.y - 1.6], [g.x + 1.6, g.y - 1.6],
+    [g.x + 1.6, g.y + 1.6], [g.x - 1.6, g.y + 1.6], [g.x - 1.6, g.y - 1.6]]);
+  neonLine(ctx, pts, col, 1.4, 0.8);
+  const s = toScreen(g.x, g.y, 0);
+  pointLight(ctx, s.x, s.y, 30, col.mid, 0.22);
+  ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = col.core;
+  ctx.fillText('PAY & SPRAY', s.x, s.y - 26);
+  ctx.textAlign = 'left';
+}
+
+function drawSafehouse(sh) {
+  const col = NEON.boyz;
+  const pts = projectPath([[sh.x - 1.4, sh.y - 1.4], [sh.x + 1.4, sh.y - 1.4],
+    [sh.x + 1.4, sh.y + 1.4], [sh.x - 1.4, sh.y + 1.4], [sh.x - 1.4, sh.y - 1.4]]);
+  neonLine(ctx, pts, col, 1.2, 0.7);
+  const s = toScreen(sh.x, sh.y, 0);
+  pointLight(ctx, s.x, s.y, 24, col.mid, 0.18);
+  ctx.font = 'bold 7px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = col.core;
+  ctx.fillText(sh.name.toUpperCase(), s.x, s.y - 22);
+  ctx.textAlign = 'left';
+}
+
 function drawPart(q) {
   const s = toScreen(q.x, q.y, q.z);
   ctx.globalAlpha = Math.max(0, Math.min(1, q.life / q.max));
@@ -810,7 +967,7 @@ function drawCarEnt(c) {
     return;
   }
   drawCar(ctx, c.x, c.y, c.ang, c.paint, {
-    siren: c.siren, sirenPhase: world.t, len: c.len, wid: c.wid,
+    siren: c.siren, sirenPhase: world.t, len: c.len, wid: c.wid, brake: c.braking,
   });
 }
 
@@ -1025,6 +1182,11 @@ function drawMinimap() {
     ctx.fillStyle = e.faction === 'crew' ? '#8fe021' : e.faction === 'cop' ? '#3a86ff' : '#e0233a';
     ctx.fillRect(mx + (e.x - p.x) * sc - 1, my + (e.y - p.y) * sc - 1, 2, 2);
   }
+  for (const g of GARAGES) {
+    if (Math.hypot(g.x - p.x, g.y - p.y) > span) continue;
+    ctx.fillStyle = '#f0a020';
+    ctx.fillRect(mx + (g.x - p.x) * sc - 2, my + (g.y - p.y) * sc - 2, 4, 4);
+  }
   const tgt = world.marker || (world.markerEntity?.e && !world.markerEntity.e.dead ? world.markerEntity.e : null);
   if (tgt) {
     // clamp the objective blip to the rim so it always points somewhere
@@ -1209,3 +1371,5 @@ resize();
 bindTouch();
 buildSelect();
 window.__boyz = { world, get campaign() { return campaign; }, MISSIONS };
+window.__boyzGarages = GARAGES;
+window.__boyzSafehouses = SAFEHOUSES;

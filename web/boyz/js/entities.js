@@ -5,7 +5,7 @@
 // that scales with speed, people have a flat top speed. It should feel like a
 // 16-bit GTA, which means responsive over realistic.
 
-import { solidAt, carSolidAt, nearestRoad, districtAtCell, CW, CH } from './city.js';
+import { solidAt, carSolidAt, nearestRoad, districtAtCell, surfaceAt as surfaceOf, CW, CH } from './city.js';
 import { BOYZ, CABAL, COP, ramp, NEON } from './palette.js';
 import { dirFromVec } from './sprites.js';
 
@@ -36,9 +36,12 @@ export function makeCar(x, y, ang = 0, opts = {}) {
     driver: null,               // entity currently driving
     ai: opts.ai || null,        // 'traffic' | 'chase' | null
     siren: !!opts.siren,
-    len: opts.len || 2.1, wid: opts.wid || 1.0,
+    // Sized to fit a lane. Roads are 2 cells wide, so lane centres sit 1.0
+    // apart — a car half-width of 1.0 (the old value) meant every car
+    // permanently overlapped its oncoming neighbour.
+    len: opts.len || 1.5, wid: opts.wid || 0.45,
     topSpeed: opts.topSpeed || 16,
-    dead: false, burn: 0,
+    dead: false, burn: 0, exploded: false, braking: false,
   };
 }
 
@@ -97,11 +100,78 @@ export function stepPerson(e, dt, dx, dy, run = false) {
   if (e.flash > 0) e.flash -= dt;
 }
 
+// Car-vs-car collision. Circle-based and O(n^2), which is fine at ~30 cars and
+// far more predictable than swept boxes at these speeds. Momentum transfers so
+// ramming a stationary car shunts it out of the way instead of passing through
+// it — the single thing that most made traffic feel like scenery.
+export function resolveCarCollisions(cars, onImpact) {
+  for (let i = 0; i < cars.length; i++) {
+    const a = cars[i];
+    if (a.exploded) continue;
+    for (let j = i + 1; j < cars.length; j++) {
+      const b = cars[j];
+      if (b.exploded) continue;
+      // Approximate each car with two circles along its length, sized off its
+      // WIDTH. A single circle sized off length is far too fat for a lane and
+      // makes oncoming traffic permanently collide.
+      const ra = a.wid * 1.05, rb = b.wid * 1.05;
+      const aF = a.len * 0.45, bF = b.len * 0.45;
+      let best = null, bestPen = 0;
+      for (const sa2 of [-aF, aF]) {
+        for (const sb2 of [-bF, bF]) {
+          const ax2 = a.x + Math.cos(a.ang) * sa2, ay2 = a.y + Math.sin(a.ang) * sa2;
+          const bx2 = b.x + Math.cos(b.ang) * sb2, by2 = b.y + Math.sin(b.ang) * sb2;
+          const ddx = bx2 - ax2, ddy = by2 - ay2;
+          const dd = Math.hypot(ddx, ddy);
+          const pen = (ra + rb) - dd;
+          if (dd > 0.0001 && pen > bestPen) { bestPen = pen; best = [ddx / dd, ddy / dd]; }
+        }
+      }
+      if (!best) continue;
+      const dx = best[0], dy = best[1];
+      const d = 1;
+      const nx = dx, ny = dy;
+      const push = bestPen / 2;
+      // separate, weighting the moving car less so parked cars get shoved
+      a.x -= nx * push; a.y -= ny * push;
+      b.x += nx * push; b.y += ny * push;
+
+      // closing speed along the contact normal decides the damage
+      const av = a.speed, bv = b.speed;
+      const aVx = Math.cos(a.ang) * av, aVy = Math.sin(a.ang) * av;
+      const bVx = Math.cos(b.ang) * bv, bVy = Math.sin(b.ang) * bv;
+      const rel = (aVx - bVx) * nx + (aVy - bVy) * ny;
+      if (rel <= 0) continue;
+
+      a.speed -= rel * 0.55;
+      b.speed += rel * 0.55;
+      const dmg = Math.max(0, rel - 4) * 2.4;
+      if (dmg > 0) {
+        a.hp -= dmg; b.hp -= dmg;
+        onImpact?.(a, b, (a.x + b.x) / 2, (a.y + b.y) / 2, rel);
+      }
+    }
+  }
+}
+
+// Damage states: a wrecked car smokes, then catches, then goes up. The delay is
+// the point — it gives you a beat to get clear, and turns a wreck into a hazard
+// rather than an instant kill.
+export function stepWreck(car, dt, onExplode) {
+  if (!car.dead || car.exploded) return;
+  car.burn += dt;
+  if (car.burn > 2.6) {
+    car.exploded = true;
+    onExplode?.(car);
+  }
+}
+
 // Arcade car handling. Steering authority falls off at very low speed (so you
 // can't pivot on the spot) and grip bleeds sideways velocity, which is what
 // gives it the loose, slidey feel of the era.
 export function stepCar(car, dt, throttle, steer) {
   if (car.dead) { car.burn += dt; return; }
+  car.braking = throttle < 0 && car.speed > 0.5;
   const accel = 26, brake = 30, drag = 1.6;
   if (throttle > 0) car.speed += accel * throttle * dt;
   else if (throttle < 0) car.speed += brake * throttle * dt;
@@ -128,19 +198,109 @@ export function stepCar(car, dt, throttle, steer) {
 }
 
 // --- AI -------------------------------------------------------------------
-export function stepTrafficCar(car, dt) {
-  // Drive forward, and when the road ahead is blocked pick a new heading that
-  // isn't. Crude, but on a grid city it produces traffic that mostly stays on
-  // the road and turns at junctions.
-  const look = 2.4;
-  const ax = car.x + Math.cos(car.ang) * look, ay = car.y + Math.sin(car.ang) * look;
-  if (carSolidAt(ax, ay)) {
-    const opts = [car.ang + Math.PI / 2, car.ang - Math.PI / 2, car.ang + Math.PI];
-    for (const a of opts) {
-      if (!carSolidAt(car.x + Math.cos(a) * look, car.y + Math.sin(a) * look)) { car.ang = a; break; }
+// Traffic drives in LANES. Each car commits to an axis and a direction, holds
+// the correct side of the road (right-hand drive), and only reconsiders at a
+// junction. The previous version drove straight until something blocked it,
+// which read as bumper cars — cars drifting across both lanes and pinballing
+// off buildings. Lane discipline is most of what makes a city look alive.
+const PITCH = 8, RW = 2;
+
+// Centre of the correct-side lane for a car travelling `dir` along `axis`.
+function laneCentre(coord, dir) {
+  const band = Math.floor(coord / PITCH) * PITCH;
+  // two lanes inside the road band; right-hand side depends on travel direction
+  return band + (dir > 0 ? RW - 0.5 : 0.5);
+}
+function onRoadBand(coord) { return (coord % PITCH) < RW; }
+
+export function initTraffic(car) {
+  // snap onto whichever road band it spawned in
+  if (onRoadBand(car.x) && !onRoadBand(car.y)) car.axis = 'y';
+  else if (onRoadBand(car.y) && !onRoadBand(car.x)) car.axis = 'x';
+  else car.axis = Math.random() < 0.5 ? 'x' : 'y';
+  car.tdir = Math.random() < 0.5 ? 1 : -1;
+  car.junctionCd = 0;
+  return car;
+}
+
+export function stepTrafficCar(car, dt, cars) {
+  if (car.axis == null) initTraffic(car);
+
+  let along = car.axis === 'x' ? car.x : car.y;
+  let cross = car.axis === 'x' ? car.y : car.x;
+
+  // INVARIANT: the cross coordinate must sit inside a road band, because that
+  // band IS the carriageway we're driving down. If a junction turn or a shunt
+  // left the axis pointing along the wrong one, laneCentre() starts aiming at a
+  // lane on a different street entirely and the car thrashes in place forever —
+  // it never recovers, because the only place the axis was reconsidered was at
+  // a junction it can no longer reach. Re-derive it every frame instead.
+  if (!onRoadBand(cross)) {
+    if (onRoadBand(along)) {
+      car.axis = car.axis === 'x' ? 'y' : 'x';
+      along = car.axis === 'x' ? car.x : car.y;
+      cross = car.axis === 'x' ? car.y : car.x;
+    } else {
+      // knocked clean off the road — head back to the nearest one
+      const road = nearestRoad(car.x, car.y);
+      const bx = road.x - car.x, by = road.y - car.y;
+      let d2 = Math.atan2(by, bx) - car.ang;
+      while (d2 > Math.PI) d2 -= Math.PI * 2;
+      while (d2 < -Math.PI) d2 += Math.PI * 2;
+      stepCar(car, dt, 0.5, Math.max(-1, Math.min(1, d2 * 2)));
+      return;
     }
   }
-  stepCar(car, dt, 0.55, 0);
+
+  // at a junction, sometimes commit to a turn
+  car.junctionCd -= dt;
+  const atJunction = onRoadBand(along) && onRoadBand(cross);
+  if (atJunction && car.junctionCd <= 0) {
+    car.junctionCd = 2.2;
+    if (Math.random() < 0.42) {
+      car.axis = car.axis === 'x' ? 'y' : 'x';
+      car.tdir = Math.random() < 0.5 ? 1 : -1;
+    }
+  }
+
+  // Steer toward a desired VELOCITY VECTOR — forward along the lane plus a
+  // lateral nudge back to the lane centre — rather than juggling angle signs
+  // per axis. The sign-juggling version oscillated and cars ended up crawling.
+  const want = laneCentre(cross, car.tdir);
+  const off = cross - want;
+  const lat = Math.max(-1, Math.min(1, -off * 0.7));
+  const dx = car.axis === 'x' ? car.tdir : lat;
+  const dy = car.axis === 'x' ? lat : car.tdir;
+  let diff = Math.atan2(dy, dx) - car.ang;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  const steer = Math.max(-1, Math.min(1, diff * 2.2));
+
+  // Brake for whatever is directly ahead, but only if it is genuinely in front
+  // and close — a fat radius made every car brake for its neighbours and the
+  // whole grid ground to a halt.
+  let throttle = 0.9;
+  if (cars) {
+    const fx = Math.cos(car.ang), fy = Math.sin(car.ang);
+    for (const o of cars) {
+      if (o === car || o.exploded) continue;
+      const rx = o.x - car.x, ry = o.y - car.y;
+      const ahead = rx * fx + ry * fy;
+      if (ahead < 0.5 || ahead > 3.6) continue;
+      const side = Math.abs(rx * -fy + ry * fx);
+      if (side < 1.1) { throttle = -0.3; break; }
+    }
+  }
+  // and don't drive into a building
+  if (carSolidAt(car.x + Math.cos(car.ang) * 2.0, car.y + Math.sin(car.ang) * 2.0)) {
+    throttle = -0.4;
+    if (car.junctionCd <= 0) {
+      car.junctionCd = 1.4;
+      car.axis = car.axis === 'x' ? 'y' : 'x';
+      car.tdir = Math.random() < 0.5 ? 1 : -1;
+    }
+  }
+  stepCar(car, dt, throttle, steer);
 }
 
 export function stepChaseCar(car, dt, tx, ty) {
@@ -185,13 +345,35 @@ export function stepFootAI(e, dt, world) {
   }
 
   if (e.faction === 'ped') {
+    // Dodge traffic first — being run over should feel like the driver's fault,
+    // not like the pedestrian was a bollard.
+    for (const c of world.cars) {
+      if (c.exploded || Math.abs(c.speed) < 4) continue;
+      const cd = Math.hypot(c.x - e.x, c.y - e.y);
+      if (cd > 6) continue;
+      // only flee cars actually heading at us
+      const tox = (e.x - c.x) / (cd || 1), toy = (e.y - c.y) / (cd || 1);
+      if (Math.cos(c.ang) * tox + Math.sin(c.ang) * toy < 0.4) continue;
+      stepPerson(e, dt, -Math.sin(c.ang), Math.cos(c.ang), true);
+      return;
+    }
     if (world.panic > 0 && d < 18) {
       const ux = (e.x - p.x) / (d || 1), uy = (e.y - p.y) / (d || 1);
       stepPerson(e, dt, ux, uy, true);
       return;
     }
+    // amble, but prefer the pavement — steer back if we drift into the road
     e.wander += (Math.random() - 0.5) * dt * 3;
-    stepPerson(e, dt, Math.cos(e.wander), Math.sin(e.wander));
+    let wx = Math.cos(e.wander), wy = Math.sin(e.wander);
+    if (surfaceOf(e.x, e.y) === 0) {           // SURF.ROAD — get off it
+      const bx = Math.floor(e.x / 8) * 8 + 4, by = Math.floor(e.y / 8) * 8 + 4;
+      wx = bx - e.x; wy = by - e.y;
+      const l2 = Math.hypot(wx, wy) || 1;
+      wx /= l2; wy /= l2;
+      stepPerson(e, dt, wx, wy, true);
+      return;
+    }
+    stepPerson(e, dt, wx, wy);
     return;
   }
 
@@ -222,7 +404,7 @@ export function stepFootAI(e, dt, world) {
 export function spawnTraffic(world, n) {
   for (let i = 0; i < n; i++) {
     const p = nearestRoad(6 + Math.random() * (CW - 12), 6 + Math.random() * (CH - 12));
-    const c = makeCar(p.x, p.y, Math.floor(Math.random() * 4) * (Math.PI / 2), { ai: 'traffic' });
+    const c = initTraffic(makeCar(p.x, p.y, Math.floor(Math.random() * 4) * (Math.PI / 2), { ai: 'traffic' }));
     c.speed = 4 + Math.random() * 4;
     world.cars.push(c);
   }
@@ -231,9 +413,13 @@ export function spawnTraffic(world, n) {
 export function spawnPeds(world, n) {
   const looks = [BOYZ.pepe, BOYZ.brett, BOYZ.andy, BOYZ.landwolf];
   for (let i = 0; i < n; i++) {
+    // spawn on pavement, not in the middle of a carriageway
     let x = 4 + Math.random() * (CW - 8), y = 4 + Math.random() * (CH - 8);
     let guard = 0;
-    while (solidAt(x, y) && guard++ < 40) { x = 4 + Math.random() * (CW - 8); y = 4 + Math.random() * (CH - 8); }
+    while (guard++ < 60) {
+      if (!solidAt(x, y) && surfaceOf(x, y) !== 0) break;
+      x = 4 + Math.random() * (CW - 8); y = 4 + Math.random() * (CH - 8);
+    }
     if (solidAt(x, y)) continue;
     // civilians wear the crew palette's cloth but no bandana accent of note
     const base = looks[(Math.random() * looks.length) | 0];

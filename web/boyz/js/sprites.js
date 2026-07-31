@@ -216,6 +216,17 @@ export function drawCar(ctx, wx, wy, ang, paint, opts = {}) {
     ctx.closePath(); ctx.fill();
     ctx.restore();
   }
+  // brake lights
+  if (opts.brake) {
+    const bl = corner(-L, 0, Ht * 0.4);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const bg = ctx.createRadialGradient(bl[0], bl[1], 0, bl[0], bl[1], 12);
+    bg.addColorStop(0, 'rgba(255,60,60,0.7)'); bg.addColorStop(1, 'rgba(255,40,40,0)');
+    ctx.fillStyle = bg; ctx.fillRect(bl[0] - 12, bl[1] - 12, 24, 24);
+    ctx.restore();
+    ctx.fillStyle = '#ff4a4a';
+    ctx.beginPath(); ctx.arc(bl[0], bl[1], 1.4, 0, Math.PI * 2); ctx.fill();
+  }
   // police bar
   if (opts.siren) {
     const t = opts.sirenPhase || 0;
