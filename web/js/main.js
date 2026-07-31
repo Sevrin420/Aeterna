@@ -293,10 +293,6 @@ function revealTransition(next) {
 }
 
 // ---- Entrance lobby (ghost -> Docs/Mint tables -> north arch -> wallet) ----
-const docsOverlay = document.getElementById('docsOverlay');
-const docsClose = document.getElementById('docsClose');
-const mintOverlay = document.getElementById('mintOverlay');
-const mintClose = document.getElementById('mintClose');
 const walletOverlay = document.getElementById('walletOverlay');
 const walletTitle = document.getElementById('walletTitle');
 const walletMsg = document.getElementById('walletMsg');
@@ -305,12 +301,11 @@ const walletConnectBtn = document.getElementById('walletConnect');
 const walletEnterBtn = document.getElementById('walletEnter');
 const walletBackBtn = document.getElementById('walletBack');
 
+// The Doctrine and the mint rite are read in the in-canvas dialogue box now,
+// so the only DOM overlay the entrance still raises is the wallet flow.
 function entranceOverlaysOpen() {
-  return !docsOverlay.hidden || !mintOverlay.hidden || !walletOverlay.hidden;
+  return !walletOverlay.hidden;
 }
-
-docsClose.addEventListener('click', () => { docsOverlay.hidden = true; });
-mintClose.addEventListener('click', () => { mintOverlay.hidden = true; });
 
 let entrancePlayer = null;
 let chosenCultist = null;
@@ -340,8 +335,6 @@ function enterEntrance(player) {
   }
   scene = new EntranceScene({
     player,
-    onDocs: () => { docsOverlay.hidden = false; },
-    onMint: () => { mintOverlay.hidden = false; },
     onWallet: openWalletFlow,
     isBusy: entranceOverlaysOpen,
   });
@@ -510,8 +503,6 @@ function powerOff() {
   leaderboardOverlay.hidden = true;
   mancalaOverlay.hidden = true;
   communionOverlay.hidden = true;
-  docsOverlay.hidden = true;
-  mintOverlay.hidden = true;
   walletOverlay.hidden = true;
   drawOff();
   hint.textContent = '';
@@ -550,7 +541,7 @@ powerSwitch.addEventListener('pointermove', (e) => {
 // press — the scene underneath never sees it, so B won't also drop a gift etc.
 const backableOverlays = () => [
   communionOverlay, mancalaOverlay, leaderboardOverlay,
-  walletOverlay, docsOverlay, mintOverlay, chatForm,
+  walletOverlay, chatForm,
 ];
 function anyOverlayOpen() { return backableOverlays().some((o) => o && !o.hidden); }
 function backOut() {
@@ -558,8 +549,6 @@ function backOut() {
   if (!mancalaOverlay.hidden) { if (scene && scene.leaveMancala) scene.leaveMancala(); mancalaOverlay.hidden = true; return true; }
   if (!leaderboardOverlay.hidden) { leaderboardOverlay.hidden = true; return true; }
   if (!walletOverlay.hidden) { walletOverlay.hidden = true; if (scene && scene.resume) scene.resume(); return true; }
-  if (!docsOverlay.hidden) { docsOverlay.hidden = true; return true; }
-  if (!mintOverlay.hidden) { mintOverlay.hidden = true; return true; }
   if (!chatForm.hidden) { chatForm.hidden = true; return true; }
   return false;
 }

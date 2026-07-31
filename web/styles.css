@@ -662,3 +662,12 @@ html, body {
   pointer-events: none;
 }
 .dpad-zone.is-down::after { opacity: 1; }
+
+/* The in-canvas dialogue box fills nearly the whole screen and is meant to be
+   the only thing being read, so the HUD steps aside while it is open. Faded
+   rather than hidden so the layout never reflows underneath it. */
+body.dialogue-open .hud {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease-out;
+}

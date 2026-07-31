@@ -9,6 +9,8 @@ import { drawCharacter, getCultistSprite } from '../spritesheet.js';
 import { getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
 import { h2 } from '../abbeyMap.js';
+import { DialogueBox, drawBang } from '../dialogue.js';
+import { LORE } from '../lore.js';
 import {
   FLOOR, WALL, VOID, BLOOD, GOLD, WOOD, BONE, MOSS, IRON,
   SHADOW, shade, block, candleFlame,
@@ -30,16 +32,15 @@ const TABLES = [
 ];
 
 export class EntranceScene {
-  constructor({ player, onDocs, onMint, onWallet, isBusy }) {
+  constructor({ player, onWallet, isBusy }) {
     this.player = player;
-    this.onDocs = onDocs || (() => {});
-    this.onMint = onMint || (() => {});
     this.onWallet = onWallet || (() => {});
     this.isBusy = isBusy || (() => false);
 
     this.t = 0;
     this.locked = false;
     this.pc = { x: 104, y: 168, w: 7, h: 7, speed: 42, dir: 'up', moving: false, bob: 0 };
+    this.dialogue = new DialogueBox();
     this.sheet = getCultistSprite(getWalletId(), player?.sex || 'male');
     this._prompt = null;
   }
@@ -67,7 +68,10 @@ export class EntranceScene {
   }
 
   update(dt, input) {
+    // the clock keeps running so torches, dust and the arch keep breathing
+    // behind the box — only the player and the buttons stop
     this.t += dt;
+    if (this.dialogue.active) { this.dialogue.update(dt, input); return; }
     if (this.locked || this.isBusy()) { input.consumeAPress?.(); input.consumeBPress?.(); return; }
 
     const p = this.pc;
@@ -103,8 +107,8 @@ export class EntranceScene {
     if (p.y < IN.y0 + 22 && p.x > ARCH.x0 - 6 && p.x < ARCH.x1 + 6) this._prompt = this._prompt || 'arch';
 
     if (input.consumeAPress?.()) {
-      if (this._prompt === 'mint') this.onMint();
-      else if (this._prompt === 'docs') this.onDocs();
+      if (this._prompt === 'mint') this.dialogue.show(LORE.mint);
+      else if (this._prompt === 'docs') this.dialogue.show(LORE.doctrine);
     }
     input.consumeBPress?.();
   }
@@ -125,6 +129,15 @@ export class EntranceScene {
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
 
+    // The mark is drawn AFTER the depth sort and outside the spirit's
+    // translucency, so a table never covers it and it never inherits the
+    // ghost's alpha. It is an affordance, not scenery — if it can be hidden
+    // it is useless. 'arch' is a direction rather than an action, so it gets
+    // no mark: the "!" only ever means "A does something here".
+    if ((this._prompt === 'mint' || this._prompt === 'docs') && !this.dialogue.active) {
+      drawBang(ctx, Math.round(this.pc.x), Math.round(this.pc.y) - 18, this.t);
+    }
+
     // heavy vignette
     const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.22, W / 2, H / 2, H * 0.62);
     g.addColorStop(0, 'rgba(0,0,0,0)');
@@ -133,15 +146,7 @@ export class EntranceScene {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
-    // prompt / hint
-    ctx.textAlign = 'center';
-    ctx.font = '6px "Courier New", monospace';
-    ctx.fillStyle = GOLD.h;
-    const bounce = Math.sin(this.t * 6) * 1.2;
-    if (this._prompt === 'mint') ctx.fillText('[A] Mint a Cultist', W / 2, H - 16 + bounce);
-    else if (this._prompt === 'docs') ctx.fillText('[A] Read the Doctrine', W / 2, H - 16 + bounce);
-    else if (this._prompt === 'arch') ctx.fillText('Walk north to enter…', W / 2, H - 16 + bounce);
-
+    this.dialogue.render(ctx);
     ctx.textAlign = 'left';
   }
 

@@ -7,6 +7,8 @@ import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
 import { drawCharacter, getCultistSprite, getGuruSprite, getCultistSpriteVariant } from '../spritesheet.js';
 import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
+import { DialogueBox, drawBang } from '../dialogue.js';
+import { LORE, bulletinPages } from '../lore.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, DOORS, ROOMS, SKULL_ROOM, NAVE, TRANSEPT, NAVE_CX, SKULL_WALL_ROW,
@@ -118,7 +120,21 @@ export class CourtyardScene {
     this.lastEmittedMove = 0;
   }
 
+  get dialogue() {
+    if (!this._dialogue) this._dialogue = new DialogueBox();
+    return this._dialogue;
+  }
+
   enter() {
+    // Shown once ever, on the first walk into the abbey. The whole control
+    // scheme and the daily rites in four pages, so nobody has to guess what
+    // the "!" means the first time they see one.
+    try {
+      if (!localStorage.getItem('aeterna_taught')) {
+        localStorage.setItem('aeterna_taught', '1');
+        this.dialogue.show(LORE.instructions);
+      }
+    } catch { /* private mode — just skip the lesson */ }
     this.mySheet = getCultistSprite(getWalletId(), this.player.sex);
     this._refreshGifts();
     this._refreshSeason();
@@ -463,7 +479,7 @@ export class CourtyardScene {
     // +6px of slack on every station radius: A used to feel dead because the
     // trigger zones were barely a tile wide, so a step too far registered the
     // press but had nothing bound. This widens the sweet spot (and, since the
-    // on-screen "[A] …" prompt reads the same result, the prompt appears sooner
+    // gold "!" over the player reads the same result, the mark appears sooner
     // too, so the player can see exactly when A is armed).
     let best = null, bestD = Infinity;
     for (const s of STATIONS) {
@@ -668,14 +684,7 @@ export class CourtyardScene {
   async _handleBulletin() {
     await this._refreshSeason();
     const s = this.seasonInfo;
-    if (!s) { this.onToast('The bulletin is unreadable.'); return; }
-    if (s.inBreak) {
-      this.onToast(`Season ${s.season} is between cycles. The abbey rests.`);
-    } else if (s.isFinalCommunion) {
-      this.onToast(`Season ${s.season}, Day ${s.day} — Final Communion is upon us.`);
-    } else {
-      this.onToast(`Season ${s.season}, Day ${s.day}/56 — ${s.daysUntilCommunion} days until Final Communion.`);
-    }
+    this.dialogue.show(bulletinPages(s));
   }
 
   async _handleCathedral(roomId) {
@@ -696,6 +705,24 @@ export class CourtyardScene {
     }
   }
 
+  // Performs a station's rite. Split out from the A handler so the dialogue
+  // box can call it on close — read first, then act — without duplicating the
+  // dispatch in two places.
+  _runStation(s) {
+    if (s.kind === 'duty') this._handleDuty(s.id);
+    else if (s.kind === 'fire') this._handleFire(s);
+    else if (s.kind === 'chant') this._handleChant();
+    else if (s.kind === 'guru') this._handleGuru();
+    else if (s.kind === 'confession') this._handleConfession();
+    else if (s.kind === 'leaderboard') this._handleLeaderboard();
+    else if (s.kind === 'bulletin') this._handleBulletin();
+    else if (s.kind === 'cathedral') this._handleCathedral(s.roomId);
+    else if (s.kind === 'soul-altar') this._handleSoulAltar();
+    else if (s.kind === 'nursery') this._handleNursery();
+    else if (s.kind === 'mancala') this._handleMancala();
+    else if (s.kind === 'gate') this._handleSaveExit();
+  }
+
   _handleSoulAltar() {
     const season = this.seasonInfo?.season ?? 1;
     this.onToast(season >= 2
@@ -713,6 +740,10 @@ export class CourtyardScene {
 
   update(dt, input) {
     this.t += dt;
+
+    // While the box is up it owns the controls: the world keeps rendering
+    // behind it but nothing walks, and A/B belong to the text.
+    if (this.dialogue.active) { this.dialogue.update(dt, input); return; }
 
     this.giftPollTimer += dt;
     if (this.giftPollTimer > GIFT_POLL_MS / 1000) {
@@ -756,7 +787,10 @@ export class CourtyardScene {
       if (this.footDust[i].t > 0.5) this.footDust.splice(i, 1);
     }
 
+    const prevStation = this._activeStation;
     this._activeStation = this._nearestStation();
+    // stepping off a station re-arms its reading for the next approach
+    if (prevStation && this._activeStation !== prevStation) this._lastIntro = null;
     this._activeGift = this._nearestGift();
     this._activeDoor = this._nearestDoor();
 
@@ -766,18 +800,17 @@ export class CourtyardScene {
       } else if (this._activeGift && !this.holdingGift) {
         this._handlePickup(this._activeGift);
       } else if (this._activeStation) {
-        if (this._activeStation.kind === 'duty') this._handleDuty(this._activeStation.id);
-        else if (this._activeStation.kind === 'fire') this._handleFire(this._activeStation);
-        else if (this._activeStation.kind === 'chant') this._handleChant();
-        else if (this._activeStation.kind === 'guru') this._handleGuru();
-        else if (this._activeStation.kind === 'confession') this._handleConfession();
-        else if (this._activeStation.kind === 'leaderboard') this._handleLeaderboard();
-        else if (this._activeStation.kind === 'bulletin') this._handleBulletin();
-        else if (this._activeStation.kind === 'cathedral') this._handleCathedral(this._activeStation.roomId);
-        else if (this._activeStation.kind === 'soul-altar') this._handleSoulAltar();
-        else if (this._activeStation.kind === 'nursery') this._handleNursery();
-        else if (this._activeStation.kind === 'mancala') this._handleMancala();
-        else if (this._activeStation.kind === 'gate') this._handleSaveExit();
+        // Every station introduces itself before it acts. The box closes into
+        // the rite, so reading is never a detour — it is the way in.
+        const intro = LORE.stations[this._activeStation.id]
+          || LORE.stations[this._activeStation.kind];
+        if (intro && this._lastIntro !== this._activeStation.id) {
+          this._lastIntro = this._activeStation.id;
+          const st = this._activeStation;
+          this.dialogue.show([intro], { onClose: () => this._runStation(st) });
+        } else {
+          this._runStation(this._activeStation);
+        }
       } else {
         // A pressed with nothing in range: it DID register — give feedback so it
         // never feels dead. Rate-limited so tapping while walking isn't spammy.
@@ -1526,6 +1559,15 @@ export class CourtyardScene {
     return { radius: radii[tier], alpha: (0.28 + tier * 0.06) * pulse, tier };
   }
 
+  // Is A bound to anything where the player is standing? The "!" and the A
+  // handler read the same answer, so the mark can never promise an action that
+  // the button will not perform.
+  _hasAction() {
+    return !!(this._activeDoor
+      || (this._activeGift && !this.holdingGift)
+      || this._activeStation);
+  }
+
   _drawLocalPlayer(ctx) {
     for (const d of this.footDust) {
       const a = 1 - d.t / 0.5;
@@ -1738,6 +1780,11 @@ export class CourtyardScene {
     if (!this._floor) this._buildFloor();
     ctx.drawImage(this._floor, 0, 0, MAP_W, MAP_H);
     for (const item of this._collectDrawables(ctx)) item.draw();
+    // After the depth sort, so a pillar or a pew can never hide it. Still in
+    // world space, so it tracks the player rather than floating in a corner.
+    if (this._hasAction() && !this.dialogue.active) {
+      drawBang(ctx, Math.round(this.pc.x), Math.round(this.pc.y) - 24, this.t);
+    }
     this._drawFireflies(ctx);
 
     ctx.restore();
@@ -1753,22 +1800,7 @@ export class CourtyardScene {
     ctx.fillStyle = this._roomTint();
     ctx.fillRect(0, 0, W, H);
 
-    ctx.textAlign = 'center';
-    const promptBounce = Math.sin(this.t * 6) * 1.2;
-    if (this._activeDoor) {
-      ctx.font = '6px "Courier New", monospace';
-      ctx.fillStyle = GOLD.h;
-      const open = this.doors.get(`${this._activeDoor.col},${this._activeDoor.row}`);
-      ctx.fillText(open ? '[A] Close door' : '[A] Open door', W / 2, H - 16 + promptBounce);
-    } else if (this._activeGift && !this.holdingGift) {
-      ctx.font = '6px "Courier New", monospace';
-      ctx.fillStyle = GOLD.h;
-      ctx.fillText('[A] Pick up gift', W / 2, H - 16 + promptBounce);
-    } else if (this._activeStation) {
-      ctx.font = '6px "Courier New", monospace';
-      ctx.fillStyle = GOLD.h;
-      ctx.fillText(`[A] ${this._activeStation.label}`, W / 2, H - 16 + promptBounce);
-    }
+    this.dialogue.render(ctx);
   }
 
   exit() {
