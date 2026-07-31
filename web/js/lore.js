@@ -86,10 +86,29 @@ export const LORE = {
       text: 'Five hundred of them, set into the wall in rows, each one facing '
         + 'out.\n\nChant, and they chant with you.',
     },
+    // Three lines for one man, chosen by what is in your hands. None of them
+    // tells you where the switches are or what he will do with one — that is
+    // for the skull chamber and the first blow to explain.
     guru: {
       speaker: 'The Abbot',
       text: 'He does not look up. He never looks up.\n\n'
-        + '"Leave it. It will be counted."',
+        + 'His hands are open, and they are waiting.',
+    },
+    // shown when you arrive carrying a switch
+    scourge: {
+      speaker: 'The Abbot',
+      text: '"Kneel."\n\nHe takes it from you without a word.',
+    },
+    // shown when the fifth blow has landed
+    scourged: {
+      speaker: 'The Abbot',
+      text: 'The pain purifies. What is left is counted.\n\n'
+        + '"Again tomorrow."',
+    },
+    scourgedAlready: {
+      speaker: 'The Abbot',
+      text: 'He looks at the switch, and then at your back.\n\n'
+        + '"You have bled enough today."',
     },
     confession: {
       speaker: 'The Confessional',

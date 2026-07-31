@@ -7,6 +7,9 @@ export const DUTY_DEVOTION = 5;
 export const STREAK_BONUS_BASE = 15;
 export const GIFT_DEVOTION = { giverToCultist: 10, receiverFromCultist: 5, giverToGuru: 50 };
 export const GIFT_DAILY_LIMITS = { giverPerDay: 1, receiverPerDay: 10 };
+// The scourge replaces the parcel the Abbot used to accept, so it is worth
+// what that was worth — once a day, same as the old giver-to-guru limit.
+export const SCOURGE_DEVOTION = 50;
 
 export function todayStr(d = new Date()) {
   return d.toISOString().slice(0, 10);
@@ -76,7 +79,7 @@ export function ensureFreshDay(db, player) {
   db.prepare(`
     UPDATE players
     SET pray_today = 0, garden_today = 0, candles_today = 0,
-        gifts_given_today = 0, gifts_received_today = 0,
+        gifts_given_today = 0, gifts_received_today = 0, scourge_today = 0,
         flags_date = ?
     WHERE id = ?
   `).run(today, player.id);
@@ -84,7 +87,7 @@ export function ensureFreshDay(db, player) {
   return {
     ...player,
     pray_today: 0, garden_today: 0, candles_today: 0,
-    gifts_given_today: 0, gifts_received_today: 0,
+    gifts_given_today: 0, gifts_received_today: 0, scourge_today: 0,
     flags_date: today,
   };
 }

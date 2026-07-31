@@ -23,11 +23,17 @@ if (fs.existsSync(schemaFile)) {
   console.warn('Schema file not found — tables may need manual creation');
 }
 
-// Defensive migration for DBs created before flags_date existed.
-try {
-  db.exec('ALTER TABLE players ADD COLUMN flags_date TEXT');
-} catch {
-  // column already exists
+// Defensive migrations for DBs created before a column existed. Each runs in
+// its own try because the first failure would otherwise skip the rest.
+for (const ddl of [
+  'ALTER TABLE players ADD COLUMN flags_date TEXT',
+  'ALTER TABLE players ADD COLUMN scourge_today INTEGER DEFAULT 0',
+]) {
+  try {
+    db.exec(ddl);
+  } catch {
+    // column already exists
+  }
 }
 
 // Seed the fixed set of claimable Cathedral Rooms (see web/js/abbeyMap.js

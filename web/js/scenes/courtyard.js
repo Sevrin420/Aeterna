@@ -10,10 +10,11 @@ import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.j
 import { DialogueBox, drawBang } from '../dialogue.js';
 import { LORE, bulletinPages } from '../lore.js';
 import { FireRite } from '../firerite.js';
+import { Scourge, StickPile } from '../scourge.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, DOORS, ROOMS, SKULL_ROOM, NAVE, TRANSEPT, NAVE_CX, SKULL_WALL_ROW,
-  EXIT_ROW, EXIT_COLS,
+  EXIT_ROW, EXIT_COLS, STICKS,
 } from '../abbeyMap.js';
 import {
   FLOOR, WALL, EARTH, VOID, BLOOD, GOLD, WOOD, IRON, BONE, CLOTH, SOUL, MOSS,
@@ -110,7 +111,13 @@ export class CourtyardScene {
     // room doors (keyed "col,row" -> open?), and the running skull chant.
     this.litBraziers = new Set();   // legacy: kept for the prop renderer's key lookup
     this.fire = new FireRite(ALCOVES, px);
-    this.carrying = null;           // null | { kind: 'wood' | 'torch', alcove: i }
+    this.sticks = new StickPile(STICKS, px);
+    this.scourge = new Scourge({
+      onLash: (i) => sfx.lash(i),
+      onDone: () => this._endScourge(),
+    });
+    // null | { kind: 'wood' | 'torch', alcove: i } | { kind: 'stick' }
+    this.carrying = null;
     this.doors = new Map(DOORS.map((d) => [`${d.col},${d.row}`, false])); // closed
 
     this._chant = null;   // { n, line, t } while chanting
@@ -646,22 +653,66 @@ export class CourtyardScene {
     }
   }
 
-  async _handleGuru() {
-    if (!this.holdingGift) { this.onToast('You have nothing to offer the Abbot.'); return; }
-    // optimistic: the gift leaves your hand instantly; reconcile the Devotion
-    // (and revert) once the server responds, so it doesn't feel laggy.
-    this.holdingGift = false;
-    sfx.gift();
+  // The Abbot no longer takes parcels. He takes the switch out of your hands
+  // and uses it, and that is the whole transaction — so this handler only ever
+  // starts the cutscene; the Devotion is settled in _endScourge().
+  _handleGuru() {
+    if (this.scourge.active) return;
+    if (!this.carrying || this.carrying.kind !== 'stick') return;
+    if (this.player.scourge_today) return;   // the box already said so
+    this.carrying = null;
+    document.body.classList.add('rite-open');
+    this.scourge.begin(this._guruStation().x, this._guruStation().y, this.pc.x, this.pc.y);
+  }
+
+  _guruStation() { return STATIONS.find((s) => s.id === 'guru'); }
+
+  // The fifth blow has landed and the switch is in pieces. Award, then let the
+  // Abbot have the last word.
+  async _endScourge() {
+    document.body.classList.remove('rite-open');
+    this.pc.x = this.scourge.mx;
+    this.pc.y = this.scourge.my;
+    this.pc.dir = 'down';
+    this.player.scourge_today = 1;           // optimistic; the server is the truth
+    sfx.purify();
+    this.dialogue.show([LORE.stations.scourged]);
     try {
-      const res = await api.giftGive({ toGuru: true });
-      this.player.devotion += res.devotionGained;
-      this.onPlayerUpdate(this.player);
-      this.onToast(`The Abbot accepts your gift. +${res.devotionGained} Devotion`);
+      const res = await api.scourge();
+      if (!res.alreadyDone) {
+        this.player.devotion += res.devotionGained;
+        this.onPlayerUpdate(this.player);
+        this.onToast(`The pain is counted. +${res.devotionGained} Devotion`);
+      }
     } catch (e) {
-      this.holdingGift = true;
+      this.player.scourge_today = 0;
       sfx.error();
       this.onToast(e.message);
     }
+  }
+
+  // Taking a switch from the bundle by the skull-chamber wall.
+  _stickAction() {
+    if (this.carrying || this.holdingGift) return false;
+    const i = this.sticks.at(this.pc.x, this.pc.y);
+    if (i < 0) return false;
+    this.sticks.take(i);
+    this.carrying = { kind: 'stick' };
+    sfx.click();
+    return true;
+  }
+
+  // The Abbot has three lines and the one he uses is decided by what you are
+  // holding and whether he has already had you today. Every other station just
+  // reads its own entry.
+  _introFor(s) {
+    if (s.id === 'guru') {
+      if (this.carrying && this.carrying.kind === 'stick') {
+        return this.player.scourge_today ? LORE.stations.scourgedAlready : LORE.stations.scourge;
+      }
+      return LORE.stations.guru;
+    }
+    return LORE.stations[s.id] || LORE.stations[s.kind];
   }
 
   async _handleConfession() {
@@ -776,6 +827,28 @@ export class CourtyardScene {
     else if (s.kind === 'gate') this._handleSaveExit();
   }
 
+  _updateScourge(dt, input) {
+    this.scourge.update(dt);
+    const ws = this.scourge.worldScale;
+    this.t += dt * ws;
+    this.fire.update(dt * ws);
+    this.sticks.update(dt * ws);
+    if (this.crowd.length) this._updateCrowd(dt * ws);
+
+    this.pc.x = this.scourge.penX;
+    this.pc.y = this.scourge.penY;
+    this.pc.dir = 'down';
+    this.pc.moving = false;
+    this._activeStation = null;
+    this._activeGift = null;
+    this._activeDoor = null;
+    this._updateCamera();
+
+    // Nothing the player can press changes what happens to them now.
+    input.consumeAPress();
+    input.consumeBPress();
+  }
+
   _handleSoulAltar() {
     const season = this.seasonInfo?.season ?? 1;
     this.onToast(season >= 2
@@ -792,6 +865,12 @@ export class CourtyardScene {
   }
 
   update(dt, input) {
+    // The scourge is a cutscene: it takes movement, both buttons and the
+    // camera, and it decides how fast the rest of the abbey is allowed to run
+    // while it plays — flames slow with the fifth lash and stop dead on every
+    // impact, because a hit-stop that only freezes the fighters looks broken.
+    if (this.scourge.active) { this._updateScourge(dt, input); return; }
+
     this.t += dt;
 
     // While the box is up it owns the controls: the world keeps rendering
@@ -832,6 +911,7 @@ export class CourtyardScene {
     this._checkStairs();
     this._checkExit();
     this.fire.update(dt);
+    this.sticks.update(dt);
     if (this._chant) this._updateChant(dt);
     if (this.crowd.length) this._updateCrowd(dt);
     this._updateCamera(dt);
@@ -849,7 +929,9 @@ export class CourtyardScene {
     this._activeDoor = this._nearestDoor();
 
     if (input.consumeAPress()) {
-      if (this._fireAction()) {
+      if (this._stickAction()) {
+        // took a switch from the bundle
+      } else if (this._fireAction()) {
         // handled by the fire rite
       } else if (this._activeDoor) {
         this._toggleDoor(this._activeDoor);
@@ -858,11 +940,11 @@ export class CourtyardScene {
       } else if (this._activeStation) {
         // Every station introduces itself before it acts. The box closes into
         // the rite, so reading is never a detour — it is the way in.
-        const intro = LORE.stations[this._activeStation.id]
-          || LORE.stations[this._activeStation.kind];
-        if (intro && this._lastIntro !== this._activeStation.id) {
-          this._lastIntro = this._activeStation.id;
-          const st = this._activeStation;
+        const st = this._activeStation;
+        const intro = this._introFor(st);
+        const key = `${st.id}|${this.carrying ? this.carrying.kind : ''}`;
+        if (intro && this._lastIntro !== key) {
+          this._lastIntro = key;
           this.dialogue.show([intro], { onClose: () => this._runStation(st), ...boxOpts(st) });
         } else {
           this._runStation(this._activeStation);
@@ -1548,11 +1630,15 @@ export class CourtyardScene {
         ctx.fillRect(-8, 3, 16, 1.4);
       }
     } else if (s.id === 'guru') {
-      this._dropShadow(ctx, 0, 7, 6, 2.4);
-      drawCharacter(ctx, {
-        sheet: getGuruSprite(), dir: 'down', moving: false, animPhase: this.t,
-        x: 0, groundY: 7, targetHeight: 22.4,
-      });
+      if (this.scourge.active) {
+        this.scourge.drawAbbot(ctx, getGuruSprite(), this.t, () => this._dropShadow(ctx, 0, 7, 6, 2.4));
+      } else {
+        this._dropShadow(ctx, 0, 7, 6, 2.4);
+        drawCharacter(ctx, {
+          sheet: getGuruSprite(), dir: 'down', moving: false, animPhase: this.t,
+          x: 0, groundY: 7, targetHeight: 22.4,
+        });
+      }
     } else if (s.id === 'confession') {
       this._dropShadow(ctx, 0, 9, 8.5, 2.6);
       block(ctx, -7, -10, 14, 18, WOOD);          // timber booth
@@ -1621,6 +1707,10 @@ export class CourtyardScene {
   _hasAction() {
     const p = this.pc;
     if (this.carrying) {
+      // A switch has exactly one destination, and it is a man.
+      if (this.carrying.kind === 'stick') {
+        return !!(this._activeStation && this._activeStation.id === 'guru');
+      }
       // carrying something: the mark means "this bowl will take it"
       const b = this.fire.brazierAt(p.x, p.y);
       if (b >= 0 && !this.fire.isLit(b)) {
@@ -1631,12 +1721,14 @@ export class CourtyardScene {
     }
     if (this.fire.woodAt(p.x, p.y) >= 0) return true;
     if (this.fire.torchAt(p.x, p.y) >= 0) return true;
+    if (this.sticks.at(p.x, p.y) >= 0) return true;
     return !!(this._activeDoor
       || (this._activeGift && !this.holdingGift)
       || this._activeStation);
   }
 
   _drawLocalPlayer(ctx) {
+    if (this.scourge.active) { this.scourge.drawPenitent(ctx, this.mySheet, this.t); return; }
     for (const d of this.footDust) {
       const a = 1 - d.t / 0.5;
       const r = 1.5 + d.t * 3;
@@ -1649,7 +1741,8 @@ export class CourtyardScene {
       null, this.localEmoji, this.localChat, undefined, this._streakAura()
     );
     if (this.carrying) {
-      this.fire.drawCarried(ctx, this.pc.x, this.pc.y - 6, this.carrying.kind, this.t);
+      if (this.carrying.kind === 'stick') this.sticks.drawCarried(ctx, this.pc.x, this.pc.y - 6);
+      else this.fire.drawCarried(ctx, this.pc.x, this.pc.y - 6, this.carrying.kind, this.t);
     }
   }
 
@@ -1677,6 +1770,11 @@ export class CourtyardScene {
         const tx = px(a.torch.col), ty = px(a.torch.row);
         items.push({ y: ty, draw: () => this.fire.drawWallTorch(ctx, tx, ty, this.t, i * 3) });
       }
+    }
+    for (let i = 0; i < STICKS.length; i++) {
+      if (!this.sticks.has(i)) continue;
+      const sx = px(STICKS[i].col), sy = px(STICKS[i].row);
+      items.push({ y: sy, draw: () => this.sticks.draw(ctx, sx, sy, i) });
     }
   }
 
@@ -1861,17 +1959,24 @@ export class CourtyardScene {
     ctx.fillStyle = VOID;
     ctx.fillRect(0, 0, W, H);
 
+    // The rite shakes the frame, not the figures: during a hit-stop the world
+    // is frozen and only this offset moves, which is what makes the freeze
+    // read as an impact rather than as a dropped frame.
+    const sh = this.scourge.shakeOffset();
+
     ctx.save();
-    ctx.translate(-Math.round(this.cam.x), -Math.round(this.cam.y));
+    ctx.translate(-Math.round(this.cam.x) + sh.x, -Math.round(this.cam.y) + sh.y);
 
     // blit the pre-rendered floor (built once); MAP_W/MAP_H logical maps 1:1
     // to the cache's device pixels under the frame's 2x transform
     if (!this._floor) this._buildFloor();
     ctx.drawImage(this._floor, 0, 0, MAP_W, MAP_H);
+    this.scourge.drawGround(ctx);
     for (const item of this._collectDrawables(ctx)) item.draw();
+    this.scourge.drawWorldFx(ctx);
     // After the depth sort, so a pillar or a pew can never hide it. Still in
     // world space, so it tracks the player rather than floating in a corner.
-    if (this._hasAction() && !this.dialogue.active) {
+    if (this._hasAction() && !this.dialogue.active && !this.scourge.active) {
       drawBang(ctx, Math.round(this.pc.x), Math.round(this.pc.y) - 24, this.t);
     }
     this._drawFireflies(ctx);
@@ -1889,10 +1994,12 @@ export class CourtyardScene {
     ctx.fillStyle = this._roomTint();
     ctx.fillRect(0, 0, W, H);
 
+    this.scourge.drawScreenFx(ctx, W, H);
     this.dialogue.render(ctx);
   }
 
   exit() {
+    document.body.classList.remove('rite-open');
     this._unbindSocket();
     if (this._onKeyDown) window.removeEventListener('keydown', this._onKeyDown);
   }

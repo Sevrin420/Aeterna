@@ -8,7 +8,7 @@ import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
 import db from './db/database.js';
 import {
-  DUTY_DEVOTION, STREAK_BONUS_BASE, GIFT_DEVOTION, GIFT_DAILY_LIMITS,
+  DUTY_DEVOTION, STREAK_BONUS_BASE, GIFT_DEVOTION, GIFT_DAILY_LIMITS, SCOURGE_DEVOTION,
   todayStr, streakMultiplier, confessionCost, ensureFreshDay, pendingConfession, getSeasonInfo,
 } from './lib/gameLogic.js';
 
@@ -238,6 +238,27 @@ fastify.get('/gifts/nearby', async () => {
     SELECT id, loc_x, loc_y FROM gifts
     WHERE picked_up_by IS NULL AND given_to IS NULL
   `).all();
+});
+
+// ========== THE SCOURGE ==========
+// The Abbot's rite. The client walks a cut switch up the nave and plays the
+// five blows; the server only cares that it happened, and only once a day.
+fastify.post('/scourge', async (req, reply) => {
+  const { wallet } = req.body || {};
+  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+
+  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
+  if (!player) return reply.code(404).send({ error: 'Player not found' });
+
+  const fresh = ensureFreshDay(db, player);
+  if (fresh.scourge_today) {
+    return { success: true, alreadyDone: true, devotionGained: 0 };
+  }
+
+  db.prepare('UPDATE players SET scourge_today = 1, devotion = devotion + ? WHERE id = ?')
+    .run(SCOURGE_DEVOTION, fresh.id);
+
+  return { success: true, devotionGained: SCOURGE_DEVOTION };
 });
 
 fastify.post('/gifts/pickup', async (req, reply) => {

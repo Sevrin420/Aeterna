@@ -90,4 +90,22 @@ export const sfx = {
   error() {
     tone({ freq: 180, duration: 0.14, type: 'square', gain: 0.048 });
   },
+  // The scourge. A crack is a very short bright transient falling off a cliff,
+  // plus a body thud underneath it — two oscillators get surprisingly close.
+  // Each lash is pitched a little higher and hits a little harder than the
+  // last, so the five blows escalate by ear as well as by eye.
+  lash(i = 0) {
+    tone({ freq: 1500 + i * 190, duration: 0.055, type: 'square', gain: 0.062 + i * 0.008, glideTo: 200 });
+    tone({ freq: 96, duration: 0.2, type: 'sawtooth', gain: 0.05 + i * 0.007, glideTo: 38, delay: 0.012 });
+  },
+  snap() {
+    tone({ freq: 620, duration: 0.05, type: 'square', gain: 0.07, glideTo: 140 });
+    tone({ freq: 300, duration: 0.09, type: 'triangle', gain: 0.05, glideTo: 90, delay: 0.03 });
+  },
+  // What is left of you when it stops: a rising open fifth, no percussion.
+  purify() {
+    tone({ freq: 261.63, duration: 0.5, type: 'sine', gain: 0.055 });
+    tone({ freq: 392, duration: 0.5, type: 'sine', gain: 0.05, delay: 0.12 });
+    tone({ freq: 523.25, duration: 0.7, type: 'sine', gain: 0.045, delay: 0.26 });
+  },
 };

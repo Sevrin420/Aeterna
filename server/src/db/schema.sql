@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS players (
   candles_today INTEGER DEFAULT 0,
   gifts_given_today    INTEGER DEFAULT 0,
   gifts_received_today INTEGER DEFAULT 0,
+  scourge_today INTEGER DEFAULT 0,        -- the Abbot's rite is once a day
   confession_count     INTEGER DEFAULT 0,         -- for escalating cost
   held_gift_id  TEXT,
   has_child     INTEGER DEFAULT 0,

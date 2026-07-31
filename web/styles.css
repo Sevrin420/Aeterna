@@ -666,7 +666,10 @@ html, body {
 /* The in-canvas dialogue box fills nearly the whole screen and is meant to be
    the only thing being read, so the HUD steps aside while it is open. Faded
    rather than hidden so the layout never reflows underneath it. */
-body.dialogue-open .hud {
+/* Same for the scourge, which letterboxes the screen and would otherwise put
+   a Devotion counter inside the black bar. */
+body.dialogue-open .hud,
+body.rite-open .hud {
   opacity: 0;
   pointer-events: none;
   transition: opacity .12s ease-out;

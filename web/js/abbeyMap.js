@@ -118,6 +118,15 @@ for (const rm of ROOMS) DOORS.push(rm.door);
 export const SKULL_ROOM = { x0: 78, y0: 98, x1: 102, y1: 116 };
 export const SKULL_WALL_ROW = 98;
 
+// Bundles of cut switches left standing against the skull chamber's west wall
+// (the wall course is col 77, so col 78 is the floor tile they lean on). The
+// abbey does not say what they are for; the Abbot's empty hands do.
+export const STICKS = [
+  { col: SKULL_ROOM.x0, row: 103 },
+  { col: SKULL_ROOM.x0, row: 107 },
+  { col: SKULL_ROOM.x0, row: 111 },
+];
+
 function buildGrid() {
   const grid = blank();
 

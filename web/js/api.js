@@ -59,6 +59,9 @@ export const api = {
   confession() {
     return req('/confession', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
   },
+  scourge() {
+    return req('/scourge', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
+  },
   giftsNearby() {
     return req('/gifts/nearby');
   },
