@@ -3,7 +3,7 @@
 import {
   CW, CH, SURF, surf, height, idx, DISTRICTS, LANDMARKS, ROAD_PITCH, ROAD_W,
   surfaceAt, solidAt, districtAtCell, nearestRoad, isOwned, owned, ownedIncome,
-  districtOutline, BUILDINGS, GARAGES, SAFEHOUSES,
+  districtOutline, BUILDINGS, GARAGES, SAFEHOUSES, junctionPhase, isSignalled,
 } from './city.js';
 import { toScreen, toWorld, depth, drawBox, drawQuad, projectPath, TW, TH, ZH } from './iso.js';
 import {
@@ -561,11 +561,13 @@ function update(dt) {
   for (const c of world.cars) {
     if (c.driver) continue;
     if (c.ai === 'traffic') {
-      stepTrafficCar(c, dt, world.cars);
+      stepTrafficCar(c, dt, world.cars, world.t);
       // A background car that has been pinned for a few seconds is stuck on
       // geometry no steering rule will get it off. Recycle it onto a road
       // rather than leaving a dead prop in the middle of the city.
-      if (Math.abs(c.speed) < 0.6) {
+      // A car sitting at a red is stopped on purpose — recycling it teleports
+      // queues away and makes the signals look broken.
+      if (Math.abs(c.speed) < 0.6 && !c.waiting) {
         c.stuck = (c.stuck || 0) + dt;
         if (c.stuck > 3) {
           const r = nearestRoad(p.x + (Math.random() - 0.5) * 70, p.y + (Math.random() - 0.5) * 70);
@@ -936,6 +938,7 @@ function render() {
   ctx.save();
   ctx.translate(VW / 2 - cam.x + shx, VH / 2 - cam.y + shy);
   ctx.drawImage(cityCanvas, cityOx, cityOy);
+  drawSignals();
 
   // --- depth-sorted layer: buildings, entities and effects together ---
   const items = [];
@@ -988,6 +991,51 @@ function render() {
   drawHUD();
   if (ui.map) drawMap();
   if (ui.menu) drawMenu();
+}
+
+// Traffic signals, painted on the road rather than hung on masts. At this
+// scale and this camera angle a signal head would be three pixels of nothing;
+// a bar across the mouth of the junction reads instantly from above, and it is
+// how a 16-bit game would have solved it.
+//
+// Drawn flat on the ground before the depth-sorted pass, so cars sit on top of
+// the markings rather than being occluded by them.
+function drawSignals() {
+  const p = world.player;
+  const R = 30;
+  const j0x = Math.max(0, Math.floor((p.x - R) / ROAD_PITCH));
+  const j1x = Math.min(Math.floor(CW / ROAD_PITCH), Math.ceil((p.x + R) / ROAD_PITCH));
+  const j0y = Math.max(0, Math.floor((p.y - R) / ROAD_PITCH));
+  const j1y = Math.min(Math.floor(CH / ROAD_PITCH), Math.ceil((p.y + R) / ROAD_PITCH));
+  // RULE 5 — the city already spends its saturated accent on turf neon, and a
+  // green go-bar in the same lime family reads as a district border. So only
+  // the STOP bar is saturated; an open approach is a pale road marking, which
+  // is what it would be in a real street anyway.
+  const GO = '#8fa0bc', STOP = NEON.blackbulls.mid;
+
+  for (let jy = j0y; jy <= j1y; jy++) {
+    for (let jx = j0x; jx <= j1x; jx++) {
+      const bx = jx * ROAD_PITCH, by = jy * ROAD_PITCH;
+      if (bx < 1 || by < 1 || bx + ROAD_W >= CW || by + ROAD_W >= CH) continue;
+      if (!isSignalled(jx, jy)) continue;
+      if (surfaceAt(bx + 0.5, by + 0.5) !== SURF.ROAD) continue;
+      const ph = junctionPhase(jx, jy, world.t);
+      // Amber shows as the green bar dimmed and pulsing, so a driver gets the
+      // same warning the AI acts on.
+      const pulse = ph.amber ? 0.35 + Math.abs(Math.sin(world.t * 7)) * 0.4 : 1;
+      for (const axis of ['x', 'y']) {
+        const open = ph.green === axis;
+        const col = open ? GO : STOP;
+        const a = open ? 0.2 * pulse : 0.5;
+        // one bar across each of the two approaches on this axis
+        for (const side of [-1, 1]) {
+          const t0 = side < 0 ? -0.42 : ROAD_W;
+          if (axis === 'x') drawQuad(ctx, bx + t0, by, 0.42, ROAD_W, withAlpha(col, a));
+          else drawQuad(ctx, bx, by + t0, ROAD_W, 0.42, withAlpha(col, a));
+        }
+      }
+    }
+  }
 }
 
 // Buildings draw in the sorted pass so cars and people can pass behind them.

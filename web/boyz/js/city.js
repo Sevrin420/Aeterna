@@ -254,6 +254,57 @@ export function nearestRoad(x, y, maxR = 12) {
   return { x: x, y: y };
 }
 
+// --- traffic signals ------------------------------------------------------
+// Every crossing of two road bands is a signalled junction. There is no stored
+// state: the phase is a pure function of the junction's grid position and the
+// clock, so the AI and the renderer always agree and nothing has to be saved,
+// spawned, or culled.
+//
+// The per-junction offset is deliberate. Without it the whole city blinks in
+// unison, which looks like a bug; stepping the offset along the grid gives the
+// rough green waves you get on a real arterial.
+export const SIGNAL_CYCLE = 4.5;   // seconds of green per axis
+export const SIGNAL_AMBER = 0.9;   // trailing seconds of that green
+
+// Only the major crossings are signalled — one junction in four. Junctions sit
+// every 8 cells, which is about 1.2 seconds apart at traffic speed, so
+// signalling all of them means a car stops every second or so and the city
+// reads as permanently gridlocked. The unsignalled ones are uncontrolled: cars
+// yield to whatever is already in the box via the ordinary look-ahead.
+export function isSignalled(jx, jy) { return (jx & 1) === 0 && (jy & 1) === 0; }
+
+// Offsetting by (jx + jy) times the block travel time makes the phase a car
+// experiences stay constant as it drives, which is a green wave — make one
+// light and you make the next. It only works for one diagonal (traffic heading
+// +x/+y); the opposite pair gets the anti-wave. Half the city flowing beats a
+// random offset where nobody does.
+const BLOCK_TIME = 1.2;
+
+export function junctionPhase(jx, jy, t) {
+  const span = SIGNAL_CYCLE * 2;
+  const local = (((t + (jx + jy) * BLOCK_TIME) % span) + span) % span;
+  const green = local < SIGNAL_CYCLE ? 'x' : 'y';
+  const into = local < SIGNAL_CYCLE ? local : local - SIGNAL_CYCLE;
+  return { green, amber: into > SIGNAL_CYCLE - SIGNAL_AMBER };
+}
+
+// True if a car travelling along `axis` may enter this junction right now.
+// Unsignalled junctions are always open.
+export function signalOpen(jx, jy, t, axis) {
+  if (!isSignalled(jx, jy)) return true;
+  const ph = junctionPhase(jx, jy, t);
+  return ph.green === axis && !ph.amber;
+}
+
+// Distance from `along` to the near edge of the next junction in direction
+// `dir`, or -1 when the car is already inside one (it must clear the box, not
+// stop in it).
+export function stopLineDist(along, dir) {
+  if ((along % ROAD_PITCH) < ROAD_W) return -1;
+  const band = Math.floor(along / ROAD_PITCH);
+  return dir > 0 ? (band + 1) * ROAD_PITCH - along : along - (band * ROAD_PITCH + ROAD_W);
+}
+
 // --- turf ownership -------------------------------------------------------
 // Territory the Boyz have taken. Flipping a district turns its neon lime and
 // starts it paying passive income, which is the loop the missions feed.

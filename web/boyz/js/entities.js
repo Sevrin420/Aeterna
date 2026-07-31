@@ -5,7 +5,10 @@
 // that scales with speed, people have a flat top speed. It should feel like a
 // 16-bit GTA, which means responsive over realistic.
 
-import { solidAt, carSolidAt, nearestRoad, districtAtCell, surfaceAt as surfaceOf, CW, CH } from './city.js';
+import {
+  solidAt, carSolidAt, nearestRoad, districtAtCell, surfaceAt as surfaceOf, CW, CH,
+  signalOpen, stopLineDist,
+} from './city.js';
 import { BOYZ, CABAL, COP, ramp, NEON } from './palette.js';
 import { dirFromVec } from './sprites.js';
 
@@ -295,7 +298,32 @@ export function initTraffic(car) {
   return car;
 }
 
-export function stepTrafficCar(car, dt, cars) {
+// Nose-in recovery. A car facing a wall used to flip to the other axis and
+// pick a direction at random, which mid-block points it at the building on the
+// far side just as often — so it reverses, re-noses, flips again, and sits
+// there rocking forever. That single behaviour accounted for most of the
+// stationary traffic in the city.
+//
+// Look instead: probe all four cardinal directions, take the one with the most
+// clear road ahead, and break ties in favour of carrying straight on.
+function reroute(car) {
+  let bestClear = 0, best = null;
+  for (const [ax, dir] of [['x', 1], ['x', -1], ['y', 1], ['y', -1]]) {
+    const dx = ax === 'x' ? dir : 0, dy = ax === 'y' ? dir : 0;
+    let clear = 0;
+    for (let s = 1; s <= 6; s++) {
+      if (carSolidAt(car.x + dx * s, car.y + dy * s)) break;
+      clear = s;
+    }
+    const keep = ax === car.axis && dir === car.tdir ? 0.5 : 0;
+    if (clear >= 2 && clear + keep > bestClear) { bestClear = clear + keep; best = [ax, dir]; }
+  }
+  if (!best) return false;
+  car.axis = best[0]; car.tdir = best[1];
+  return true;
+}
+
+export function stepTrafficCar(car, dt, cars, t = 0) {
   if (car.axis == null) initTraffic(car);
 
   let along = car.axis === 'x' ? car.x : car.y;
@@ -363,17 +391,40 @@ export function stepTrafficCar(car, dt, cars) {
       const ahead = rx * fx + ry * fy;
       if (ahead < car.len * 0.6 || ahead > car.len + o.len + 1.4) continue;
       const side = Math.abs(rx * -fy + ry * fx);
-      if (side < (car.wid + o.wid) * 0.98) { throttle = -0.3; break; }
+      if (side < (car.wid + o.wid) * 0.98) { throttle = -0.3; car.queued = true; break; }
     }
   }
+
+  // Traffic signals. A car stops at the line when its axis has the red, but
+  // never once it is already inside the box — stopping there deadlocks the
+  // junction against the cross traffic that just got the green. Same reason it
+  // won't enter on a green if the queue beyond the junction is already backed
+  // up to the line: blocking the box is how a grid gridlocks.
+  car.waiting = false;
+  const gap = stopLineDist(along, car.tdir);
+  if (gap >= 0) {
+    const bandAlong = Math.floor(along / PITCH);
+    const jAlong = car.tdir > 0 ? bandAlong + 1 : bandAlong;
+    const jCross = Math.floor(cross / PITCH);
+    const jx = car.axis === 'x' ? jAlong : jCross;
+    const jy = car.axis === 'x' ? jCross : jAlong;
+    // brake early enough to actually stop: v^2 / 2a, with a margin
+    const need = 0.55 + (car.speed * car.speed) / (2 * (car.brake || 28));
+    const stop = !signalOpen(jx, jy, t, car.axis) || car.queued;
+    if (stop && gap < need) {
+      throttle = gap < 0.8 ? -1 : -0.5;
+      car.waiting = true;
+    }
+  }
+  car.queued = false;
+
   // and don't drive into a building — look further ahead the faster you're going
   const look = Math.max(2.0, car.len + Math.abs(car.speed) * 0.14);
   if (carSolidAt(car.x + Math.cos(car.ang) * look, car.y + Math.sin(car.ang) * look)) {
     throttle = -0.4;
     if (car.junctionCd <= 0) {
       car.junctionCd = 1.4;
-      car.axis = car.axis === 'x' ? 'y' : 'x';
-      car.tdir = Math.random() < 0.5 ? 1 : -1;
+      reroute(car);
     }
   }
   stepCar(car, dt, throttle, steer);
