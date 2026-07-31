@@ -152,6 +152,33 @@ function build() {
 }
 build();
 
+// --- building footprints --------------------------------------------------
+// Merged rectangles, extracted once. Rendering needs these as discrete objects
+// (not a baked image) so each one can be depth-sorted against cars and people —
+// otherwise everything in the city floats over the rooftops.
+export const BUILDINGS = [];
+(function extractBuildings() {
+  const seen = new Uint8Array(CW * CH);
+  for (let y = 0; y < CH; y++) {
+    for (let x = 0; x < CW; x++) {
+      const i = idx(x, y);
+      const h = height[i];
+      if (!h || seen[i]) continue;
+      let w = 1;
+      while (x + w < CW && height[idx(x + w, y)] === h && !seen[idx(x + w, y)]) w++;
+      let d = 1;
+      outer: while (y + d < CH) {
+        for (let k = 0; k < w; k++) {
+          if (height[idx(x + k, y + d)] !== h || seen[idx(x + k, y + d)]) break outer;
+        }
+        d++;
+      }
+      for (let yy = y; yy < y + d; yy++) for (let xx = x; xx < x + w; xx++) seen[idx(xx, yy)] = 1;
+      BUILDINGS.push({ x, y, w, d, h, seed: ((x * 2654435761) ^ (y * 40503)) >>> 0 });
+    }
+  }
+})();
+
 export function surfaceAt(x, y) {
   if (x < 0 || y < 0 || x >= CW || y >= CH) return SURF.WATER;
   return surf[idx(x | 0, y | 0)];

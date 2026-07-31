@@ -3,7 +3,7 @@
 import {
   CW, CH, SURF, surf, height, idx, DISTRICTS, LANDMARKS, ROAD_PITCH, ROAD_W,
   surfaceAt, solidAt, districtAtCell, nearestRoad, isOwned, owned, ownedIncome,
-  districtOutline,
+  districtOutline, BUILDINGS,
 } from './city.js';
 import { toScreen, toWorld, depth, drawBox, drawQuad, projectPath, TW, TH, ZH } from './iso.js';
 import {
@@ -46,16 +46,54 @@ addEventListener('keydown', (e) => {
   if (KEYMAP[e.code] || ['Space', 'KeyE', 'ShiftLeft', 'Enter'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyE') world.tryAction();
   if (e.code === 'KeyM') ui.map = !ui.map;
+  if (e.code === 'KeyQ') cycleWeapon();
+  if (/^Digit[1-4]$/.test(e.code)) {
+    const w2 = WEAPON_ORDER[+e.code.slice(5) - 1];
+    if (w2 === 'pistol' || (world.ammo[w2] || 0) > 0) world.player.weaponId = w2;
+  }
   if (e.code === 'Tab') { e.preventDefault(); ui.map = !ui.map; }
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
+
+// Mouse aim. Shooting used to fire along the facing direction in eight steps,
+// which meant you could not hit anything you were not already walking at. The
+// cursor is converted to a world point and the player aims at it.
+const mouse = { sx: 0, sy: 0, down: false, has: false };
+cv.addEventListener('mousemove', (e) => {
+  const r = cv.getBoundingClientRect();
+  mouse.sx = e.clientX - r.left; mouse.sy = e.clientY - r.top; mouse.has = true;
+});
+cv.addEventListener('mousedown', (e) => { if (e.button === 0) mouse.down = true; });
+addEventListener('mouseup', () => { mouse.down = false; });
+cv.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// World-space aim vector for the player this frame.
+function aimVector() {
+  const p = world.player;
+  // Touch and gamepad-less play get auto-aim at the nearest hostile — thumb
+  // controls can't aim, and without this the mobile build is unplayable.
+  if (!mouse.has || touch.active || touch.fire) {
+    const t = world.nearestHostile(p.x, p.y, 16);
+    if (t) { const d = Math.hypot(t.x - p.x, t.y - p.y) || 1; return [(t.x - p.x) / d, (t.y - p.y) / d]; }
+    const f = FACE_VEC[p.dir] || [0, 1];
+    return f;
+  }
+  const wp = toWorld(mouse.sx - VW / 2 + cam.x, mouse.sy - VH / 2 + cam.y);
+  const dx = wp.x - p.x, dy = wp.y - p.y;
+  const l = Math.hypot(dx, dy) || 1;
+  return [dx / l, dy / l];
+}
+const FACE_VEC = {
+  n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0],
+  ne: [0.7, -0.7], nw: [-0.7, -0.7], se: [0.7, 0.7], sw: [-0.7, 0.7],
+};
 
 function readInput() {
   input.up = keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0;
   input.down = keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0;
   input.left = keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0;
   input.right = keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0;
-  input.fire = keys.has('Space');
+  input.fire = keys.has('Space') || mouse.down;
   input.run = keys.has('ShiftLeft') || keys.has('ShiftRight');
   // touch
   if (touch.active) {
@@ -104,6 +142,25 @@ function bindTouch() {
   press(btnAct, () => world.tryAction());
 }
 
+// --- weapons --------------------------------------------------------------
+// Tiers unlock through the campaign and from street pickups. Damage per second
+// is deliberately close across the set; what changes is range, spread and how
+// they handle, so the choice is about the situation rather than a strict upgrade.
+export const WEAPONS = {
+  pistol:  { name: 'Pistol',  cd: 0.20, dmg: 22, pellets: 1, spread: 0.05, shake: 1.4, ammo: Infinity },
+  smg:     { name: 'SMG',     cd: 0.08, dmg: 12, pellets: 1, spread: 0.16, shake: 1.1, ammo: 240 },
+  shotgun: { name: 'Shotgun', cd: 0.62, dmg: 15, pellets: 6, spread: 0.55, shake: 4.2, ammo: 40 },
+  rifle:   { name: 'Rifle',   cd: 0.30, dmg: 42, pellets: 1, spread: 0.02, shake: 2.6, ammo: 90 },
+};
+export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'rifle'];
+
+function cycleWeapon() {
+  const have = WEAPON_ORDER.filter((w) => w === 'pistol' || (world.ammo[w] || 0) > 0);
+  const i = have.indexOf(world.player.weaponId || 'pistol');
+  world.player.weaponId = have[(i + 1) % have.length];
+  world.toast(WEAPONS[world.player.weaponId].name);
+}
+
 // --- world ----------------------------------------------------------------
 const ui = { map: false, toasts: [], brief: null, briefT: 0 };
 
@@ -119,6 +176,14 @@ const world = {
   missionEnemies: [], boss: null, missionVan: null,
   crew: [],
   income: 0,
+  parts: [],          // blood, sparks, brass, smoke
+  // free-play bookkeeping — all of these feed server-priced point events
+  rampage: { kills: 0, t: 0 },
+  jacked: new Set(),
+  peakWanted: 0,
+  ammo: {},
+  shake: 0,           // screen shake magnitude
+  hitstop: 0,         // brief freeze on a kill, so hits land
 
   sfx(kind) { sfx(kind); },
 
@@ -187,6 +252,10 @@ const world = {
     }
   },
 
+  claimed(id) {
+    sendEvent('district', id).catch(() => {});
+  },
+
   onMissionComplete(m) {
     sendEvent('mission', String(m.id)).catch(() => {});
     ui.brief = null;
@@ -195,11 +264,40 @@ const world = {
   onMissionFail() { this.despawnMissionEnemies(); },
 };
 
+// Impact particles. Cheap, short-lived, and the single biggest contributor to
+// whether shooting feels like it connects.
+function burst(x, y, n, col, spd = 6, life = 0.45, z = 1) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = spd * (0.4 + Math.random());
+    world.parts.push({
+      x, y, z, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 2 + Math.random() * 4,
+      life, max: life, col, size: 1 + Math.random() * 1.6,
+    });
+  }
+}
+function stepParts(dt) {
+  for (const q of world.parts) {
+    q.x += q.vx * dt; q.y += q.vy * dt;
+    q.z += q.vz * dt; q.vz -= 14 * dt;
+    if (q.z < 0) { q.z = 0; q.vz *= -0.35; q.vx *= 0.6; q.vy *= 0.6; }
+    q.vx *= 1 - dt * 2.2; q.vy *= 1 - dt * 2.2;
+    q.life -= dt;
+  }
+  world.parts = world.parts.filter((q) => q.life > 0);
+  if (world.parts.length > 320) world.parts.splice(0, world.parts.length - 320);
+}
+
 let campaign;
 
 function enterCar(c) {
   const p = world.player;
   p.inCar = c; c.driver = p; c.ai = null;
+  // Every distinct vehicle boosted pays a small bounty, capped server-side.
+  if (!world.jacked.has(c.id)) {
+    world.jacked.add(c.id);
+    world.award(15, 'Whip boosted');
+    sendEvent('carjack', `${getWalletId().slice(-6)}-${c.id}`).catch(() => {});
+  }
   world.toast('Whip acquired');
   if (c.siren) world.setWanted(Math.max(world.wanted, 2));
   else if (Math.random() < 0.5) world.setWanted(Math.max(world.wanted, 1));
@@ -247,6 +345,12 @@ function sfx(kind) {
 
 // --- update ---------------------------------------------------------------
 function update(dt) {
+  // Hitstop: a few frames of frozen time when you land a kill. Costs nothing
+  // and is most of why a hit reads as a hit.
+  if (world.hitstop > 0) { world.hitstop -= dt; return; }
+  world.shake *= 1 - Math.min(1, dt * 9);
+  if (world.shake < 0.05) world.shake = 0;
+  stepParts(dt);
   world.t += dt;
   readInput();
   const p = world.player;
@@ -288,10 +392,21 @@ function update(dt) {
   } else {
     stepPerson(p, dt, wx, wy, input.run);
     if (input.fire && p.fireCd <= 0) {
-      p.fireCd = 0.18;
+      let wid = p.weaponId || 'pistol';
+      if (wid !== 'pistol' && (world.ammo[wid] || 0) <= 0) { wid = 'pistol'; p.weaponId = 'pistol'; }
+      const wpn = WEAPONS[wid];
+      if (wid !== 'pistol') world.ammo[wid]--;
+      p.fireCd = wpn.cd;
       p.flash = 0.05;
-      const f = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0], ne: [0.7, -0.7], nw: [-0.7, -0.7], se: [0.7, 0.7], sw: [-0.7, 0.7] }[p.dir] || [0, 1];
-      world.bullets.push(makeBullet(p.x, p.y, f[0], f[1], 'player', 24));
+      const [ax, ay] = aimVector();
+      p.dir = dirFromVec(ax, ay);            // face what you're shooting at
+      for (let i = 0; i < wpn.pellets; i++) {
+        const sp = wpn.spread * (Math.random() - 0.5);
+        const cs = Math.cos(sp), sn = Math.sin(sp);
+        world.bullets.push(makeBullet(p.x, p.y, ax * cs - ay * sn, ax * sn + ay * cs, 'player', wpn.dmg));
+      }
+      burst(p.x + ax * 0.6, p.y + ay * 0.6, 2, '#ffd45c', 3, 0.25);   // brass
+      world.shake = Math.max(world.shake, wpn.shake);
       world.panic = 4;
       sfx('shot');
     }
@@ -299,6 +414,7 @@ function update(dt) {
   if (p.fireCd > 0) p.fireCd -= dt;
   if (p.flash > 0) p.flash -= dt;
   if (world.panic > 0) world.panic -= dt;
+  for (const e of world.people) if (e.hurt > 0) e.hurt -= dt;
 
   // entities
   for (const c of world.cars) {
@@ -317,7 +433,7 @@ function update(dt) {
   // bullets
   for (const b of world.bullets) {
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
-    if (solidAt(b.x, b.y)) { b.life = 0; continue; }
+    if (solidAt(b.x, b.y)) { b.life = 0; burst(b.x, b.y, 3, '#ffd45c', 4, 0.22, 1.2); continue; }
     for (const e of world.people) {
       if (e.dead || e.faction === b.faction) continue;
       if (b.faction === 'player' && e.faction === 'crew') continue;
@@ -325,7 +441,17 @@ function update(dt) {
       if ((b.faction === 'cabal' || b.faction === 'cop') && (e.faction === 'cabal' || e.faction === 'cop')) continue;
       if (Math.hypot(e.x - b.x, e.y - b.y) < 0.8) {
         e.hp -= b.dmg; b.life = 0;
-        if (e.hp <= 0) { e.dead = true; onKill(e); }
+        // impact: blood, a shove along the bullet, and a flash of hit colour
+        const l = Math.hypot(b.vx, b.vy) || 1;
+        burst(e.x, e.y, 5, '#c2242e', 5, 0.4, 1);
+        e.x += (b.vx / l) * 0.18; e.y += (b.vy / l) * 0.18;
+        e.hurt = 0.12;
+        if (e.hp <= 0) {
+          e.dead = true;
+          burst(e.x, e.y, 12, '#8c1a22', 7, 0.7, 1);
+          if (b.faction === 'player') { world.hitstop = 0.045; world.shake = Math.max(world.shake, 3); }
+          onKill(e);
+        }
         break;
       }
     }
@@ -339,10 +465,36 @@ function update(dt) {
       pk.taken = true;
       sfx('pickup');
       if (pk.type === 'cash') { world.cash += 250; world.toast('+$250'); }
-      else world.toast(pk.label || 'Collected');
+      else if (pk.type === 'health') { p.hp = Math.min(100, p.hp + 35); world.toast('+35 HP'); }
+      else if (pk.type === 'weapon') {
+        p.weaponId = pk.weapon;
+        world.ammo[pk.weapon] = (world.ammo[pk.weapon] || 0) + WEAPONS[pk.weapon].ammo;
+        world.toast(`${WEAPONS[pk.weapon].name} acquired`);
+      } else world.toast(pk.label || 'Collected');
     }
   }
-  world.pickups = world.pickups.filter((pk) => !pk.taken || pk.type === 'objective');
+  world.pickups = world.pickups.filter((pk) => {
+    if (pk.taken) return pk.type === 'objective';
+    if (pk.type === 'objective') return true;
+    return Math.hypot(pk.x - p.x, pk.y - p.y) < 90;
+  });
+
+  // escaping heat pays, and staying alive under it pays a trickle
+  if (world.wanted > world.peakWanted) world.peakWanted = world.wanted;
+  if (world.wanted > 0) {
+    world.surviveT = (world.surviveT || 0) + dt;
+    if (world.surviveT >= 300) {
+      world.surviveT = 0;
+      world.award(45, 'Survived the heat');
+      sendEvent('survive', `${Math.floor(Date.now() / 1000)}`).catch(() => {});
+    }
+  } else if (world.peakWanted >= 3) {
+    world.award(90, `Lost ${world.peakWanted} stars`);
+    sendEvent('escape', `${Math.floor(Date.now() / 1000)}`).catch(() => {});
+    world.peakWanted = 0; world.surviveT = 0;
+  } else {
+    world.peakWanted = 0;
+  }
 
   // wanted level
   if (world.wanted > 0) {
@@ -367,6 +519,24 @@ function update(dt) {
     return Math.hypot(e.x - p.x, e.y - p.y) < 90;
   });
   world.cars = world.cars.filter((c) => (c.dead ? c.burn < 12 : Math.hypot(c.x - p.x, c.y - p.y) < 110));
+  // keep a few weapon/health crates on the street near the player
+  if (world.pickups.filter((q) => q.type === 'weapon' || q.type === 'health').length < 5) {
+    const tries = 12;
+    for (let i = 0; i < tries; i++) {
+      const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * 34;
+      const px2 = p.x + Math.cos(a) * r, py2 = p.y + Math.sin(a) * r;
+      if (solidAt(px2, py2)) continue;
+      const roll = Math.random();
+      if (roll < 0.32) world.pickups.push(makePickup(px2, py2, 'health', 'Health'));
+      else {
+        const w2 = WEAPON_ORDER[1 + ((Math.random() * 3) | 0)];
+        const pk = makePickup(px2, py2, 'weapon', WEAPONS[w2].name);
+        pk.weapon = w2;
+        world.pickups.push(pk);
+      }
+      break;
+    }
+  }
   if (world.people.filter((e) => e.faction === 'ped').length < 18) spawnPeds(world, 6);
   if (world.cars.filter((c) => c.ai === 'traffic').length < 12) spawnTraffic(world, 4);
 
@@ -389,7 +559,22 @@ function update(dt) {
 }
 
 function onKill(e) {
-  if (e.faction === 'cabal') { world.award(25, 'Cabal down'); world.panic = 4; }
+  if (e.faction === 'cabal') {
+    world.award(25, 'Cabal down');
+    world.panic = 4;
+    // rampage: ten of them inside a rolling minute
+    if (world.t - world.rampage.t > 60) { world.rampage.kills = 0; world.rampage.t = world.t; }
+    world.rampage.kills++;
+    if (world.rampage.kills >= 10) {
+      world.rampage.kills = 0; world.rampage.t = world.t;
+      world.award(120, 'RAMPAGE');
+      sendEvent('rampage', `${Math.floor(Date.now() / 1000)}`).catch(() => {});
+    }
+    if (!world.firstBlood) {
+      world.firstBlood = true;
+      sendEvent('firstblood', 'x').catch(() => {});
+    }
+  }
   else if (e.faction === 'cop') { world.setWanted(Math.min(5, world.wanted + 1)); world.panic = 5; }
   else if (e.faction === 'ped') { world.setWanted(Math.min(5, world.wanted + 1)); world.panic = 5; }
   sfx('hit');
@@ -443,40 +628,8 @@ function bakeCity() {
     }
   }
 
-  // buildings, same order so nearer blocks overlap further ones
-  for (let s = 0; s < CW + CH; s++) {
-    for (let x = Math.max(0, s - CH + 1); x < Math.min(CW, s + 1); x++) {
-      const y = s - x;
-      const i = idx(x, y);
-      const hgt = height[i];
-      if (!hgt) continue;
-      // only draw a footprint once, from its min corner
-      const left = x > 0 && height[idx(x - 1, y)] === hgt;
-      const up = y > 0 && height[idx(x, y - 1)] === hgt;
-      if (left || up) continue;
-      let w2 = 1; while (x + w2 < CW && height[idx(x + w2, y)] === hgt) w2++;
-      let d2 = 1;
-      outer: while (y + d2 < CH) {
-        for (let k = 0; k < w2; k++) if (height[idx(x + k, y + d2)] !== hgt) break outer;
-        d2++;
-      }
-      const dd = districtAtCell(x, y);
-      const R = (dd && (dd.id === 'blackbulls' || dd.id === 'docks')) ? { ...BUILDING } : BUILDING;
-      drawBox(g, R, x, y, w2, d2, hgt);
-      // lit windows — a sparse grid on the two visible faces
-      const n = ((x * 2654435761) ^ (y * 40503)) >>> 0;
-      for (let f = 0; f < 2; f++) {
-        for (let wy2 = 1; wy2 < hgt - 0.5; wy2 += 1.6) {
-          for (let wx2 = 0.6; wx2 < (f ? d2 : w2) - 0.4; wx2 += 1.4) {
-            if (((n + wx2 * 31 + wy2 * 17) | 0) % 7 > 3) continue;
-            const p1 = f ? toScreen(x, y + wx2, wy2) : toScreen(x + wx2, y + d2, wy2);
-            g.fillStyle = ((n + wx2 + wy2) | 0) % 5 === 0 ? 'rgba(255,210,130,0.55)' : 'rgba(150,190,230,0.25)';
-            g.fillRect(p1.x - 1.5, p1.y - 3, 3, 3);
-          }
-        }
-      }
-    }
-  }
+  // Buildings are NOT baked. They have to sort against cars and people every
+  // frame or the whole city draws on top of them — see drawBuilding().
 
   // street lamps along the road grid
   for (let y = 0; y < CH; y += ROAD_PITCH) {
@@ -534,12 +687,29 @@ function render() {
   if (owned.size !== lastOwned) { lastOwned = owned.size; cityDirty = true; }
   if (cityDirty || !cityCanvas) bakeCity();
 
+  const shx = world.shake ? (Math.random() - 0.5) * world.shake * 2 : 0;
+  const shy = world.shake ? (Math.random() - 0.5) * world.shake * 2 : 0;
   ctx.save();
-  ctx.translate(VW / 2 - cam.x, VH / 2 - cam.y);
+  ctx.translate(VW / 2 - cam.x + shx, VH / 2 - cam.y + shy);
   ctx.drawImage(cityCanvas, cityOx, cityOy);
 
-  // --- depth-sorted dynamic layer ---
+  // --- depth-sorted layer: buildings, entities and effects together ---
   const items = [];
+  const anchor = world.player.inCar ? world.player.inCar : world.player;
+  const ps = toScreen(anchor.x, anchor.y, 0);
+  const pDepth = depth(anchor.x, anchor.y, 0);
+  // cull to a generous screen box so tall towers still enter from off-screen
+  const viewL = cam.x - VW / 2 - 200, viewR = cam.x + VW / 2 + 200;
+  const viewT = cam.y - VH / 2 - 400, viewB = cam.y + VH / 2 + 200;
+  for (const b of BUILDINGS) {
+    const bb = buildingBounds(b);
+    if (bb.x1 < viewL || bb.x0 > viewR || bb.y1 < viewT || bb.y0 > viewB) continue;
+    // its near corner is what decides whether an entity is in front of it
+    const d = depth(b.x + b.w, b.y + b.d, 0) - 1;
+    const hides = d > pDepth
+      && ps.x > bb.x0 - 2 && ps.x < bb.x1 + 2 && ps.y > bb.y0 - 2 && ps.y < bb.y1 + 2;
+    items.push({ d, f: () => drawBuilding(b, hides) });
+  }
   for (const pk of world.pickups) if (!pk.taken) items.push({ d: depth(pk.x, pk.y), f: () => drawPickup(pk) });
   for (const c of world.cars) items.push({ d: depth(c.x, c.y, 0.6), f: () => drawCarEnt(c) });
   for (const e of world.people) {
@@ -547,6 +717,7 @@ function render() {
     items.push({ d: depth(e.x, e.y, 1), f: () => drawPersonEnt(e) });
   }
   for (const b of world.bullets) items.push({ d: depth(b.x, b.y, 1.2), f: () => drawBullet(b) });
+  for (const q of world.parts) items.push({ d: depth(q.x, q.y, q.z), f: () => drawPart(q) });
   if (world.marker) items.push({ d: 1e9, f: () => drawMarker(ctx, world.marker.x, world.marker.y, NEON.boyz, world.t, world.marker.label) });
   if (world.markerEntity?.e && !world.markerEntity.e.dead) {
     const m = world.markerEntity;
@@ -561,10 +732,47 @@ function render() {
   if (ui.map) drawMap();
 }
 
+// Buildings draw in the sorted pass so cars and people can pass behind them.
+// Any building that would hide the player is drawn translucent — full occlusion
+// in a dense grid city means you spend half the game behind a wall.
+function drawBuilding(b, xray) {
+  if (xray) { ctx.save(); ctx.globalAlpha = 0.30; }
+  drawBox(ctx, BUILDING, b.x, b.y, b.w, b.d, b.h);
+  // lit windows on the two visible faces
+  const n = b.seed;
+  for (let f = 0; f < 2; f++) {
+    const span = f ? b.d : b.w;
+    for (let wz = 1; wz < b.h - 0.5; wz += 1.6) {
+      for (let wo = 0.6; wo < span - 0.4; wo += 1.4) {
+        if (((n + wo * 31 + wz * 17) | 0) % 7 > 3) continue;
+        const p1 = f ? toScreen(b.x, b.y + wo, wz) : toScreen(b.x + wo, b.y + b.d, wz);
+        ctx.fillStyle = ((n + wo + wz) | 0) % 5 === 0 ? 'rgba(255,210,130,0.55)' : 'rgba(150,190,230,0.25)';
+        ctx.fillRect(p1.x - 1.5, p1.y - 3, 3, 3);
+      }
+    }
+  }
+  if (xray) ctx.restore();
+}
+
+// Screen-space bounds of a building's silhouette, for the occlusion test.
+function buildingBounds(b) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const [cx, cy] of [[0, 0], [b.w, 0], [b.w, b.d], [0, b.d]]) {
+    for (const cz of [0, b.h]) {
+      const p1 = toScreen(b.x + cx, b.y + cy, cz);
+      if (p1.x < x0) x0 = p1.x; if (p1.x > x1) x1 = p1.x;
+      if (p1.y < y0) y0 = p1.y; if (p1.y > y1) y1 = p1.y;
+    }
+  }
+  return { x0, y0, x1, y1 };
+}
+
 function drawPickup(pk) {
   const s = toScreen(pk.x, pk.y, 0);
   const bob = Math.sin(world.t * 3 + pk.bob) * 3;
-  const col = pk.type === 'objective' ? NEON.boyz : NEON.tungtungs;
+  const col = pk.type === 'objective' ? NEON.boyz
+    : pk.type === 'health' ? NEON.neets
+      : pk.type === 'weapon' ? NEON.tungtungs : NEON.jimothys;
   pointLight(ctx, s.x, s.y, 22, col.mid, 0.3);
   ctx.fillStyle = col.deep;
   ctx.fillRect(s.x - 5, s.y - 10 + bob, 10, 10);
@@ -572,6 +780,14 @@ function drawPickup(pk) {
   ctx.fillRect(s.x - 4, s.y - 9 + bob, 8, 8);
   ctx.fillStyle = col.core;
   ctx.fillRect(s.x - 4, s.y - 9 + bob, 8, 2);
+}
+
+function drawPart(q) {
+  const s = toScreen(q.x, q.y, q.z);
+  ctx.globalAlpha = Math.max(0, Math.min(1, q.life / q.max));
+  ctx.fillStyle = q.col;
+  ctx.fillRect(s.x - q.size / 2, s.y - q.size / 2, q.size, q.size);
+  ctx.globalAlpha = 1;
 }
 
 function drawBullet(b) {
@@ -624,6 +840,16 @@ function drawPersonEnt(e) {
   drawPerson(ctx, e.x, e.y, 0, e.look, e.dir, e.walk, e === world.player ? 28 : 25, {
     weapon: e.weapon, flash: e.flash > 0,
   });
+  if (e.hurt > 0) {
+    const s = toScreen(e.x, e.y, 0);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.min(1, e.hurt * 6);
+    ctx.fillStyle = '#ff5a5a';
+    ctx.fillRect(s.x - 7, s.y - 30, 14, 30);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
   if (e.faction === 'crew' && e.name) {
     const s = toScreen(e.x, e.y, 0);
     ctx.font = '8px "Courier New", monospace';
@@ -740,6 +966,19 @@ function drawHUD() {
     ctx.globalAlpha = 1;
   });
 
+  drawMinimap();
+
+  // weapon + ammo readout
+  {
+    const wid = world.player.weaponId || 'pistol';
+    const am = wid === 'pistol' ? '∞' : (world.ammo[wid] || 0);
+    ctx.font = 'bold 11px "Courier New", monospace';
+    ctx.fillStyle = 'rgba(6,10,18,0.72)';
+    ctx.fillRect(pad, VH - pad - 38, 130, 18);
+    ctx.fillStyle = '#f0ca4e';
+    ctx.fillText(`${WEAPONS[wid].name}  ${am}`, pad + 6, VH - pad - 25);
+  }
+
   // action hint
   if (!campaign.active) {
     const pump = LANDMARKS.find((l) => l.id === 'pump');
@@ -753,6 +992,53 @@ function drawHUD() {
       ctx.textAlign = 'left';
     }
   }
+}
+
+// Corner minimap — turf colours, roads implied by district fill, the player and
+// the current objective. Navigating a 128x128 grid without one is miserable.
+function drawMinimap() {
+  const R = 74, mx = VW - R - 12, my = VH - R - 12, span = 46;   // world units shown
+  ctx.save();
+  ctx.beginPath(); ctx.arc(mx, my, R / 2, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = 'rgba(6,9,16,0.88)';
+  ctx.fillRect(mx - R, my - R, R * 2, R * 2);
+  const p = world.player;
+  const sc = R / span;
+  for (const d of DISTRICTS) {
+    const col = isOwned(d.id) ? NEON.boyz : NEON[d.neon];
+    ctx.fillStyle = withAlpha(col.deep, 0.5);
+    ctx.fillRect(mx + (d.bounds[0] - p.x) * sc, my + (d.bounds[1] - p.y) * sc,
+      (d.bounds[2] - d.bounds[0]) * sc, (d.bounds[3] - d.bounds[1]) * sc);
+    ctx.strokeStyle = withAlpha(col.mid, 0.8); ctx.lineWidth = 1;
+    ctx.strokeRect(mx + (d.bounds[0] - p.x) * sc, my + (d.bounds[1] - p.y) * sc,
+      (d.bounds[2] - d.bounds[0]) * sc, (d.bounds[3] - d.bounds[1]) * sc);
+  }
+  for (const c of world.cars) {
+    if (Math.hypot(c.x - p.x, c.y - p.y) > span) continue;
+    ctx.fillStyle = c.siren ? '#3a86ff' : 'rgba(150,165,195,0.7)';
+    ctx.fillRect(mx + (c.x - p.x) * sc - 1, my + (c.y - p.y) * sc - 1, 2, 2);
+  }
+  for (const e of world.people) {
+    if (e.dead || e === p) continue;
+    if (e.faction !== 'cabal' && e.faction !== 'cop' && e.faction !== 'crew') continue;
+    if (Math.hypot(e.x - p.x, e.y - p.y) > span) continue;
+    ctx.fillStyle = e.faction === 'crew' ? '#8fe021' : e.faction === 'cop' ? '#3a86ff' : '#e0233a';
+    ctx.fillRect(mx + (e.x - p.x) * sc - 1, my + (e.y - p.y) * sc - 1, 2, 2);
+  }
+  const tgt = world.marker || (world.markerEntity?.e && !world.markerEntity.e.dead ? world.markerEntity.e : null);
+  if (tgt) {
+    // clamp the objective blip to the rim so it always points somewhere
+    let dx = (tgt.x - p.x) * sc, dy = (tgt.y - p.y) * sc;
+    const l = Math.hypot(dx, dy);
+    if (l > R / 2 - 4) { dx = dx / l * (R / 2 - 4); dy = dy / l * (R / 2 - 4); }
+    ctx.fillStyle = '#c8ff5a';
+    ctx.beginPath(); ctx.arc(mx + dx, my + dy, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(mx, my, 2.5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = withAlpha(NEON.boyz.mid, 0.85); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(mx, my, R / 2, 0, Math.PI * 2); ctx.stroke();
 }
 
 function wrap(c, text, x, y, maxW, lh) {
@@ -815,12 +1101,57 @@ function startGame(boyId) {
   spawnTraffic(world, 16);
   spawnPeds(world, 26);
   campaign = new Campaign(world);
-  world.briefing(boyId, 'Pump Lounge is home. Walk in and take a job when you\'re ready.');
+  const restored = restore();
+  world.briefing(boyId, restored && restored.mission
+    ? `Back on the block. ${restored.mission} of ${MISSIONS.length} jobs done.`
+    : 'Pump Lounge is home. Walk in and take a job when you\'re ready.');
   document.getElementById('select').hidden = true;
   document.getElementById('hud').hidden = false;
   resize();
   requestAnimationFrame(loop);
-  api.register(BOYZ[boyId].name).then(() => flush()).catch(() => {});
+  // The server owns the points total; the client only ever displays it.
+  api.register(BOYZ[boyId].name)
+    .then(() => flush())
+    .then(() => api.profile())
+    .then((prof) => { if (prof && typeof prof.points === 'number') world.points = prof.points; })
+    .catch(() => {});
+}
+
+// --- persistence ----------------------------------------------------------
+// Points are NOT saved here — they are server-authoritative and come back from
+// the profile endpoint. This only carries the things the server has no opinion
+// about: cash, campaign position, turf, character and weapons.
+function snapshot() {
+  return {
+    boy: world.boy,
+    cash: Math.floor(world.cash),
+    mission: campaign.index,
+    completed: campaign.completed,
+    owned: [...owned],
+    weapon: world.player.weaponId || 'pistol',
+    ammo: world.ammo,
+  };
+}
+let saveT = 0;
+function autosave(dt) {
+  saveT -= dt;
+  if (saveT > 0) return;
+  saveT = 20;
+  try { localStorage.setItem('boyz_save', JSON.stringify(snapshot())); } catch {}
+  api.save(snapshot()).catch(() => {});
+}
+function restore() {
+  let st = null;
+  try { st = JSON.parse(localStorage.getItem('boyz_save') || 'null'); } catch {}
+  if (!st) return null;
+  world.cash = st.cash || 0;
+  world.ammo = st.ammo || {};
+  if (st.weapon) world.player.weaponId = st.weapon;
+  for (const id of st.owned || []) owned.add(id);
+  campaign.index = st.mission || 0;
+  campaign.completed = st.completed || [];
+  cityDirty = true;
+  return st;
 }
 
 let last = 0;
@@ -828,6 +1159,7 @@ function loop(ts) {
   const dt = Math.min(0.05, (ts - last) / 1000 || 0.016);
   last = ts;
   update(dt);
+  autosave(dt);
   render();
   requestAnimationFrame(loop);
 }
@@ -835,6 +1167,15 @@ function loop(ts) {
 // character select
 function buildSelect() {
   const wrapEl = document.getElementById('picks');
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('boyz_save') || 'null'); } catch {}
+  if (saved?.boy) {
+    const note = document.createElement('p');
+    note.className = 'hint';
+    note.style.color = '#8fe021';
+    note.textContent = `SAVE FOUND — ${saved.mission || 0}/10 jobs, $${saved.cash || 0}. Pick ${saved.boy.toUpperCase()} to continue.`;
+    wrapEl.parentElement.insertBefore(note, wrapEl);
+  }
   for (const id of BOYZ_ORDER) {
     const b = BOYZ[id];
     const el = document.createElement('button');

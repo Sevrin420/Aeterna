@@ -25,14 +25,27 @@ const POINT_VALUES = {
   },
   district: 750,        // per district taken
   firstblood: 100,      // first Cabal kill
+  rampage: 120,         // 10 Cabal inside 60s
+  carjack: 15,          // per distinct vehicle boosted
+  escape: 90,           // shed a 3+ star wanted level
+  delivery: 60,         // side-hustle drop completed
+  survive: 45,          // 5 minutes alive with heat on you
+};
+
+// Anything repeatable needs a ceiling, or a bot parked in an alley out-earns
+// every real player and the whole distribution is worthless. Missions and
+// districts are one-shot by their (type, ref) key and need no cap; the
+// free-play events are capped per wallet per UTC day.
+const DAILY_CAPS = {
+  rampage: 10, carjack: 40, escape: 12, delivery: 20, survive: 12,
 };
 
 function valueFor(type, ref) {
   if (type === 'mission') return POINT_VALUES.mission[Number(ref)] || 0;
-  if (type === 'district') return POINT_VALUES.district;
-  if (type === 'firstblood') return POINT_VALUES.firstblood;
-  return 0;
+  return POINT_VALUES[type] || 0;
 }
+
+function utcDay() { return new Date().toISOString().slice(0, 10); }
 
 export function initBoyzSchema() {
   db.exec(`
@@ -101,12 +114,25 @@ export default async function boyzRoutes(fastify) {
     const exists = db.prepare('SELECT 1 FROM boyz_players WHERE wallet = ?').get(wallet);
     if (!exists) db.prepare('INSERT INTO boyz_players (wallet, name) VALUES (?, ?)').run(wallet, 'Boy');
 
+    // Repeatable events are namespaced by day so the idempotency key stays
+    // unique per occurrence, and are counted against the day's cap.
+    const cap = DAILY_CAPS[type];
+    const key = cap ? `${utcDay()}:${ref}` : ref;
+
     // One transaction: the ledger insert decides whether the balance moves, so
-    // a duplicate event can never double-credit even under concurrent posts.
+    // a duplicate event can never double-credit even under concurrent posts,
+    // and the cap is read inside the same transaction it is enforced by.
     const apply = db.transaction(() => {
+      if (cap) {
+        const used = db.prepare(
+          `SELECT COUNT(*) n FROM boyz_ledger
+           WHERE wallet = ? AND type = ? AND ref LIKE ?`,
+        ).get(wallet, type, `${utcDay()}:%`).n;
+        if (used >= cap) return { capped: true, awarded: 0, duplicate: false };
+      }
       const r = db.prepare(
         `INSERT OR IGNORE INTO boyz_ledger (wallet, type, ref, points) VALUES (?, ?, ?, ?)`,
-      ).run(wallet, type, ref, pts);
+      ).run(wallet, type, key, pts);
       if (r.changes === 0) return { duplicate: true, awarded: 0 };
       db.prepare(
         `UPDATE boyz_players SET points = points + ?, updated_at = datetime('now') WHERE wallet = ?`,

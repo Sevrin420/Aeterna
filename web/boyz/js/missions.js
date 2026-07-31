@@ -82,7 +82,11 @@ const say = (who, text) => ({
 
 const claimTurf = (id) => ({
   label: null, instant: true,
-  enter(w) { claim(id); w.toast(`${DISTRICTS.find((d) => d.id === id).name} belongs to the Boyz.`); },
+  enter(w) {
+    claim(id);
+    w.claimed?.(id);
+    w.toast(`${DISTRICTS.find((d) => d.id === id).name} belongs to the Boyz.`);
+  },
   check() { return true; },
 });
 
