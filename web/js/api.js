@@ -62,18 +62,6 @@ export const api = {
   scourge() {
     return req('/scourge', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
   },
-  giftsNearby() {
-    return req('/gifts/nearby');
-  },
-  giftPickup(giftId) {
-    return req('/gifts/pickup', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), giftId }) });
-  },
-  giftGive({ targetWallet, toGuru }) {
-    return req('/gifts/give', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), targetWallet, toGuru }) });
-  },
-  giftDrop(x, y) {
-    return req('/gifts/drop', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), x, y }) });
-  },
   save() {
     return req('/save', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
   },

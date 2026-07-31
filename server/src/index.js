@@ -8,7 +8,7 @@ import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
 import db from './db/database.js';
 import {
-  DUTY_DEVOTION, STREAK_BONUS_BASE, GIFT_DEVOTION, GIFT_DAILY_LIMITS, SCOURGE_DEVOTION,
+  DUTY_DEVOTION, STREAK_BONUS_BASE, SCOURGE_DEVOTION,
   todayStr, streakMultiplier, confessionCost, ensureFreshDay, pendingConfession, getSeasonInfo,
 } from './lib/gameLogic.js';
 
@@ -204,42 +204,6 @@ fastify.post('/duty/:type', async (req, reply) => {
   };
 });
 
-// ========== GIFTS (physical: spawn -> pickup -> carry -> offer -> accept) ==========
-// Fixed spawn points in church tile-space (see web/js/abbeyMap.js) — scattered
-// over the open nave and transept floor, clear of walls/props/stairs/altar.
-const GIFT_SPAWN_POINTS = [
-  { x: 55, y: 20 }, { x: 64, y: 20 }, { x: 55, y: 35 }, { x: 64, y: 35 }, { x: 40, y: 58 }, { x: 80, y: 58 },
-];
-const MAX_GROUND_GIFTS = 3;
-
-function maybeSpawnGifts() {
-  const groundCount = db.prepare(`
-    SELECT COUNT(*) AS n FROM gifts WHERE picked_up_by IS NULL AND given_to IS NULL
-  `).get().n;
-  if (groundCount >= MAX_GROUND_GIFTS) return;
-
-  const taken = new Set(
-    db.prepare(`SELECT loc_x, loc_y FROM gifts WHERE picked_up_by IS NULL AND given_to IS NULL`)
-      .all().map((g) => `${g.loc_x},${g.loc_y}`)
-  );
-  const free = GIFT_SPAWN_POINTS.filter((p) => !taken.has(`${p.x},${p.y}`));
-  if (!free.length) return;
-
-  const spot = free[Math.floor(Math.random() * free.length)];
-  db.prepare(`
-    INSERT INTO gifts (id, spawned_at, loc_x, loc_y)
-    VALUES (?, ?, ?, ?)
-  `).run(randomUUID(), new Date().toISOString(), spot.x, spot.y);
-}
-
-fastify.get('/gifts/nearby', async () => {
-  maybeSpawnGifts();
-  return db.prepare(`
-    SELECT id, loc_x, loc_y FROM gifts
-    WHERE picked_up_by IS NULL AND given_to IS NULL
-  `).all();
-});
-
 // ========== THE SCOURGE ==========
 // The Abbot's rite. The client walks a cut switch up the nave and plays the
 // five blows; the server only cares that it happened, and only once a day.
@@ -259,86 +223,6 @@ fastify.post('/scourge', async (req, reply) => {
     .run(SCOURGE_DEVOTION, fresh.id);
 
   return { success: true, devotionGained: SCOURGE_DEVOTION };
-});
-
-fastify.post('/gifts/pickup', async (req, reply) => {
-  const { wallet, giftId } = req.body || {};
-  if (!wallet || !giftId) return reply.code(400).send({ error: 'Missing wallet or giftId' });
-
-  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
-  if (!player) return reply.code(404).send({ error: 'Player not found' });
-  if (player.held_gift_id) return reply.code(400).send({ error: 'Already holding a gift' });
-
-  const gift = db.prepare('SELECT * FROM gifts WHERE id = ?').get(giftId);
-  if (!gift || gift.picked_up_by || gift.given_to) return reply.code(400).send({ error: 'Gift not available' });
-
-  db.prepare('UPDATE gifts SET picked_up_by = ? WHERE id = ?').run(player.id, giftId);
-  db.prepare('UPDATE players SET held_gift_id = ? WHERE id = ?').run(giftId, player.id);
-  return { success: true, giftId };
-});
-
-fastify.post('/gifts/give', async (req, reply) => {
-  const { wallet, targetWallet, toGuru } = req.body || {};
-  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
-
-  const giver = ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase()));
-  if (!giver) return reply.code(404).send({ error: 'Player not found' });
-  if (!giver.held_gift_id) return reply.code(400).send({ error: 'Not holding a gift' });
-  if (giver.gifts_given_today >= GIFT_DAILY_LIMITS.giverPerDay) {
-    return reply.code(400).send({ error: 'Daily gift-giving limit reached' });
-  }
-
-  const giftId = giver.held_gift_id;
-  const now = new Date().toISOString();
-
-  if (toGuru) {
-    db.prepare('UPDATE gifts SET given_to = ?, given_at = ? WHERE id = ?').run('guru', now, giftId);
-    db.prepare(`
-      UPDATE players SET held_gift_id = NULL, gifts_given_today = gifts_given_today + 1, devotion = devotion + ?
-      WHERE id = ?
-    `).run(GIFT_DEVOTION.giverToGuru, giver.id);
-    return { success: true, devotionGained: GIFT_DEVOTION.giverToGuru, to: 'guru' };
-  }
-
-  if (!targetWallet) return reply.code(400).send({ error: 'Missing targetWallet' });
-  const receiver = ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE wallet = ?').get(targetWallet.toLowerCase()));
-  if (!receiver) return reply.code(404).send({ error: 'Recipient not found' });
-  if (receiver.id === giver.id) return reply.code(400).send({ error: 'Cannot gift yourself' });
-  if (receiver.gifts_received_today >= GIFT_DAILY_LIMITS.receiverPerDay) {
-    return reply.code(400).send({ error: 'Recipient has reached their daily gift limit' });
-  }
-
-  db.prepare('UPDATE gifts SET given_to = ?, given_at = ? WHERE id = ?').run(receiver.id, now, giftId);
-  db.prepare(`
-    UPDATE players SET held_gift_id = NULL, gifts_given_today = gifts_given_today + 1, devotion = devotion + ?
-    WHERE id = ?
-  `).run(GIFT_DEVOTION.giverToCultist, giver.id);
-  db.prepare(`
-    UPDATE players SET gifts_received_today = gifts_received_today + 1, devotion = devotion + ?
-    WHERE id = ?
-  `).run(GIFT_DEVOTION.receiverFromCultist, receiver.id);
-
-  return {
-    success: true,
-    devotionGained: GIFT_DEVOTION.giverToCultist,
-    to: receiver.name,
-    receiverDevotionGained: GIFT_DEVOTION.receiverFromCultist,
-  };
-});
-
-fastify.post('/gifts/drop', async (req, reply) => {
-  const { wallet, x, y } = req.body || {};
-  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
-
-  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
-  if (!player) return reply.code(404).send({ error: 'Player not found' });
-  if (!player.held_gift_id) return reply.code(400).send({ error: 'Not holding a gift' });
-
-  db.prepare('UPDATE gifts SET picked_up_by = NULL, loc_x = ?, loc_y = ? WHERE id = ?')
-    .run(Number.isFinite(x) ? x : null, Number.isFinite(y) ? y : null, player.held_gift_id);
-  db.prepare('UPDATE players SET held_gift_id = NULL WHERE id = ?').run(player.id);
-
-  return { success: true };
 });
 
 // ========== SOCIAL ==========
@@ -608,7 +492,6 @@ io.on('connection', (socket) => {
       ...data,
       netId,
       dir: 'down',
-      heldGiftId: null,
       socket,          // local ref for the tick loop
       known: new Set(), // netIds we've already sent meta for (this frame's interest set)
     });
@@ -647,50 +530,6 @@ io.on('connection', (socket) => {
       net: p.netId,
       name: p.name,
       text: String(data.text || '').slice(0, 120)
-    });
-  });
-
-  socket.on('pickup_gift', (data) => {
-    const p = online.get(socket.id);
-    if (!p) return;
-    p.heldGiftId = data.giftId;
-    socket.broadcast.emit('gift_picked', {
-      net: p.netId,
-      playerId: p.tokenId || socket.id,
-      giftId: data.giftId
-    });
-  });
-
-  socket.on('offer_gift', (data) => {
-    const p = online.get(socket.id);
-    if (!p || !p.heldGiftId) return;
-    socket.broadcast.emit('gift_offered', {
-      net: p.netId,
-      fromPlayerId: p.tokenId || socket.id,
-      giftId: p.heldGiftId
-    });
-  });
-
-  socket.on('accept_gift', (data) => {
-    // In production: validate, award Devotion, clear heldGiftId, emit gift_transferred
-    socket.broadcast.emit('gift_transferred', {
-      fromId: data.fromPlayerId,
-      toId: online.get(socket.id)?.tokenId || socket.id,
-      giftId: data.giftId || null
-    });
-  });
-
-  socket.on('drop_gift', () => {
-    const p = online.get(socket.id);
-    if (!p || !p.heldGiftId) return;
-    const giftId = p.heldGiftId;
-    p.heldGiftId = null;
-    socket.broadcast.emit('gift_dropped', {
-      net: p.netId,
-      playerId: p.tokenId || socket.id,
-      giftId,
-      x: p.x,
-      y: p.y
     });
   });
 

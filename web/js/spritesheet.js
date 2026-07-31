@@ -1,7 +1,7 @@
 // Builds and caches Cultist sprite sheets using Aeterna's ported Club Nile
 // character generator (web/js/pixelchar.js) and draws/animates them.
 
-import { makeCharacterHD, traitsForSeed, traitsForGuru } from './pixelchar.js';
+import { makeCharacterHD, traitsForSeed, traitsForGuru, traitsForConfessor } from './pixelchar.js';
 import { applyRobe } from './cultLook.js';
 
 const cache = new Map(); // seed -> {down:[c0,c1], up:[c0,c1], left:[c0,c1], right:[c0,c1]}
@@ -33,6 +33,16 @@ export function getGuruSprite() {
   let sheet = cache.get(key);
   if (!sheet) {
     sheet = makeCharacterHD(traitsForGuru());
+    cache.set(key, sheet);
+  }
+  return sheet;
+}
+
+export function getConfessorSprite() {
+  const key = '__confessor__';
+  let sheet = cache.get(key);
+  if (!sheet) {
+    sheet = makeCharacterHD(traitsForConfessor());
     cache.set(key, sheet);
   }
   return sheet;

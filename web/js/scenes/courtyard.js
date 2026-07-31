@@ -1,11 +1,11 @@
 // The abbey — first scene after boot + naming. A multi-room floor plan
 // (church / garden / kitchen / dorms, see web/js/abbeyMap.js) rendered with
 // plain canvas primitives and a camera that follows the player, wired to the
-// real Fastify API (duties, gifts, confession) and Socket.io presence.
+// real Fastify API (duties, rites, confession) and Socket.io presence.
 
 import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
-import { drawCharacter, getCultistSprite, getGuruSprite, getCultistSpriteVariant } from '../spritesheet.js';
+import { drawCharacter, getCultistSprite, getGuruSprite, getConfessorSprite, getCultistSpriteVariant } from '../spritesheet.js';
 import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
 import { DialogueBox, drawBang } from '../dialogue.js';
 import { LORE, bulletinPages } from '../lore.js';
@@ -14,7 +14,7 @@ import { Scourge, StickPile } from '../scourge.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, DOORS, ROOMS, SKULL_ROOM, NAVE, TRANSEPT, NAVE_CX, SKULL_WALL_ROW,
-  EXIT_ROW, EXIT_COLS, STICKS,
+  EXIT_ROW, EXIT_COLS, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW,
 } from '../abbeyMap.js';
 import {
   FLOOR, WALL, EARTH, VOID, BLOOD, GOLD, WOOD, IRON, BONE, CLOTH, SOUL, MOSS,
@@ -24,7 +24,6 @@ import {
 const W = 208, H = 208; // logical screen size (canvas backing store is RES x this)
 const RES = 2;          // must match the 2x transform main.js sets each frame
 const MAP_W = COLS * TILE, MAP_H = ROWS * TILE;
-const GIFT_POLL_MS = 4000;
 const DIRS = ['down', 'up', 'left', 'right']; // decode of the server's DIR_CODE
 const PEER_STALE_MS = 700;    // drop a peer not seen in a snapshot this long
 const INTERP_TIME = 0.1;      // seconds to ease a peer to its latest target (~tick rate)
@@ -49,7 +48,10 @@ const STATIONS = [
   // church nave + transept
   { id: 'pray', kind: 'duty', label: 'Kneel & Pray', x: px(NAVE_CX), y: px(13), r: 13 },
   { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: px(NAVE_CX), y: px(11), r: 13 },
-  { id: 'confession', kind: 'confession', label: 'Confess', x: px(TRANSEPT.x0 + 3), y: px(58), r: 13 },
+  // In the niche now, two tiles south of the grille — you have to leave the
+  // transept and step into the booth's own little room to be heard.
+  { id: 'confession', kind: 'confession', label: 'Confess',
+    x: px(CONFESSIONAL_BOOTH_COL), y: px(CONFESSIONAL_BOOTH_ROW + 2), r: 13 },
   { id: 'leaderboard', kind: 'leaderboard', label: 'View the Devout', x: px(TRANSEPT.x1 - 3), y: px(58), r: 13 },
   { id: 'gate', kind: 'gate', label: 'Save & Exit', x: px(NAVE_CX), y: px(75), r: 14 },
   { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: px(NAVE.x0 + 1), y: px(11), r: 12 },
@@ -91,9 +93,6 @@ export class CourtyardScene {
     this.socket = socket || null;
 
     this.t = 0;
-    this.holdingGift = !!player.held_gift_id;
-    this.gifts = []; // { id, loc_x, loc_y } tile coords, ground gifts
-    this.giftPollTimer = 0;
     this.localEmoji = null; // { emoji, t }
     this.localChat = null; // { text, t }
     this.seasonInfo = null; // { season, day, inBreak, daysUntilCommunion, isFinalCommunion }
@@ -155,7 +154,6 @@ export class CourtyardScene {
 
   enter() {
     this.mySheet = getCultistSprite(getWalletId(), this.player.sex);
-    this._refreshGifts();
     this._refreshSeason();
     this._refreshCathedral();
     this._bindSocket();
@@ -288,14 +286,6 @@ export class CourtyardScene {
       x: this.pc.x,
       y: this.pc.y,
     });
-  }
-
-  async _refreshGifts() {
-    try {
-      this.gifts = await api.giftsNearby();
-    } catch {
-      // non-fatal — ground gifts are cosmetic/optional
-    }
   }
 
   async _refreshSeason() {
@@ -508,16 +498,6 @@ export class CourtyardScene {
     return best;
   }
 
-  _nearestGift() {
-    let best = null, bestD = Infinity;
-    for (const g of this.gifts) {
-      const gx = px(g.loc_x), gy = px(g.loc_y);
-      const d = Math.hypot(this.pc.x - gx, this.pc.y - gy);
-      if (d < 20 && d < bestD) { best = g; bestD = d; } // was 12 (barely one tile)
-    }
-    return best;
-  }
-
   // Feedback for a face-button press that had nothing bound where the player is
   // standing — so a stray A/B tap reads as "nothing here", not "button broken".
   _noActionHint() {
@@ -579,14 +559,14 @@ export class CourtyardScene {
 
     // empty-handed -> pick up whichever is nearer
     const w = this.fire.woodAt(p.x, p.y);
-    if (w >= 0 && !this.holdingGift) {
+    if (w >= 0) {
       this.fire.takeWood(w);
       this.carrying = { kind: 'wood', alcove: w };
       sfx.click();
       return true;
     }
     const tc = this.fire.torchAt(p.x, p.y);
-    if (tc >= 0 && !this.holdingGift) {
+    if (tc >= 0) {
       this.fire.takeTorch(tc);
       this.carrying = { kind: 'torch', alcove: tc };
       sfx.click();
@@ -693,7 +673,7 @@ export class CourtyardScene {
 
   // Taking a switch from the bundle by the skull-chamber wall.
   _stickAction() {
-    if (this.carrying || this.holdingGift) return false;
+    if (this.carrying) return false;
     const i = this.sticks.at(this.pc.x, this.pc.y);
     if (i < 0) return false;
     this.sticks.take(i);
@@ -726,40 +706,6 @@ export class CourtyardScene {
       sfx.confession();
       this.onToast(`Confession accepted. Streak restored to ${res.restoredStreak}.`);
     } catch (e) {
-      sfx.error();
-      this.onToast(e.message);
-    }
-  }
-
-  async _handlePickup(gift) {
-    if (this.holdingGift) return;
-    // optimistic: grab it instantly so there's no round-trip lag; revert if
-    // the server rejects (e.g. someone else already took it).
-    this.holdingGift = true;
-    this.gifts = this.gifts.filter((g) => g.id !== gift.id);
-    sfx.gift();
-    this.onToast('You pick up the gift.');
-    try {
-      await api.giftPickup(gift.id);
-      if (this.socket) this.socket.emit('pickup_gift', { giftId: gift.id });
-    } catch (e) {
-      this.holdingGift = false;
-      this._refreshGifts();
-      sfx.error();
-      this.onToast(e.message);
-    }
-  }
-
-  async _handleDrop() {
-    if (!this.holdingGift) return;
-    this.holdingGift = false; // optimistic
-    this.onToast('You set the gift down.');
-    try {
-      await api.giftDrop(this.pc.x / TILE, this.pc.y / TILE);
-      if (this.socket) this.socket.emit('drop_gift');
-      this._refreshGifts();
-    } catch (e) {
-      this.holdingGift = true;
       sfx.error();
       this.onToast(e.message);
     }
@@ -840,7 +786,6 @@ export class CourtyardScene {
     this.pc.dir = 'down';
     this.pc.moving = false;
     this._activeStation = null;
-    this._activeGift = null;
     this._activeDoor = null;
     this._updateCamera();
 
@@ -876,12 +821,6 @@ export class CourtyardScene {
     // While the box is up it owns the controls: the world keeps rendering
     // behind it but nothing walks, and A/B belong to the text.
     if (this.dialogue.active) { this.dialogue.update(dt, input); return; }
-
-    this.giftPollTimer += dt;
-    if (this.giftPollTimer > GIFT_POLL_MS / 1000) {
-      this.giftPollTimer = 0;
-      this._refreshGifts();
-    }
 
     const p = this.pc;
     let dx = 0, dy = 0;
@@ -925,7 +864,6 @@ export class CourtyardScene {
     this._activeStation = this._nearestStation();
     // stepping off a station re-arms its reading for the next approach
     if (prevStation && this._activeStation !== prevStation) this._lastIntro = null;
-    this._activeGift = this._nearestGift();
     this._activeDoor = this._nearestDoor();
 
     if (input.consumeAPress()) {
@@ -935,8 +873,6 @@ export class CourtyardScene {
         // handled by the fire rite
       } else if (this._activeDoor) {
         this._toggleDoor(this._activeDoor);
-      } else if (this._activeGift && !this.holdingGift) {
-        this._handlePickup(this._activeGift);
       } else if (this._activeStation) {
         // Every station introduces itself before it acts. The box closes into
         // the rite, so reading is never a detour — it is the way in.
@@ -957,7 +893,6 @@ export class CourtyardScene {
     }
     if (input.consumeBPress()) {
       if (this._dropCarried()) { /* put it down */ }
-      else if (this.holdingGift) this._handleDrop();
       else this._noActionHint(dt);
     }
 
@@ -1249,6 +1184,8 @@ export class CourtyardScene {
     switch (p.type) {
       case 'fountain': this._drawFountain(ctx, p.col, p.row); break;
       case 'fountain-block': break; // covered by the fountain draw above
+      case 'booth-block': break;    // covered by the confessional draw below
+      case 'confessional': this._drawConfessional(ctx, x, y); break;
       case 'pillar': this._drawPillar(ctx, p.col, p.row); this._drawLantern(ctx, p.col, p.row); break;
       case 'torch': this._drawTorch(ctx, p.col, p.row); break;
       case 'brazier': {
@@ -1607,6 +1544,75 @@ export class CourtyardScene {
     }
   }
 
+  // The confessional booth, filling the back wall of the north niche. Two
+  // bays: the confessor's on the left, open so you can see him standing in it,
+  // and the penitent's on the right behind a lattice grille. Timber on the
+  // WOOD ramp, outlined in its own dark brown and lit from the upper left like
+  // everything else; the only saturated thing on it is the lamp above the
+  // grille, which burns when the abbey is owed a confession.
+  _drawConfessional(ctx, x, y) {
+    const owed = this.player.needsConfession;
+    const W_ = 46, H_ = 26;                 // spans the niche's five tiles
+    const left = x - W_ / 2, top = y - H_ + 5;
+
+    this._dropShadow(ctx, x, y + 5, W_ / 2 - 2, 3);
+    block(ctx, left, top, W_, H_, WOOD);    // the carcase
+
+    // A heavier cornice along the top, so it reads as joinery rather than a
+    // crate: three courses stepping proud of the front.
+    ctx.fillStyle = WOOD.o; ctx.fillRect(left - 1.5, top - 3.5, W_ + 3, 4);
+    ctx.fillStyle = WOOD.b; ctx.fillRect(left - 1, top - 3, W_ + 2, 3);
+    ctx.fillStyle = WOOD.l; ctx.fillRect(left - 1, top - 3, W_ + 2, 1);
+    ctx.fillStyle = WOOD.h; ctx.fillRect(left - 1, top - 3, 10, 1);
+
+    // turned posts between and beside the bays
+    for (const px_ of [left + 1, x - 1, left + W_ - 3]) {
+      ctx.fillStyle = WOOD.o; ctx.fillRect(px_ - 0.5, top, 3, H_);
+      ctx.fillStyle = WOOD.d; ctx.fillRect(px_, top, 2, H_);
+      ctx.fillStyle = WOOD.l; ctx.fillRect(px_, top, 0.7, H_);
+    }
+
+    // --- confessor's bay (left): open, and dark behind him ---
+    const bx = left + 5, bw = 15;
+    ctx.fillStyle = WOOD.o; ctx.fillRect(bx - 1, top + 3, bw + 2, H_ - 4);
+    ctx.fillStyle = VOID; ctx.fillRect(bx, top + 4, bw, H_ - 5);
+    drawCharacter(ctx, {
+      sheet: getConfessorSprite(), dir: 'down', moving: false, animPhase: this.t,
+      x: bx + bw / 2, groundY: y + 3, targetHeight: 21,
+    });
+
+    // --- penitent's bay (right): grille ---
+    const gx = x + 4, gw = 15;
+    ctx.fillStyle = WOOD.o; ctx.fillRect(gx - 1, top + 3, gw + 2, H_ - 4);
+    ctx.fillStyle = VOID; ctx.fillRect(gx, top + 4, gw, H_ - 5);
+    ctx.fillStyle = WOOD.d;
+    for (let i = 0; i <= gw - 2; i += 2.6) ctx.fillRect(gx + i, top + 4, 0.9, H_ - 5);
+    for (let j = 0; j <= H_ - 6; j += 2.6) ctx.fillRect(gx, top + 4 + j, gw, 0.9);
+    ctx.fillStyle = WOOD.b;
+    for (let i = 0; i <= gw - 2; i += 2.6) ctx.fillRect(gx + i, top + 4, 0.5, H_ - 5);
+
+    // The lamp: the one saturated thing on the booth. It hangs off an iron
+    // hook that has to be visibly bolted to the cornice — at one dark pixel
+    // wide the bracket vanished and the lamp read as floating in mid-air.
+    const lx = gx + gw / 2, ly = top - 6;
+    ctx.fillStyle = IRON.o; ctx.fillRect(lx - 1.5, ly - 0.5, 3, 7);       // hook
+    ctx.fillStyle = IRON.b; ctx.fillRect(lx - 1, ly, 2, 6);
+    ctx.fillStyle = IRON.l; ctx.fillRect(lx - 1, ly, 0.7, 6);
+    ctx.fillStyle = IRON.o; ctx.fillRect(lx - 3, top - 4.5, 6, 2);        // plate
+    ctx.fillStyle = IRON.d; ctx.fillRect(lx - 2.5, top - 4, 5, 1)
+    ctx.fillStyle = owed ? BLOOD.b : IRON.d;
+    ctx.beginPath(); ctx.arc(lx, ly, 2.2, 0, Math.PI * 2); ctx.fill();
+    if (owed) {
+      const g = 0.45 + Math.sin(this.t * 3) * 0.25;
+      ctx.fillStyle = BLOOD.l;
+      ctx.beginPath(); ctx.arc(lx - 0.7, ly - 0.7, 0.9, 0, Math.PI * 2); ctx.fill();
+      const halo = ctx.createRadialGradient(lx, ly, 0, lx, ly, 13);
+      halo.addColorStop(0, `rgba(198,43,48,${0.22 * g})`);
+      halo.addColorStop(1, 'rgba(198,43,48,0)');
+      ctx.fillStyle = halo; ctx.fillRect(lx - 13, ly - 13, 26, 26);
+    }
+  }
+
   _drawStation(ctx, s) {
     ctx.save();
     ctx.translate(s.x, s.y);
@@ -1640,19 +1646,15 @@ export class CourtyardScene {
         });
       }
     } else if (s.id === 'confession') {
-      this._dropShadow(ctx, 0, 9, 8.5, 2.6);
-      block(ctx, -7, -10, 14, 18, WOOD);          // timber booth
-      ctx.fillStyle = WOOD.o; ctx.fillRect(-5, -7, 10, 10);   // grille recess
-      ctx.fillStyle = VOID; ctx.fillRect(-4.5, -6.5, 9, 9);
-      ctx.fillStyle = WOOD.d;                                  // lattice
-      for (let i = -4; i <= 4; i += 2.6) ctx.fillRect(i, -6.5, 0.8, 9);
-      const owed = this.player.needsConfession;
-      ctx.fillStyle = owed ? BLOOD.b : IRON.d;                 // lamp above the door
-      ctx.beginPath(); ctx.arc(0, -2, 2, 0, Math.PI * 2); ctx.fill();
-      if (owed) {
-        ctx.fillStyle = BLOOD.l;
-        ctx.beginPath(); ctx.arc(-0.6, -2.6, 0.8, 0, Math.PI * 2); ctx.fill();
-      }
+      // Just the prie-dieu you kneel at. The booth itself is a prop on the
+      // niche's back wall, so it sorts against the walls rather than against
+      // the player standing in front of it.
+      this._dropShadow(ctx, 0, 5, 6, 2.2);
+      block(ctx, -5, -1, 10, 5, WOOD);            // the step
+      ctx.fillStyle = WOOD.o; ctx.fillRect(-5, -7, 10, 6);     // the rail
+      ctx.fillStyle = WOOD.b; ctx.fillRect(-4.5, -6.5, 9, 5);
+      ctx.fillStyle = WOOD.l; ctx.fillRect(-4.5, -6.5, 9, 1.2);
+      ctx.fillStyle = WOOD.h; ctx.fillRect(-4.5, -6.5, 3, 1.2);
     } else if (s.id === 'leaderboard') {
       this._dropShadow(ctx, 0, 6, 7.5, 2.2);
       block(ctx, -5, 0, 10, 6, WOOD);             // stand
@@ -1670,22 +1672,6 @@ export class CourtyardScene {
       ctx.fill();
       ctx.globalAlpha = 1;
     }
-    ctx.restore();
-  }
-
-  _drawGift(ctx, g) {
-    const x = px(g.loc_x), y = px(g.loc_y);
-    const bob = Math.sin(this.t * 3 + g.loc_x) * 1.2;
-    ctx.save();
-    ctx.translate(x, y + bob);
-    ctx.fillStyle = SHADOW_SOFT;
-    ctx.beginPath(); ctx.ellipse(0, 4, 4, 1.4, 0, 0, Math.PI * 2); ctx.fill();
-    block(ctx, -4, -3, 8, 7, BLOOD);        // crimson parcel
-    ctx.fillStyle = GOLD.b;                 // gold ribbon, cross-tied
-    ctx.fillRect(-4, -0.5, 8, 1.5);
-    ctx.fillRect(-0.75, -3, 1.5, 7);
-    ctx.fillStyle = GOLD.h;
-    ctx.fillRect(-4, -0.5, 8, 0.6);
     ctx.restore();
   }
 
@@ -1723,7 +1709,6 @@ export class CourtyardScene {
     if (this.fire.torchAt(p.x, p.y) >= 0) return true;
     if (this.sticks.at(p.x, p.y) >= 0) return true;
     return !!(this._activeDoor
-      || (this._activeGift && !this.holdingGift)
       || this._activeStation);
   }
 
@@ -1737,7 +1722,7 @@ export class CourtyardScene {
     }
     this._drawRobedFigure(
       ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving,
-      this.pc.moving ? this.pc.bob : this.t, this.mySheet, this.holdingGift,
+      this.pc.moving ? this.pc.bob : this.t, this.mySheet,
       null, this.localEmoji, this.localChat, undefined, this._streakAura()
     );
     if (this.carrying) {
@@ -1749,10 +1734,10 @@ export class CourtyardScene {
   _drawRemotePlayer(ctx, net, rp) {
     const seed = rp.id != null ? rp.id : 'n' + net;
     const rpSheet = getCultistSprite(seed, rp.prefix === 'Sister' ? 'female' : 'male');
-    this._drawRobedFigure(ctx, rp.rx, rp.ry, rp.dir || 'down', false, this.t, rpSheet, false, rp.name, rp.emoji, rp.chat);
+    this._drawRobedFigure(ctx, rp.rx, rp.ry, rp.dir || 'down', false, this.t, rpSheet, rp.name, rp.emoji, rp.chat);
   }
 
-  // Collects every prop, station, gift, and character into one list and
+  // Collects every prop, station and character into one list and
   // sorts by ground (y) position so a player standing "in front of" a
   // pillar/pew/bed draws over it, and one standing "behind" it is hidden —
   // a simple top-down painter's-algorithm depth sort.
@@ -1786,9 +1771,6 @@ export class CourtyardScene {
     }
     for (const s of STATIONS) {
       items.push({ y: s.y + 6, draw: () => this._drawStation(ctx, s) });
-    }
-    for (const g of this.gifts) {
-      items.push({ y: px(g.loc_y), draw: () => this._drawGift(ctx, g) });
     }
     // Only draw peers whose interpolated position is on-screen (Tier 2 cull):
     // even if the server streams a few dozen, we skip anyone off-camera.
@@ -1847,7 +1829,7 @@ export class CourtyardScene {
     }
   }
 
-  _drawRobedFigure(ctx, x, y, dir, moving, animPhase, sheet, holdingGift, label, emoji, chat, targetHeight = 21, aura = null) {
+  _drawRobedFigure(ctx, x, y, dir, moving, animPhase, sheet, label, emoji, chat, targetHeight = 21, aura = null) {
     const px_ = Math.round(x);
     const py_ = Math.round(y);
 
@@ -1876,12 +1858,6 @@ export class CourtyardScene {
     const groundY = py_ + 6;
     const drawn = drawCharacter(ctx, { sheet, dir, moving, animPhase, x: px_, groundY, targetHeight });
     const drawY = drawn ? groundY - drawn.h : groundY - targetHeight;
-
-    if (holdingGift) {
-      block(ctx, px_ - 3, drawY - 6, 6, 5, BLOOD);
-      ctx.fillStyle = GOLD.b;
-      ctx.fillRect(px_ - 3, drawY - 4.5, 6, 1.2);
-    }
 
     if (label) {
       ctx.font = '5px "Courier New", monospace';

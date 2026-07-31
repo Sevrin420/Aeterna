@@ -753,15 +753,11 @@ export function traitsForSeed(seed, sex) {
   };
 }
 
-// The Abbot: the abbey's presiding figure. A tonsured elder in a fine near-
-// black habit, and the one character allowed BOTH halves of the abbey's accent
-// pair at full strength -- a saturated soul-violet cloak over crimson, with
-// true gold trim (the mark of his office). Everyone else wears undyed wool, so
-// he is the only figure in the room carrying the same colours as the altar.
-// The Abbot is the only figure in the abbey dressed in white, and that is the
-// whole point of him: every cultist, spirit and NPC here wears near-black under
-// violet stone, so a white robe is the one silhouette that reads instantly from
-// across the nave.
+// The Abbot: the abbey's presiding figure, and one of only two characters
+// dressed in white. That is the whole point of him — every cultist, spirit and
+// wandering NPC wears near-black under violet stone, so a white robe is the one
+// silhouette that reads instantly from across the nave. Gold is the mark of his
+// office, and nobody else in the abbey carries it.
 //
 // White is built off the BONE ramp rather than pure #ffffff — a flat white
 // would blow out against the palette and lose every fold, while BONE's warm
@@ -781,5 +777,28 @@ export function traitsForGuru() {
     mouth: '#8e4a42', feather: GOLD.b,
     headAcc: 'none', faceAcc: 'none',
     cloak: BONE.h,
+  };
+}
+
+// The Confessor: the monk who keeps the booth in the north niche of the west
+// transept arm. Also in white, because he holds an office too — but a plainer
+// one, so nothing about him competes with the Abbot at the altar. The
+// differences are all subtractive: no gold anywhere (that is the Abbot's
+// alone), a deeper hood, and a single crimson cord at the waist, which is the
+// only saturated colour on him and reads at a glance as the streak he is
+// there to restore.
+export function traitsForConfessor() {
+  return {
+    head: 'cowl',
+    body: 'vest',
+    legs: 'suit',
+    skin: '#d8ae86', hair: '#8a8069',
+    hat: BONE.l, coat: BONE.h, pants: BONE.l,
+    shoes: BONE.o,
+    metal: IRON.l, jewel: BLOOD.b, tie: BLOOD.d,
+    shirt: '#e8e2c8', leather: BONE.d, iris: '#1a1216', trim: BLOOD.d,
+    mouth: '#8e4a42', feather: BONE.d,
+    headAcc: 'none', faceAcc: 'none',
+    cloak: BONE.l,
   };
 }

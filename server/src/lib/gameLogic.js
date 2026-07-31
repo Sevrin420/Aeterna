@@ -5,10 +5,8 @@
 
 export const DUTY_DEVOTION = 5;
 export const STREAK_BONUS_BASE = 15;
-export const GIFT_DEVOTION = { giverToCultist: 10, receiverFromCultist: 5, giverToGuru: 50 };
-export const GIFT_DAILY_LIMITS = { giverPerDay: 1, receiverPerDay: 10 };
-// The scourge replaces the parcel the Abbot used to accept, so it is worth
-// what that was worth — once a day, same as the old giver-to-guru limit.
+// The scourge is the Abbot's rite and the only thing he gives Devotion for.
+// It is worth what the parcel used to be worth, and is likewise once a day.
 export const SCOURGE_DEVOTION = 50;
 
 export function todayStr(d = new Date()) {

@@ -111,9 +111,11 @@ export const LORE = {
         + '"You have bled enough today."',
     },
     confession: {
-      speaker: 'The Confessional',
-      text: 'A broken streak can be restored here. Once.\n\n'
-        + 'The abbey does not forgive freely — it only keeps accounts, and this '
+      speaker: 'The Confessor',
+      text: 'A monk in white waits behind the lattice. He does not give his '
+        + 'name.\n\n'
+        + '"A broken streak can be mended here. Once."\n\n'
+        + 'The abbey does not forgive freely. It only keeps accounts, and this '
         + 'is a line in one.',
     },
     'soul-altar': {

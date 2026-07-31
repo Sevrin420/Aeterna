@@ -102,6 +102,19 @@ for (const r of ALCOVE_ROWS) {
   });
 }
 
+// A confessional alcove cut NORTH out of the transept's west arm — the left
+// arm of the inverted cross. The transept's north wall course is row 51, so
+// the niche breaks through it and runs back into what was void; only a
+// three-tile throat is opened, which keeps the arm reading as a wall with a
+// door in it rather than as an open-plan room.
+export const CONFESSIONAL = { x0: 29, y0: 46, x1: 33, y1: 50 };
+export const CONFESSIONAL_THROAT = [30, 31, 32];    // walkable cols at row 51
+// The booth stands across the whole back wall of the niche. Its centre tile
+// carries the prop; the rest are invisible blockers, so the player can walk up
+// to the grille but never behind it.
+export const CONFESSIONAL_BOOTH_ROW = 46;
+export const CONFESSIONAL_BOOTH_COL = 31;
+
 // WEST warren: a corridor with six doored rooms (three above, three below).
 const WEST_CORRIDOR = { x0: 10, y0: 105, x1: 41, y1: 108 };
 const ROOM_COLS = [[12, 19], [23, 30], [34, 41]];
@@ -139,6 +152,9 @@ function buildGrid() {
   fillRect(grid, WEST_CORRIDOR.x0, WEST_CORRIDOR.y0, WEST_CORRIDOR.x1, WEST_CORRIDOR.y1, 'c');
   for (const rm of ROOMS) fillRect(grid, rm.x0, rm.y0, rm.x1, rm.y1, 'c');
   fillRect(grid, SKULL_ROOM.x0, SKULL_ROOM.y0, SKULL_ROOM.x1, SKULL_ROOM.y1, 'c');
+  // confessional niche + its throat through the transept's north wall
+  fillRect(grid, CONFESSIONAL.x0, CONFESSIONAL.y0, CONFESSIONAL.x1, CONFESSIONAL.y1, '.');
+  for (const c of CONFESSIONAL_THROAT) grid[TRANSEPT.y0 - 1][c] = '.';
   // doorway gaps (walkable floor; a door prop sits here and can be closed)
   for (const d of DOORS) grid[d.row][d.col] = 'c';
 
@@ -146,6 +162,12 @@ function buildGrid() {
   wallRing(grid, NAVE.x0 - 1, NAVE.y0 - 1, NAVE.x1 + 1, NAVE.y1 + 1);
   wallRing(grid, TRANSEPT.x0 - 1, TRANSEPT.y0 - 1, TRANSEPT.x1 + 1, TRANSEPT.y1 + 1);
   for (const a of ALCOVES) wrapWalls(grid, a.cells);
+  // Two courses, not one. The niche is the only structure in the abbey that
+  // pushes OUT into the void rather than being carved from a lit room, so a
+  // single-tile ring reads as a floating box; a second course gives it enough
+  // mass to look like masonry the transept grew out of.
+  wallRing(grid, CONFESSIONAL.x0 - 1, CONFESSIONAL.y0 - 1, CONFESSIONAL.x1 + 1, TRANSEPT.y0 - 1);
+  wallRing(grid, CONFESSIONAL.x0 - 2, CONFESSIONAL.y0 - 2, CONFESSIONAL.x1 + 2, TRANSEPT.y0 - 1);
   wallRing(grid, WEST_CORRIDOR.x0 - 1, WEST_CORRIDOR.y0 - 1, WEST_CORRIDOR.x1 + 1, WEST_CORRIDOR.y1 + 1);
   for (const rm of ROOMS) wallRing(grid, rm.x0 - 1, rm.y0 - 1, rm.x1 + 1, rm.y1 + 1);
   wallRing(grid, SKULL_ROOM.x0 - 1, SKULL_ROOM.y0 - 1, SKULL_ROOM.x1 + 1, SKULL_ROOM.y1 + 1);
@@ -167,6 +189,13 @@ prop('altar', NAVE_CX, 9);
 prop('torch', NAVE_CX - 3, 9); prop('torch', NAVE_CX + 3, 9);
 prop('bulletin', NAVE.x0, 11, false);
 prop('pew', NAVE_CX - 3, 70); prop('pew', NAVE_CX + 3, 70);
+// The confessional: a timber booth filling the back of the north niche, with
+// the confessor standing in its open bay. Only the centre tile draws; the rest
+// are solid so the booth is a wall you talk through, not furniture you skirt.
+prop('confessional', CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW);
+for (let c = CONFESSIONAL.x0; c <= CONFESSIONAL.x1; c++) {
+  if (c !== CONFESSIONAL_BOOTH_COL) prop('booth-block', c, CONFESSIONAL_BOOTH_ROW);
+}
 // staircases down (walkable — step to descend)
 prop('stair-down', TRANSEPT.x0 + 2, 58, false, { dest: { col: WEST_CORRIDOR.x0 + 2, row: 106 } });  // WEST -> warren
 prop('stair-down', TRANSEPT.x1 - 2, 58, false, { dest: { col: SKULL_ROOM.x1 - 3, row: 101 } });      // EAST -> skulls

@@ -81,9 +81,6 @@ export const sfx = {
     tone({ freq: 659.25, duration: 0.1, type: 'sine', gain: 0.078, delay: 0.08 });
     tone({ freq: 783.99, duration: 0.2, type: 'sine', gain: 0.078, delay: 0.16 });
   },
-  gift() {
-    tone({ freq: 440, duration: 0.1, type: 'sine', gain: 0.072, glideTo: 880 });
-  },
   confession() {
     tone({ freq: 196, duration: 0.3, type: 'sawtooth', gain: 0.048, glideTo: 392 });
   },
