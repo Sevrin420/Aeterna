@@ -17,13 +17,12 @@
 
 import { BONE, BLOOD, VOID, SOUL, WALL, SHADOW, blueFlame, candleFlame, SOULFIRE } from './palette.js';
 
-// How close you have to stand. This was 30, which sounds generous until you
-// remember the skull's own 3x3 footprint is solid: the reachable ring was
-// exactly one tile deep, so walking up to a very large skull and stopping a
-// tile short showed no mark at all and read as "this does nothing". 44 gives
-// two tiles of approach on every side and still cannot be triggered from
-// across the chamber.
-export const WORSHIP_R = 44;
+// The rite starts from ONE tile, and it is painted blood red so you can see
+// which. It used to start from anywhere inside a 44px circle, which let the
+// player kneel half inside the pool and gave no clue where the right place
+// was; a marked tile answers that without a word of instruction. The radius
+// survives only as the slack on standing exactly on it.
+export const WORSHIP_R = 9;
 const SKULL_S = 18;             // cranium half-width in pixels — deliberately large
 const RISE = 34;                // how high it gets by the last line of the chant
 // Even at rest the skull is drawn well above its tile centre. Centred on the
@@ -47,9 +46,8 @@ const DESCEND = 2.2;
 const REROBE = 1.4;
 
 // The kerb the skull lies inside: a ring of set stones with a pool of black
-// ooze held in it, and candles burning on three of them. The kerb sits OUTSIDE
-// the worshipper's circuit, so the dance happens ankle-deep in the pool rather
-// than around the outside of it.
+// ooze held in it, and candles burning on three of them. The worshipper's
+// circuit runs OUTSIDE all of it — see DANCE_R.
 const KERB_N = 14;              // stones in the ring
 const KERB_R = 41;              // how far out they are set
 const POOL_R = 36;              // the ooze reaches almost to them
@@ -60,7 +58,11 @@ const CANDLE_ON = [1, 6, 10];   // which stones carry a candle
 // the chant, ending where they began, with two hops per phrase. The orbit is
 // squashed vertically for the same reason the kerb is — a true circle reads as
 // the player sliding rather than walking round.
-const DANCE_R = 30;
+//
+// 52, outside the 41px kerb. It was 30, which is inside the 36px pool, so the
+// dance ran through the ooze and looked like the worshipper had fallen in. The
+// star was grown to make room for the bigger circuit.
+const DANCE_R = 52;
 const DANCE_SQUASH = 0.66;
 const HOPS_PER_LINE = 2;
 const HOP_H = 3.2;
@@ -82,9 +84,10 @@ function proj(u, w, c, s) {
 }
 
 export class SkullShrine {
-  constructor({ x, y, onChant = () => {}, onEvent = () => {}, onDone = () => {} }) {
+  constructor({ x, y, altar = null, onChant = () => {}, onEvent = () => {}, onDone = () => {} }) {
     this.x = x;                 // world pixels: the centre of the chamber
     this.y = y;
+    this.altar = altar;         // the marked tile, world pixels
     this.onChant = onChant;
     this.onEvent = onEvent;   // 'strip' | 'blood' | 'kindle' | 'glow' | 'land'
     this.onDone = onDone;
@@ -142,6 +145,24 @@ export class SkullShrine {
   drawGround(ctx) {
     const t = this.t;
     const swell = 1 + this.fire * 0.03;
+
+    // The one tile the rite can be started from. It pulses only while the rite
+    // is available — once the day's chant is done it is just a dark stain, so
+    // the floor is never inviting you to do something you cannot do.
+    if (this.altar) {
+      const live = !this.done && !this.active;
+      const a = live ? 0.5 + Math.sin(t * 2.2) * 0.16 : 0.20;
+      const A = this.altar;
+      ctx.fillStyle = `rgba(74,13,22,${live ? 0.95 : 0.8})`;
+      ctx.fillRect(A.x - 5, A.y - 5, 10, 10);
+      ctx.fillStyle = `rgba(198,43,48,${a})`;
+      ctx.fillRect(A.x - 4, A.y - 4, 8, 8);
+      ctx.fillStyle = `rgba(232,90,74,${a * 0.7})`;
+      ctx.fillRect(A.x - 4, A.y - 4, 8, 1.2);
+      ctx.fillStyle = `rgba(140,26,34,${live ? 0.9 : 0.55})`;   // grouted in
+      ctx.fillRect(A.x - 5, A.y + 4, 10, 1);
+      ctx.fillRect(A.x - 5, A.y - 5, 1, 10);
+    }
 
     // --- the pool ---------------------------------------------------------
     ctx.fillStyle = '#0b0713';                                  // the wet rim it has left
@@ -242,12 +263,15 @@ export class SkullShrine {
   // the point of it going back down.
   settle() { this.done = true; }
 
+  // Only from the marked tile. `altar` is world pixels, set by the scene.
   inReach(px, py) {
-    return Math.hypot(px - this.x, py - this.y) < WORSHIP_R;
+    if (!this.altar) return false;
+    return Math.hypot(px - this.altar.x, py - this.altar.y) < WORSHIP_R;
   }
 
   begin(px, py) {
     if (this.active || this.done) return false;
+    if (!this.inReach(px, py)) return false;
     this.active = true;
     this.phase = 'disrobe';
     this.pt = 0;

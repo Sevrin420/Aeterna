@@ -15,7 +15,7 @@ import { SkullShrine } from '../skullrite.js';
 import { FireVigil } from '../vigil.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
-  ALCOVES, DOORS, ROOMS, SKULL_ROOM, MANCALA_SEAT, NAVE, TRANSEPT, NAVE_CX,
+  ALCOVES, DOORS, ROOMS, SKULL_ROOM, MANCALA_SEAT, SKULL_ALTAR, NAVE, TRANSEPT, NAVE_CX,
   EXIT_ROW, EXIT_COLS, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW, SKULL_SHRINE,
 } from '../abbeyMap.js';
 import {
@@ -139,6 +139,8 @@ export class CourtyardScene {
 
     this.shrine = new SkullShrine({
       x: px(SKULL_SHRINE.col), y: px(SKULL_SHRINE.row),
+      // The one tile the rite starts from, painted blood red on the floor.
+      altar: { x: px(SKULL_ALTAR.col), y: px(SKULL_ALTAR.row) },
       // The rite passes its own beat length, so the line stays up for exactly
       // as long as the shrine means it to and the two can never drift apart.
       onChant: (line, gap) => {

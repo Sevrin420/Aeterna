@@ -8,8 +8,8 @@
 // web/js/scenes/courtyard.js from the tile grid + prop list below.
 
 export const TILE = 10;
-export const COLS = 108;
-export const ROWS = 122;
+export const COLS = 116;
+export const ROWS = 134;
 export const S = 1; // (legacy scale knob; the map is now authored at final size)
 
 export function h2(x, y) { return (((x * 73856093) ^ (y * 19349663)) >>> 0) % 97; }
@@ -124,6 +124,21 @@ export const CONFESSIONAL_THROAT = [39, 40, 41];    // walkable cols at TRANSEPT
 export const CONFESSIONAL_BOOTH_ROW = 30;
 export const CONFESSIONAL_BOOTH_COL = 40;
 
+// The gaming hall: an alcove cut SOUTH out of the transept's west arm, so the
+// confessor's niche and this open off the same arm on opposite sides — you
+// settle your account with the abbey upstairs and gamble it away three tiles
+// later. It is the one room in the building with no rite in it, which is why
+// it gets benches: somewhere to sit is the whole difference between a chamber
+// and a den.
+export const MANCALA_HALL = { x0: 37, y0: 50, x1: 45, y1: 57 };
+export const MANCALA_THROAT = [40, 41, 42];   // walkable cols at TRANSEPT.y1 + 1
+export const MANCALA_SEAT = { col: 41, row: 54 };
+export const MANCALA_BENCHES = [
+  { col: 38, row: 53 }, { col: 38, row: 55 },
+  { col: 44, row: 53 }, { col: 44, row: 55 },
+  { col: 41, row: 51 },
+];
+
 // Eight figures set into the walls of the cross, each on the one side of its
 // wall that fronts open floor, so every one of them looks out over a room
 // rather than into stone. `face` is +1 when the floor is to the east and -1
@@ -144,6 +159,29 @@ export const STATUES = [
   { col: 83, row: 42, kind: 'gargoyle',  face: -1 },
   { col: 50, row: 52, kind: 'grotesque', face:  1 },
   { col: 69, row: 52, kind: 'grotesque', face: -1 },
+
+  // Sixteen more, tripling the statuary. Chosen by farthest-point spread over
+  // every wall tile in the abbey that has floor on exactly one side and is not
+  // a corner, so no two crowd each other and every part of the building —
+  // nave, arms, warren, star — carries some. The warren and the star get most
+  // of them: those were the two areas with none at all, and they are also the
+  // two you walk through in the dark.
+  { col: 45, row: 22, kind: 'gargoyle',  face:  1 },
+  { col: 74, row: 22, kind: 'gargoyle',  face: -1 },
+  { col: 36, row: 57, kind: 'gargoyle',  face:  1 },
+  { col: 20, row: 97, kind: 'gargoyle',  face: -1 },
+  { col: 42, row: 97, kind: 'gargoyle',  face: -1 },
+  { col: 31, row: 103, kind: 'gargoyle',  face: -1 },
+  { col: 11, row: 116, kind: 'gargoyle',  face:  1 },
+  { col: 22, row: 111, kind: 'gargoyle',  face:  1 },
+  { col: 33, row: 116, kind: 'gargoyle',  face:  1 },
+  { col: 76, row: 91, kind: 'grotesque', face:  1 },
+  { col: 99, row: 92, kind: 'grotesque', face: -1 },
+  { col: 79, row: 102, kind: 'gargoyle',  face:  1 },
+  { col: 106, row: 111, kind: 'gargoyle',  face: -1 },
+  { col: 69, row: 111, kind: 'gargoyle',  face:  1 },
+  { col: 83, row: 113, kind: 'gargoyle',  face:  1 },
+  { col: 89, row: 123, kind: 'grotesque', face: -1 },
 ];
 
 // WEST warren: a corridor with six doored rooms (three above, three below).
@@ -167,10 +205,15 @@ for (const rm of ROOMS) DOORS.push(rm.door);
 // SKULL_ROOM stays as the star's bounding box, because half the abbey derives
 // positions from it and a bounding box is still the right answer for "how big
 // is this room". What is walkable is STAR_CELLS.
-const STAR_C = { col: 88, row: 105 };
-const STAR_OUT = 13.2;              // tile radius to a point
-const STAR_IN = 5.6;                // tile radius to a notch
-export const SKULL_ROOM = { x0: 75, y0: 92, x1: 101, y1: 118 };
+// Grown by half. The worshipper's circuit used to run at 30px, INSIDE the
+// 36px pool, so the dance happened in the ooze; it now runs at 52px, outside
+// the 41px kerb. For that to fit, the star's narrowest measurement — the notch
+// radius between two points — has to clear the circuit, so STAR_IN went from
+// 5.6 tiles to 7.6 and the points went out to keep the proportion.
+const STAR_C = { col: 88, row: 106 };
+const STAR_OUT = 19;                // tile radius to a point
+const STAR_IN = 7.6;                // tile radius to a notch — must clear DANCE_R
+export const SKULL_ROOM = { x0: 69, y0: 87, x1: 107, y1: 125 };
 
 // The star as a polygon, then rasterised. One vertex at +90 degrees puts a
 // point at the BOTTOM of the screen, which is the inversion.
@@ -233,11 +276,19 @@ function nearShrine(col, row) {
 // one would read as a bug however convincingly it hovers.
 export const SKULL_SHRINE = { col: STAR_C.col, row: STAR_C.row };
 
-// The stair lands in the upper-right arm, the mancala table sits in the
-// lower-left one — opposite wedges, so arriving in the room does not put you on
-// top of the table.
+// The only tile the skull can be worshipped from: due south of it, five tiles
+// out, which puts it clear of the kerb (4.1 tiles) on the floor of the star's
+// downward point. The rite used to start from anywhere inside a 44px circle,
+// which meant the player could kneel half inside the pool and had no idea
+// where the "right" place was. One tile, painted blood red, answers that
+// without a word of instruction.
+export const SKULL_ALTAR = { col: STAR_C.col, row: STAR_C.row + 5 };
+
+// The stair lands in the star's upper-right arm. The mancala table used to sit
+// in the lower-left one; it has its own hall off the transept now, because a
+// wager table in the shrine room meant the one place you go to gamble was also
+// the one place you go to be worshipped at.
 export const SKULL_STAIR = starSpot(6, -6);
-export const MANCALA_SEAT = starSpot(-7, 6);
 
 // Bundles of cut switches, standing against the nave's north wall behind the
 // Abbot — the altar between him and them, so they are the first thing you see
@@ -271,6 +322,9 @@ function buildGrid() {
   // confessional niche + its throat through the transept's north wall
   fillRect(grid, CONFESSIONAL.x0, CONFESSIONAL.y0, CONFESSIONAL.x1, CONFESSIONAL.y1, '.');
   for (const c of CONFESSIONAL_THROAT) grid[TRANSEPT.y0 - 1][c] = '.';
+  // gaming hall + its throat through the transept's SOUTH wall
+  fillRect(grid, MANCALA_HALL.x0, MANCALA_HALL.y0, MANCALA_HALL.x1, MANCALA_HALL.y1, '.');
+  for (const c of MANCALA_THROAT) grid[TRANSEPT.y1 + 1][c] = '.';
   // doorway gaps (walkable floor; a door prop sits here and can be closed)
   for (const d of DOORS) grid[d.row][d.col] = 'c';
 
@@ -284,6 +338,10 @@ function buildGrid() {
   // mass to look like masonry the transept grew out of.
   wallRing(grid, CONFESSIONAL.x0 - 1, CONFESSIONAL.y0 - 1, CONFESSIONAL.x1 + 1, TRANSEPT.y0 - 1);
   wallRing(grid, CONFESSIONAL.x0 - 2, CONFESSIONAL.y0 - 2, CONFESSIONAL.x1 + 2, TRANSEPT.y0 - 1);
+  // Same two courses for the hall, for the same reason: it pushes out into the
+  // void below the arm rather than being carved from a lit room.
+  wallRing(grid, MANCALA_HALL.x0 - 1, TRANSEPT.y1 + 1, MANCALA_HALL.x1 + 1, MANCALA_HALL.y1 + 1);
+  wallRing(grid, MANCALA_HALL.x0 - 2, TRANSEPT.y1 + 1, MANCALA_HALL.x1 + 2, MANCALA_HALL.y1 + 2);
   wallRing(grid, WEST_CORRIDOR.x0 - 1, WEST_CORRIDOR.y0 - 1, WEST_CORRIDOR.x1 + 1, WEST_CORRIDOR.y1 + 1);
   for (const rm of ROOMS) wallRing(grid, rm.x0 - 1, rm.y0 - 1, rm.x1 + 1, rm.y1 + 1);
   // The star gets its walls wrapped around its actual cells — a ring round the
@@ -344,6 +402,7 @@ prop('nursery', ROOMS[0].x0 + 3, ROOMS[0].y0 + 3, false); // cradle in the first
 // --- EAST SKULL CHAMBER (chant to the skulls; also holds the ritual games) ---
 prop('stair-up', SKULL_STAIR.col, SKULL_STAIR.row, false, { dest: { col: TRANSEPT.x1 - 2, row: TRANSEPT.y0 + 8 } });
 prop('mancala-table', MANCALA_SEAT.col, MANCALA_SEAT.row);
+for (const b of MANCALA_BENCHES) prop('bench', b.col, b.row);
 // The shrine's footprint. Nothing draws from these — the skull is scene-owned
 // because it floats, spins, wakes and descends — they exist only to be solid.
 for (let dc = -1; dc <= 1; dc++) {
