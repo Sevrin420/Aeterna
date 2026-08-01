@@ -1,5 +1,4 @@
 import { Input, makeLoop } from './engine.js';
-import { PresenterScene } from './scenes/presenter.js';
 import { BootScene } from './scenes/boot.js';
 import { EntranceScene } from './scenes/entrance.js';
 import { CourtyardScene } from './scenes/courtyard.js';
@@ -53,8 +52,74 @@ let _gameBgm = null;
 // nothing ever said why. Declared here and built in powerOn(), inside the
 // power switch's real user gesture, so unlockAudio() can prime it.
 let _stinger = null;
+let _stingerPrimed = false;
+let _priming = false;
 const MUSIC = () => [_bgm, _gameBgm].filter(Boolean);
 function applyMute(m) { for (const a of MUSIC()) a.muted = m; }
+
+// Which track SHOULD be sounding right now — the title hymn in the lobby and
+// on the title card, the game hymn in the abbey. kickAudio() needs to know
+// this to tell "silent because it was blocked" from "silent on purpose".
+let _want = null;
+// Every rejection any play() ever gets, kept for the ?audio readout. A silent
+// console with no error is impossible to debug remotely; this makes the
+// browser's own reason for refusing visible on the device that refused.
+const _audioLog = [];
+function note(msg) {
+  _audioLog.push(`${(performance.now() / 1000).toFixed(1)}s ${msg}`);
+  if (_audioLog.length > 12) _audioLog.shift();
+}
+
+// Every play() in the app goes through here, so a refusal is recorded rather
+// than swallowed by a bare .catch().
+function tryPlay(el, label) {
+  if (!el) return;
+  try {
+    const p = el.play();
+    if (p && p.then) {
+      p.then(() => note(`${label}: playing`))
+       .catch((e) => note(`${label}: REFUSED ${e.name} — ${e.message}`.slice(0, 90)));
+    }
+  } catch (e) {
+    note(`${label}: threw ${e.name}`);
+  }
+}
+
+// Browsers only let a media element start from inside an event that counts as
+// user activation, and `pointermove` is not one of them on WebKit. The power
+// switch is a SLIDER: drag it across and powerOn() commits from pointermove,
+// so the hymn's play() is rejected and the .catch() swallows it — the console
+// comes on in silence and nothing anywhere says why. The same applies to the
+// game hymn, which is created inside a scene transition with no gesture behind
+// it at all.
+//
+// Rather than guess which browsers are strict, every subsequent gesture is
+// treated as another chance: if the track that should be playing is paused,
+// try it again. This is a no-op the moment the music is actually running.
+function kickAudio() {
+  if (!powered) return;
+  // Keep trying the prime until one actually succeeds — a blocked prime that
+  // was recorded as done would leave the stinger locked for the whole session,
+  // and it is played from a rAF callback where a fresh attempt has no gesture
+  // to lean on.
+  // One prime at a time. kickAudio runs on both pointerdown AND pointerup of
+  // the same click, and two overlapping primes race on the muted flag: the
+  // second reads muted=true as the "previous" value and restores it, leaving
+  // the stinger permanently silent.
+  if (_stinger && !_stingerPrimed && !_priming) {
+    _priming = true;
+    const el = _stinger;
+    unlockAudio(el).then((ok) => {
+      _priming = false;
+      if (ok && _stinger === el) _stingerPrimed = true;
+    });
+  }
+  if (!_want || !_want.paused) return;
+  tryPlay(_want, 'kick');
+}
+for (const ev of ['pointerup', 'pointerdown', 'keydown', 'touchend']) {
+  window.addEventListener(ev, kickAudio, { passive: true });
+}
 
 // Strict-autoplay browsers (Safari/WebKit-based — this includes DuckDuckGo's
 // in-app browser) require a media element's FIRST play() to happen
@@ -68,13 +133,24 @@ function applyMute(m) { for (const a of MUSIC()) a.muted = m; }
 // silently swallowed by the existing .catch(() => {}). Priming each element
 // with an immediate play()+pause() right here, inside the power switch's real
 // gesture, unlocks them so the later deferred play() calls actually work.
+// Returns a promise that resolves true only if the browser actually let the
+// element start. The caller needs to know: a prime that was itself blocked
+// leaves the element locked, and marking it primed anyway would mean never
+// trying again. Primed muted so the unlock is inaudible.
 function unlockAudio(el) {
   try {
+    const wasMuted = el.muted;
+    el.muted = true;
     const p = el.play();
-    el.pause();
-    el.currentTime = 0;
-    if (p && p.catch) p.catch(() => {});
-  } catch { /* ignore */ }
+    const done = () => { el.pause(); el.currentTime = 0; el.muted = wasMuted; };
+    if (p && p.then) {
+      return p.then(() => { done(); return true; }).catch(() => { done(); return false; });
+    }
+    done();
+    return Promise.resolve(true);
+  } catch {
+    return Promise.resolve(false);
+  }
 }
 
 muteToggle.setAttribute('aria-pressed', String(sfx.isMuted()));
@@ -106,11 +182,44 @@ let socket = null;
 function playStinger() {
   if (!_stinger || sfx.isMuted()) return;
   try {
+    _stinger.muted = false;      // never trust a lost restore from priming
     _stinger.currentTime = 0;
-    const p = _stinger.play();
-    if (p && p.catch) p.catch(() => {});
+    tryPlay(_stinger, 'stinger');
   } catch { /* a missing stinger must never block the transition */ }
 }
+
+// Open the site with ?audio to get a live readout of the audio stack pinned
+// under the console. It is the only practical way to see WHY a phone is
+// silent: the browser's refusal reason never reaches a desktop console.
+function initAudioDebug() {
+  if (!new URLSearchParams(location.search).has('audio')) return;
+  const box = document.createElement('pre');
+  box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99;margin:0;'
+    + 'padding:6px 8px;background:rgba(0,0,0,.88);color:#7dffb0;font:10px/1.45 monospace;'
+    + 'white-space:pre-wrap;max-height:46vh;overflow:auto;border-top:1px solid #2f7a4e';
+  document.body.appendChild(box);
+  const line = (label, el) => {
+    if (!el) return `${label.padEnd(9)} —`;
+    return `${label.padEnd(9)} paused=${el.paused} muted=${el.muted} vol=${el.volume}`
+      + ` t=${el.currentTime.toFixed(1)} ready=${el.readyState} net=${el.networkState}`
+      + ` err=${el.error ? el.error.code : '-'}`;
+  };
+  setInterval(() => {
+    let ctxState = 'n/a';
+    try { ctxState = sfx.ctxState ? sfx.ctxState() : 'n/a'; } catch { ctxState = 'threw'; }
+    box.textContent = [
+      `powered=${powered}  sfxMuted=${sfx.isMuted()}  audioCtx=${ctxState}`,
+      `wanted=${_want === _bgm ? 'hymn' : _want === _gameBgm ? 'game-hymn' : 'none'}`
+        + `  stingerPrimed=${_stingerPrimed}`,
+      line('hymn', _bgm),
+      line('game', _gameBgm),
+      line('stinger', _stinger),
+      '',
+      ..._audioLog,
+    ].join('\n');
+  }, 250);
+}
+initAudioDebug();
 
 function drawOff() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -318,7 +427,8 @@ function enterCourtyard(player) {
   _gameBgm.loop = true;
   _gameBgm.volume = 0.5;
   _gameBgm.muted = false;
-  _gameBgm.play().catch(() => {});
+  _want = _gameBgm;
+  tryPlay(_gameBgm, 'game-hymn');
   scene = new CourtyardScene({
     player,
     onPlayerUpdate: updateHud,
@@ -405,11 +515,12 @@ function enterEntrance(player, spawn = 'centre') {
     _bgm.loop = true;
     _bgm.volume = 0.55;
     _bgm.muted = sfx.isMuted();
-    _bgm.play().catch(() => {});
+    tryPlay(_bgm, 'hymn@lobby');
   } else {
     _bgm.muted = sfx.isMuted();
-    if (_bgm.paused) _bgm.play().catch(() => {});
+    if (_bgm.paused) tryPlay(_bgm, 'hymn@lobby');
   }
+  _want = _bgm;
   scene = new EntranceScene({
     player,
     spawn,
@@ -526,18 +637,11 @@ function startBoot() {
   hint.textContent = '';
 }
 
-// First scene on power-on: "Presented by / Members Only". Pressing A there plays
-// the title-card stinger and reveals the title card (image fade + logo drop).
-function startPresenter() {
-  scene = new PresenterScene({
-    onComplete: () => {
-      playStinger();
-      startBoot();
-    },
-  });
-  scene.enter();
-  hint.textContent = '';
-}
+// The "Presented by / Members Only" card is gone. It was never reachable —
+// powerOn() has always gone straight to the title card — and its only real job
+// was to give the browser a second user gesture to start the music on, which
+// kickAudio() below now does properly and invisibly. The scene itself is still
+// in scenes/presenter.js if it is ever wanted as a card in its own right.
 
 function powerOn() {
   if (powered) return;
@@ -547,14 +651,16 @@ function powerOn() {
   _bgm.loop = true;
   _bgm.volume = 0.55;
   _bgm.muted = sfx.isMuted();
-  _bgm.play().catch(() => {});
+  tryPlay(_bgm, 'hymn@power');
   // Strict-autoplay browsers only allow later programmatic play() on an element
   // whose FIRST play() happened inside a real gesture — which is what
   // unlockAudio() is for, and why the stinger has to be built here rather than
   // at the moment it is needed. (unlockAudio had no callers at all until now.)
+  _want = _bgm;
   _stinger = new Audio('assets/title-a.mp3');
   _stinger.volume = 0.7;
-  unlockAudio(_stinger);
+  _stingerPrimed = false;
+  kickAudio();          // primes the stinger, and retries the hymn if it balked
   powerSwitch.setAttribute('aria-pressed', 'true');
   document.body.classList.add('powered');
   startBoot();
@@ -578,10 +684,12 @@ function powerOff() {
   if (!powered) return;
   powered = false;
   for (const a of MUSIC()) { try { a.pause(); a.currentTime = 0; } catch {} }
-  _bgm = null; _gameBgm = null;
+  _bgm = null; _gameBgm = null; _want = null;
   powerSwitch.setAttribute('aria-pressed', 'false');
   document.body.classList.remove('powered');
   _stinger = null;
+  _stingerPrimed = false;
+  _priming = false;
   if (scene && scene.exit) scene.exit();
   scene = null;
   if (socket) { socket.disconnect(); socket = null; }

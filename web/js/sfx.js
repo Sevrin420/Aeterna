@@ -47,6 +47,11 @@ function tone({ freq = 440, duration = 0.15, type = 'sine', gain = 0.15, delay =
 }
 
 export const sfx = {
+  // For the ?audio readout: whether the oscillator context ever came up. On
+  // privacy browsers that instrument Web Audio this is the thing that differs.
+  ctxState() {
+    try { return ctx ? ctx.state : 'not-created'; } catch { return 'threw'; }
+  },
   isMuted() { return muted; },
   toggleMute() {
     muted = !muted;
