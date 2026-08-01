@@ -12,9 +12,10 @@ import { LORE } from '../lore.js';
 import { FireRite } from '../firerite.js';
 import { Scourge, StickPile } from '../scourge.js';
 import { SkullShrine } from '../skullrite.js';
+import { FireVigil } from '../vigil.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
-  ALCOVES, DOORS, ROOMS, SKULL_ROOM, NAVE, TRANSEPT, NAVE_CX,
+  ALCOVES, DOORS, ROOMS, SKULL_ROOM, MANCALA_SEAT, NAVE, TRANSEPT, NAVE_CX,
   EXIT_ROW, EXIT_COLS, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW, SKULL_SHRINE,
 } from '../abbeyMap.js';
 import {
@@ -66,7 +67,7 @@ const STATIONS = [
   // the wall. It is deliberately NOT a station: a station opens a box and runs
   // a rite, and the shrine takes over the whole scene instead. See _shrineAction().
   { id: 'nursery', kind: 'nursery', label: 'Approach the Cradle', x: px(ROOMS[0].x0 + 3), y: px(ROOMS[0].y0 + 3), r: 12 },
-  { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(SKULL_ROOM.x1 - 4), y: px(SKULL_ROOM.y1 - 2), r: 12 },
+  { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(MANCALA_SEAT.col), y: px(MANCALA_SEAT.row), r: 13 },
   // The braziers are deliberately NOT stations. A station opens a box and runs
   // a rite; a brazier is a container you put things in, and it has to behave
   // differently depending on what you are carrying. See _fireAction().
@@ -113,6 +114,14 @@ export class CourtyardScene {
     // room doors (keyed "col,row" -> open?), and the running skull chant.
     this.litBraziers = new Set();   // legacy: kept for the prop renderer's key lookup
     this.fire = new FireRite(ALCOVES, px);
+    // The vigil: the fire duty is a rite now, not a toast. It borrows the
+    // shrine's chant plumbing wholesale — same bubble, same beat length, same
+    // mantra — because they are two altars of one liturgy.
+    this.vigil = new FireVigil({
+      onChant: (line, gap) => this.showChat('local', line, { hold: gap * 0.96, cps: 11 }),
+      onLine: (i) => { i % 2 ? sfx.confession() : sfx.dutyComplete(); },
+      onDone: () => this._endVigil(),
+    });
     this.sticks = new StickPile(STICKS, px);
     this.scourge = new Scourge({
       // Said through the blows: the first line as the switch comes down the
@@ -397,9 +406,13 @@ export class CourtyardScene {
   // centre and the background scrolls in clean whole-pixel steps. (An eased
   // camera lags and catches up in 1px hops that don't line up with the
   // player's sub-pixel motion, which reads as a jitter/shimmer while walking.)
+  // Normally the camera is on the player. A cutscene can set `_focus` to frame
+  // something else — the vigil puts it between the fire and the worshipper so
+  // both stay in shot without the view ever cutting.
   _updateCamera() {
-    this.cam.x = Math.max(0, Math.min(MAP_W - W, this.pc.x - W / 2));
-    this.cam.y = Math.max(0, Math.min(MAP_H - H, this.pc.y - H / 2));
+    const f = this._focus || this.pc;
+    this.cam.x = Math.max(0, Math.min(MAP_W - W, f.x - W / 2));
+    this.cam.y = Math.max(0, Math.min(MAP_H - H, f.y - H / 2));
   }
 
   // Demo crowd: spawn N wandering Cultist NPCs (each a real generated Cultist
@@ -597,7 +610,7 @@ export class CourtyardScene {
           this.carrying = null;
           this.litBraziers.add(`${ALCOVES[b].brazier.col},${ALCOVES[b].brazier.row}`);
           if (this.player.candles_today) sfx.dutyComplete();
-          else { this._speak(CHANT_PAIR, 0.35); this._handleDuty('candles'); }
+          else this._beginVigil(b);
           return true;
         }
       }
@@ -649,6 +662,51 @@ export class CourtyardScene {
 
   // Standing before the shrine and pressing A. There is no dialogue box and no
   // instruction: the robe comes off, the blood falls, and the skull answers.
+  // Kneeling to the fire the moment it catches. The scene hands over movement,
+  // both buttons and the camera; the Devotion is settled in _endVigil(), so
+  // walking away mid-rite is not a way to be paid without performing it.
+  _beginVigil(b) {
+    const bz = ALCOVES[b].brazier;
+    if (!this.vigil.begin(px(bz.col), px(bz.row) + 2, this.pc.x, this.pc.y)) return;
+    document.body.classList.add('rite-open');
+    this.pc.dir = this.pc.x > px(bz.col) ? 'left' : 'right';
+    this.pc.moving = false;
+    sfx.confession();
+  }
+
+  _endVigil() {
+    document.body.classList.remove('rite-open');
+    this._handleDuty('candles');
+  }
+
+  _updateVigil(dt, input) {
+    this.vigil.update(dt);
+    this.t += dt;
+    // The rite walks them to the mark and holds them there.
+    this.pc.x = this.vigil.px;
+    this.pc.y = this.vigil.py;
+    this.fire.update(dt);
+    this.sticks.update(dt);
+    this.shrine.update(dt);
+    if (this.crowd.length) this._updateCrowd(dt);
+    this.pc.moving = false;
+    this._activeStation = null;
+    this._activeDoor = null;
+    this._updateSpeech();
+    if (this.localChat) {
+      this.localChat.t -= dt;
+      this.localChat.age += dt;
+      if (this.localChat.t <= 0) this.localChat = null;
+    }
+    // The camera holds the fire and the worshipper in one frame for the whole
+    // rite rather than tracking the player, who is not going anywhere.
+    this._focus = { x: this.vigil.focusX, y: this.vigil.focusY };
+    this._updateCamera();
+    this._focus = null;
+    input.consumeAPress();
+    input.consumeBPress();
+  }
+
   _shrineAction() {
     if (this.shrine.active || this.shrine.done) return false;
     if (!this._dutyOpen('shrine')) return false;
@@ -721,8 +779,17 @@ export class CourtyardScene {
       const bonus = res.streakBonus > 0 ? ` (${res.base} +${res.streakBonus} streak)` : '';
       this.onToast(`${res.name}: +${res.devotionGained} Devotion${bonus}`);
       if (res.streakAdvanced) {
-        // "All three" would count the duties for them.
-        this.onToast(`The day is kept — streak day ${res.streak} (${res.multiplier}x)`);
+        // A box, not a toast. This is the one line a day that says the streak
+        // moved, and a toast scrolls it away in three seconds whether or not
+        // anyone was looking at the screen. It still never counts the duties
+        // or names them — "all three" would be an instruction wearing a robe.
+        this.dialogue.show([{
+          speaker: 'The Abbey',
+          text: 'The day is kept.\n\n'
+            + `Your streak stands at ${res.streak} day${res.streak === 1 ? '' : 's'}, `
+            + `and every act is now worth ${res.multiplier}x.\n\n`
+            + 'Come back tomorrow, or lose it.',
+        }]);
       }
     } catch (e) {
       sfx.error();
@@ -883,6 +950,7 @@ export class CourtyardScene {
     // impact, because a hit-stop that only freezes the fighters looks broken.
     if (this.scourge.active) { this._updateScourge(dt, input); return; }
     if (this.shrine.active) { this._updateShrine(dt, input); return; }
+    if (this.vigil.active) { this._updateVigil(dt, input); return; }
 
     this.t += dt;
 
@@ -1477,26 +1545,6 @@ export class CourtyardScene {
           ctx.fillRect(x - 5, y - 6, 10, 1.6); ctx.fillRect(x - 5, y + 2, 10, 1.6);
           ctx.fillStyle = IRON.h; ctx.fillRect(x - 5, y - 6, 10, 0.7); ctx.fillRect(x - 5, y + 2, 10, 0.7);
           ctx.fillStyle = GOLD.d; ctx.fillRect(x + 2, y - 2, 1.8, 1.8); // ring handle
-        }
-        break;
-      }
-      case 'skull-wall': {
-        const yb = p.row * TILE + TILE - 2;
-        for (let c = p.x0; c <= p.x1; c++) {
-          for (let k = 0; k < 2; k++) {
-            const sx = c * TILE + TILE / 2, sy = yb - k * 5;
-            ctx.fillStyle = BONE.o;                // outline pass first
-            ctx.beginPath(); ctx.arc(sx, sy - 2, 3.2, 0, Math.PI * 2); ctx.fill();
-            ctx.fillRect(sx - 2.6, sy - 0.6, 5.2, 3.6);
-            ctx.fillStyle = BONE.b;
-            ctx.beginPath(); ctx.arc(sx, sy - 2, 2.6, 0, Math.PI * 2); ctx.fill();
-            ctx.fillRect(sx - 2, sy, 4, 2.6);
-            ctx.fillStyle = BONE.h;                // lit from the upper left
-            ctx.beginPath(); ctx.arc(sx - 0.9, sy - 2.8, 1.2, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = BONE.o;                // sockets + nasal
-            ctx.fillRect(sx - 1.5, sy - 3, 1.2, 1.4); ctx.fillRect(sx + 0.3, sy - 3, 1.2, 1.4);
-            ctx.fillRect(sx - 0.4, sy - 1, 0.8, 1.1);
-          }
         }
         break;
       }
@@ -2190,11 +2238,14 @@ export class CourtyardScene {
     if (!this._floor) this._buildFloor();
     ctx.drawImage(this._floor, 0, 0, MAP_W, MAP_H);
     this.scourge.drawGround(ctx);
+    this.vigil.drawGlow(ctx);
     for (const item of this._collectDrawables(ctx)) item.draw();
     this.scourge.drawWorldFx(ctx);
+    this.vigil.drawFire(ctx);
     // After the depth sort, so a pillar or a pew can never hide it. Still in
     // world space, so it tracks the player rather than floating in a corner.
-    if (this._hasAction() && !this.dialogue.active && !this.scourge.active && !this.shrine.active) {
+    if (this._hasAction() && !this.dialogue.active && !this.scourge.active && !this.shrine.active
+        && !this.vigil.active) {
       drawBang(ctx, Math.round(this.pc.x), Math.round(this.pc.y) - 24, this.t);
     }
     // Last thing in world space, so nothing can cover what the player is saying.
@@ -2218,6 +2269,7 @@ export class CourtyardScene {
     ctx.fillRect(0, 0, W, H);
 
     this.scourge.drawScreenFx(ctx, W, H);
+    this.vigil.drawFrame(ctx, W, H, Math.round(this.cam.x) - sh.x, Math.round(this.cam.y) - sh.y);
     this.dialogue.render(ctx);
   }
 

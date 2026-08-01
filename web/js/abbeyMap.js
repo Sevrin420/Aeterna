@@ -158,17 +158,86 @@ for (const [cx0, cx1] of ROOM_COLS) {
 }
 for (const rm of ROOMS) DOORS.push(rm.door);
 
-// EAST chamber: a single room whose north wall is a rack of skulls, and whose
-// centre is now held by the shrine. Pulled in by a fifth on both axes (25x19
-// tiles down to 20x15) so the floating skull dominates the room instead of
-// hanging in the middle of a hall.
-export const SKULL_ROOM = { x0: 78, y0: 98, x1: 97, y1: 112 };
-export const SKULL_WALL_ROW = 98;
+// EAST chamber: the shrine's room, cut as a five-pointed star with one point
+// aimed SOUTH. An inverted pentagram is the shape the order would actually
+// carve, and it does something a rectangle cannot — the walls converge on the
+// skull from five directions, so wherever you stand you are in a wedge looking
+// down its axis at the thing in the middle.
+//
+// SKULL_ROOM stays as the star's bounding box, because half the abbey derives
+// positions from it and a bounding box is still the right answer for "how big
+// is this room". What is walkable is STAR_CELLS.
+const STAR_C = { col: 88, row: 105 };
+const STAR_OUT = 13.2;              // tile radius to a point
+const STAR_IN = 5.6;                // tile radius to a notch
+export const SKULL_ROOM = { x0: 75, y0: 92, x1: 101, y1: 118 };
+
+// The star as a polygon, then rasterised. One vertex at +90 degrees puts a
+// point at the BOTTOM of the screen, which is the inversion.
+const STAR_POLY = (() => {
+  const pts = [];
+  for (let k = 0; k < 10; k++) {
+    const r = k % 2 === 0 ? STAR_OUT : STAR_IN;
+    const a = Math.PI / 2 + (k * Math.PI) / 5;
+    pts.push([STAR_C.col + Math.cos(a) * r, STAR_C.row + Math.sin(a) * r]);
+  }
+  return pts;
+})();
+
+function inPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+export const STAR_CELLS = (() => {
+  const out = [];
+  for (let r = SKULL_ROOM.y0; r <= SKULL_ROOM.y1; r++) {
+    for (let c = SKULL_ROOM.x0; c <= SKULL_ROOM.x1; c++) {
+      if (inPoly(c + 0.5, r + 0.5, STAR_POLY)) out.push([c, r]);
+    }
+  }
+  return out;
+})();
+const STAR_SET = new Set(STAR_CELLS.map(([c, r]) => `${c},${r}`));
+export function inStar(col, row) { return STAR_SET.has(`${col},${row}`); }
+
+// Anything that has to STAND in the star asks for a spot rather than naming a
+// tile. A star has concave edges, so an offset from the centre that is fine in
+// a rectangle can easily land in the void between two points; this walks
+// outward from the wanted spot until it finds real floor, which means moving
+// the points or the radii can never strand a staircase in a wall again.
+function starSpot(dCol, dRow) {
+  const want = { col: STAR_C.col + dCol, row: STAR_C.row + dRow };
+  if (inStar(want.col, want.row) && !nearShrine(want.col, want.row)) return want;
+  let best = null;
+  let bestD = Infinity;
+  for (const [c, r] of STAR_CELLS) {
+    if (nearShrine(c, r)) continue;
+    const d = Math.hypot(c - want.col, r - want.row);
+    if (d < bestD) { bestD = d; best = { col: c, row: r }; }
+  }
+  return best;
+}
+// the shrine's own solid 3x3, which nothing may be placed on
+function nearShrine(col, row) {
+  return Math.abs(col - STAR_C.col) <= 1 && Math.abs(row - STAR_C.row) <= 1;
+}
 
 // The shrine skull floats over the centre of the chamber. Its tile and the
 // ring of tiles around it are solid: it is a large object, and walking through
 // one would read as a bug however convincingly it hovers.
-export const SKULL_SHRINE = { col: 88, row: 105 };
+export const SKULL_SHRINE = { col: STAR_C.col, row: STAR_C.row };
+
+// The stair lands in the upper-right arm, the mancala table sits in the
+// lower-left one — opposite wedges, so arriving in the room does not put you on
+// top of the table.
+export const SKULL_STAIR = starSpot(6, -6);
+export const MANCALA_SEAT = starSpot(-7, 6);
 
 // Bundles of cut switches, standing against the nave's north wall behind the
 // Abbot — the altar between him and them, so they are the first thing you see
@@ -198,7 +267,7 @@ function buildGrid() {
   // underground floors
   fillRect(grid, WEST_CORRIDOR.x0, WEST_CORRIDOR.y0, WEST_CORRIDOR.x1, WEST_CORRIDOR.y1, 'c');
   for (const rm of ROOMS) fillRect(grid, rm.x0, rm.y0, rm.x1, rm.y1, 'c');
-  fillRect(grid, SKULL_ROOM.x0, SKULL_ROOM.y0, SKULL_ROOM.x1, SKULL_ROOM.y1, 'c');
+  for (const [c, r] of STAR_CELLS) grid[r][c] = 'c';   // the star, not a box
   // confessional niche + its throat through the transept's north wall
   fillRect(grid, CONFESSIONAL.x0, CONFESSIONAL.y0, CONFESSIONAL.x1, CONFESSIONAL.y1, '.');
   for (const c of CONFESSIONAL_THROAT) grid[TRANSEPT.y0 - 1][c] = '.';
@@ -217,7 +286,10 @@ function buildGrid() {
   wallRing(grid, CONFESSIONAL.x0 - 2, CONFESSIONAL.y0 - 2, CONFESSIONAL.x1 + 2, TRANSEPT.y0 - 1);
   wallRing(grid, WEST_CORRIDOR.x0 - 1, WEST_CORRIDOR.y0 - 1, WEST_CORRIDOR.x1 + 1, WEST_CORRIDOR.y1 + 1);
   for (const rm of ROOMS) wallRing(grid, rm.x0 - 1, rm.y0 - 1, rm.x1 + 1, rm.y1 + 1);
-  wallRing(grid, SKULL_ROOM.x0 - 1, SKULL_ROOM.y0 - 1, SKULL_ROOM.x1 + 1, SKULL_ROOM.y1 + 1);
+  // The star gets its walls wrapped around its actual cells — a ring round the
+  // bounding box would seal the room inside a rectangle and leave the five
+  // wedges of void between the points unwalled.
+  wrapWalls(grid, STAR_CELLS);
   // re-open the doorways the rings may have sealed
   for (const d of DOORS) grid[d.row][d.col] = 'c';
   // cut the exit threshold through the south wall
@@ -247,7 +319,7 @@ for (let c = CONFESSIONAL.x0; c <= CONFESSIONAL.x1; c++) {
 // Stair rows are expressed off the transept rather than as absolute numbers,
 // so moving the crossbar can never leave a staircase standing in a wall.
 prop('stair-down', TRANSEPT.x0 + 2, TRANSEPT.y0 + 6, false, { dest: { col: WEST_CORRIDOR.x0 + 2, row: 106 } });  // WEST -> warren
-prop('stair-down', TRANSEPT.x1 - 2, TRANSEPT.y0 + 6, false, { dest: { col: SKULL_ROOM.x1 - 3, row: 101 } });      // EAST -> skulls
+prop('stair-down', TRANSEPT.x1 - 2, TRANSEPT.y0 + 6, false, { dest: { col: SKULL_STAIR.col, row: SKULL_STAIR.row } });  // EAST -> the star
 // the way out, at the foot of the cross
 prop('door', NAVE_CX, EXIT_ROW + 1, false);
 
@@ -270,10 +342,8 @@ for (const rm of ROOMS) prop('room-door', rm.door.col, rm.door.row, false);
 prop('nursery', ROOMS[0].x0 + 3, ROOMS[0].y0 + 3, false); // cradle in the first room
 
 // --- EAST SKULL CHAMBER (chant to the skulls; also holds the ritual games) ---
-prop('stair-up', SKULL_ROOM.x1 - 3, 101, false, { dest: { col: TRANSEPT.x1 - 2, row: TRANSEPT.y0 + 8 } });
-prop('skull-wall', Math.round((SKULL_ROOM.x0 + SKULL_ROOM.x1) / 2), SKULL_WALL_ROW, false,
-  { x0: SKULL_ROOM.x0, x1: SKULL_ROOM.x1 });
-prop('mancala-table', SKULL_ROOM.x1 - 4, SKULL_ROOM.y1 - 2);
+prop('stair-up', SKULL_STAIR.col, SKULL_STAIR.row, false, { dest: { col: TRANSEPT.x1 - 2, row: TRANSEPT.y0 + 8 } });
+prop('mancala-table', MANCALA_SEAT.col, MANCALA_SEAT.row);
 // The shrine's footprint. Nothing draws from these — the skull is scene-owned
 // because it floats, spins, wakes and descends — they exist only to be solid.
 for (let dc = -1; dc <= 1; dc++) {
