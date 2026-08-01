@@ -8,7 +8,7 @@ import { sfx } from '../sfx.js';
 import { drawCharacter, getCultistSprite, getGuruSprite, getConfessorSprite, getNakedSprite, getCultistSpriteVariant } from '../spritesheet.js';
 import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
 import { DialogueBox, drawBang } from '../dialogue.js';
-import { LORE, bulletinPages } from '../lore.js';
+import { LORE } from '../lore.js';
 import { FireRite } from '../firerite.js';
 import { Scourge, StickPile } from '../scourge.js';
 import { SkullShrine } from '../skullrite.js';
@@ -62,7 +62,6 @@ const STATIONS = [
   // Derived off the threshold rather than pinned to a row number, so shortening
   // the nave can never leave the gate stranded in the middle of the floor.
   { id: 'gate', kind: 'gate', label: 'Save & Exit', x: px(NAVE_CX), y: px(EXIT_ROW - 3), r: 14 },
-  { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: px(NAVE.x0 + 1), y: px(11), r: 12 },
   // The skull chamber's daily rite is worshipping the shrine, not chanting at
   // the wall. It is deliberately NOT a station: a station opens a box and runs
   // a rite, and the shrine takes over the whole scene instead. See _shrineAction().
@@ -131,7 +130,12 @@ export class CourtyardScene {
 
     this.shrine = new SkullShrine({
       x: px(SKULL_SHRINE.col), y: px(SKULL_SHRINE.row),
-      onChant: (line) => { this.showChat('local', line); sfx.click(); },
+      // The rite passes its own beat length, so the line stays up for exactly
+      // as long as the shrine means it to and the two can never drift apart.
+      onChant: (line, gap) => {
+        this.showChat('local', line, { hold: (gap || 3.2) * 0.96, cps: 11 });
+        sfx.click();
+      },
       onEvent: (kind) => {
         if (kind === 'blood') sfx.error();          // a short low sting
         else if (kind === 'kindle') sfx.confession();
@@ -206,9 +210,13 @@ export class CourtyardScene {
     }
   }
 
-  showChat(key, text) {
+  showChat(key, text, { hold = 3.2, cps = 0 } = {}) {
     if (key === 'local') {
-      this.localChat = { text, t: 3.2 };
+      // `cps` makes the bubble type itself out instead of appearing whole.
+      // The box is still sized to the FINISHED string — a bubble that grows a
+      // character at a time jitters, and the tail slides out from under the
+      // speaker's head while it does.
+      this.localChat = { text, t: hold, age: 0, cps };
     } else {
       const rp = this.remotePlayers.get(key);
       if (rp) rp.chat = { text, t: 3.2 };
@@ -335,7 +343,7 @@ export class CourtyardScene {
         this.onFinalCommunion(this.seasonInfo);
       }
     } catch {
-      // non-fatal — the bulletin just won't have anything to say
+      // non-fatal — Final Communion just won't announce itself
     }
   }
 
@@ -665,13 +673,27 @@ export class CourtyardScene {
     this.fire.update(dt);
     this.sticks.update(dt);
     if (this.crowd.length) this._updateCrowd(dt);
-    this.pc.dir = 'up';
-    this.pc.moving = false;
+    // While the chant runs, the rite owns where the worshipper stands: it walks
+    // them a full circuit of the skull, always turned inward to face it. Before
+    // and after, they simply stand where they knelt.
+    const d = this.shrine.dance;
+    if (d) {
+      this.pc.x = d.x; this.pc.y = d.y;
+      this.pc.dir = d.dir;
+      this.pc.moving = true;
+      this.pc.bob += dt * 9;
+      this._danceHop = d.hop;
+    } else {
+      this.pc.dir = 'up';
+      this.pc.moving = false;
+      this._danceHop = 0;
+    }
     this._activeStation = null;
     this._activeDoor = null;
     this._updateSpeech();
     if (this.localChat) {
       this.localChat.t -= dt;
+      this.localChat.age += dt;
       if (this.localChat.t <= 0) this.localChat = null;
     }
     this._updateCamera();
@@ -789,12 +811,6 @@ export class CourtyardScene {
     }
   }
 
-  async _handleBulletin() {
-    await this._refreshSeason();
-    const s = this.seasonInfo;
-    this.dialogue.show(bulletinPages(s));
-  }
-
   async _handleCathedral(roomId) {
     const room = this.cathedralRooms.get(roomId);
     const myName = `${this.player.prefix} ${this.player.name}`;
@@ -819,7 +835,6 @@ export class CourtyardScene {
   _runStation(s) {
     if (s.kind === 'guru') this._handleGuru();
     else if (s.kind === 'confession') this._handleConfession();
-    else if (s.kind === 'bulletin') this._handleBulletin();
     else if (s.kind === 'cathedral') this._handleCathedral(s.roomId);
     else if (s.kind === 'nursery') this._handleNursery();
     else if (s.kind === 'mancala') this._handleMancala();
@@ -837,6 +852,7 @@ export class CourtyardScene {
     this._updateSpeech();
     if (this.localChat) {
       this.localChat.t -= dt;
+      this.localChat.age += dt;
       if (this.localChat.t <= 0) this.localChat = null;
     }
     this.pc.x = this.scourge.penX;
@@ -957,6 +973,7 @@ export class CourtyardScene {
     }
     if (this.localChat) {
       this.localChat.t -= dt;
+      this.localChat.age += dt;
       if (this.localChat.t <= 0) this.localChat = null;
     }
     const nowMs = performance.now();
@@ -1589,16 +1606,6 @@ export class CourtyardScene {
         ctx.fillStyle = MOSS.l;
         ctx.beginPath(); ctx.ellipse(x - 1, y - 1, 1.6, 1.2, 0, 0, Math.PI * 2); ctx.fill();
         break;
-      case 'bulletin':
-        this._dropShadow(ctx, x, y + 5, 6.5, 2.2);
-        block(ctx, x - 6, y - 9, 12, 14, WOOD);    // board
-        ctx.fillStyle = BONE.o; ctx.fillRect(x - 5.5, y - 8.5, 11, 12);
-        ctx.fillStyle = BONE.l; ctx.fillRect(x - 5, y - 8, 10, 11);     // vellum
-        ctx.fillStyle = BONE.h; ctx.fillRect(x - 5, y - 8, 10, 1.2);
-        ctx.fillStyle = GOLD.o;                                          // lines of text
-        for (let i = -5; i <= 3; i += 3) ctx.fillRect(x - 3, y - 6 + i, 6, 1);
-        ctx.fillStyle = WOOD.o; ctx.fillRect(x - 1, y + 5, 2, 4);        // post
-        break;
       case 'cathedral-alcove': {
         const room = this.cathedralRooms.get(p.roomId);
         const owned = !!(room && room.owner_id);
@@ -1893,6 +1900,7 @@ export class CourtyardScene {
     // During the shrine rite the habit is off: the naked sheet is swapped in and
     // nothing is painted back over it.
     const bare = this.shrine.naked;
+    const hop = this._danceHop || 0;
     this._drawRobedFigure(
       ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving,
       this.pc.moving ? this.pc.bob : this.t,
@@ -1902,13 +1910,41 @@ export class CourtyardScene {
       // anything standing further down the screen, and the one thing the
       // player must be able to read during the shrine rite is a bubble in
       // front of a very large skull.
-      null, this.localEmoji, null, undefined, this._streakAura()
+      null, this.localEmoji, null, undefined, this._streakAura(), hop
     );
+    if (bare) this._drawBare(ctx, this.pc.x, this.pc.y - hop, this.pc.dir);
 
     if (this.carrying) {
       if (this.carrying.kind === 'stick') this.sticks.drawCarried(ctx, this.pc.x, this.pc.y - 6);
       else this.fire.drawCarried(ctx, this.pc.x, this.pc.y - 6, this.carrying.kind, this.t);
     }
+  }
+
+  // The one mark that makes bare read as bare, and only from behind.
+  //
+  // The naked sheet is a full re-generation with the habit's cells set to skin,
+  // which at twenty-one pixels tall reads as a person wearing a very tight
+  // beige robe: the silhouette is identical, so nothing tells you anything came
+  // off. Three pixels of cleft do what a whole redesign of the sprite would.
+  // Nothing else is drawn — this is the minimum that carries the information,
+  // and the anatomy stops here.
+  _drawBare(ctx, x, y, dir) {
+    if (dir !== 'up') return;                  // only the back view has it to show
+    const px_ = Math.round(x);
+    const groundY = Math.round(y) + 6;
+    const h = 21;                              // the figure's drawn height
+    // Measured off the generator's own layout: legs start at logical y 21.6 of
+    // 28, so the buttocks sit between 0.30 and 0.16 of the height above the
+    // ground line.
+    const top = groundY - h * 0.30, bot = groundY - h * 0.16;
+    const cy = (top + bot) / 2, ry = (bot - top) * 0.62;
+    ctx.save();
+    ctx.fillStyle = 'rgba(92,48,38,0.28)';     // a curve either side, so it is not a scratch
+    ctx.beginPath(); ctx.ellipse(px_ - 1.5, cy, 1.7, ry, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(px_ + 1.5, cy, 1.7, ry, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(58,28,22,0.85)';
+    ctx.fillRect(px_ - 0.4, top, 0.9, bot - top);
+    ctx.restore();
   }
 
   _nakedSheet() {
@@ -2018,7 +2054,7 @@ export class CourtyardScene {
     }
   }
 
-  _drawRobedFigure(ctx, x, y, dir, moving, animPhase, sheet, label, emoji, chat, targetHeight = 21, aura = null) {
+  _drawRobedFigure(ctx, x, y, dir, moving, animPhase, sheet, label, emoji, chat, targetHeight = 21, aura = null, lift = 0) {
     const px_ = Math.round(x);
     const py_ = Math.round(y);
 
@@ -2039,12 +2075,17 @@ export class CourtyardScene {
       }
     }
 
-    ctx.fillStyle = SHADOW;
+    // The contact shadow stays on the flagstones when the figure hops — it is
+    // the only thing telling you they left the ground, and a shadow that jumps
+    // with its owner says nothing at all. It tightens instead, the way a real
+    // one does as the gap opens.
+    const k = lift > 0 ? 1 - Math.min(0.45, lift / 9) : 1;
+    ctx.fillStyle = lift > 0 ? SHADOW_SOFT : SHADOW;
     ctx.beginPath();
-    ctx.ellipse(px_, py_ + 5, 5, 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(px_, py_ + 5, 5 * k, 2 * k, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    const groundY = py_ + 6;
+    const groundY = py_ + 6 - lift;
     const drawn = drawCharacter(ctx, { sheet, dir, moving, animPhase, x: px_, groundY, targetHeight });
     const drawY = drawn ? groundY - drawn.h : groundY - targetHeight;
 
@@ -2079,12 +2120,17 @@ export class CourtyardScene {
 
   // Rounded, gold-bordered speech bubble with a small tail pointing at the
   // speaker's head — styling adapted from Club Nile's popup-panel look.
-  _drawSpeechBubble(ctx, tipX, tipY, text, alpha) {
+  _drawSpeechBubble(ctx, tipX, tipY, text, alpha, typing = null) {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.font = '6px "Courier New", monospace';
     const padX = 4, padY = 3, tail = 3;
+    // Measure the whole string even when only part of it is shown, so the box
+    // is its final size from the first character on.
     const textW = ctx.measureText(text).width;
+    const shown = typing && typing.cps
+      ? text.slice(0, Math.floor(typing.age * typing.cps))
+      : text;
     const w = textW + padX * 2;
     const h = 6 + padY * 2;
     const bx = tipX - w / 2;
@@ -2113,10 +2159,12 @@ export class CourtyardScene {
     ctx.fillStyle = 'rgba(16, 11, 26, 0.95)';
     ctx.fillRect(tipX - tail + 0.5, by + h - 1, tail * 2 - 1, 1.5);
 
+    // Left-aligned inside a box sized for the full line, so the words stay put
+    // as they arrive rather than sliding out from the centre.
     ctx.fillStyle = GOLD.l;
-    ctx.textAlign = 'center';
+    ctx.textAlign = typing && typing.cps ? 'left' : 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, tipX, by + h / 2 + 0.5);
+    ctx.fillText(shown, typing && typing.cps ? bx + padX : tipX, by + h / 2 + 0.5);
     ctx.restore();
   }
 
@@ -2147,7 +2195,7 @@ export class CourtyardScene {
     // Last thing in world space, so nothing can cover what the player is saying.
     if (this.localChat) {
       this._drawSpeechBubble(ctx, Math.round(this.pc.x), Math.round(this.pc.y) - 16,
-        this.localChat.text, Math.min(1, this.localChat.t));
+        this.localChat.text, Math.min(1, this.localChat.t), this.localChat);
     }
     this._drawFireflies(ctx);
 

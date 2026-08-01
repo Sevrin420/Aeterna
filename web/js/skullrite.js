@@ -34,18 +34,29 @@ const BASE_LIFT = 13;
 const RING_N = 11;              // flames in the ring
 const RING_R = 30;              // ring radius
 
-// Beat lengths. Two are fixed by the design — four seconds to undress and one
-// second between chant lines — and the rest are the shortest each can be and
-// still land.
+// Beat lengths. The rite used to run in about sixteen seconds, which made a
+// six-line chant feel like a list being read out. Every beat is now roughly
+// half again as long and the gap between phrases has nearly trebled, so each
+// line is typed out, held, and allowed to hang before the next one starts:
+// about thirty seconds end to end.
 const DISROBE = 4.0;
-const OFFER = 1.9;              // the blood wells, falls, and lands
-const LINE_GAP = 1.0;           // one second between phrases
-const GLOW = 1.8;               // the sockets fill with fire
-const DESCEND = 1.6;
-const REROBE = 1.0;
+const OFFER = 2.6;              // the blood wells, falls, and lands
+const LINE_GAP = 2.8;           // between phrases — the chant is the rite
+const GLOW = 2.6;               // the sockets fill with fire
+const DESCEND = 2.2;
+const REROBE = 1.4;
 
-// Two phrases, alternating, three times each: six lines, six seconds, and six
-// steps of altitude.
+// How the worshipper moves while chanting: one full circuit of the skull over
+// the chant, ending where they began, with two hops per phrase. The orbit is
+// squashed vertically because the abbey is drawn from slightly above — a true
+// circle reads as the player sliding rather than walking round.
+const DANCE_R = 30;
+const DANCE_SQUASH = 0.66;
+const HOPS_PER_LINE = 2;
+const HOP_H = 3.2;
+
+// Two phrases, alternating, three times each: six lines and six steps of
+// altitude, now spread across LINE_GAP seconds apiece.
 const CHANT_LINES = ['Sanguis aeternus', 'Vita aeterna', 'Sanguis aeternus',
   'Vita aeterna', 'Sanguis aeternus', 'Vita aeterna'];
 const CHANT = CHANT_LINES.length * LINE_GAP;
@@ -85,6 +96,7 @@ export class SkullShrine {
     this.drop = null;           // the offered drop of blood, mid-flight
     this.splash = [];           // where it hit
     this.embers = [];
+    this.dance = null;          // { x, y, dir, hop } while circling; null otherwise
   }
 
   // Marks the day's rite as already performed. There is nothing to restore:
@@ -101,6 +113,7 @@ export class SkullShrine {
     this.active = true;
     this.phase = 'disrobe';
     this.pt = 0;
+    this.dance = null;
     this.line = -1;
     this.riseStep = 0;
     this.naked = false;
@@ -136,6 +149,7 @@ export class SkullShrine {
         // 0.0-0.7  the drop wells at the hand
         // 0.7-1.4  it falls, arcing onto the crown of the skull
         // 1.4-1.9  it lands, and the fire takes
+        // 1.9-2.6  the ring burns alone before the first word
         const d = this.drop;
         if (d) {
           if (this.pt < 0.7) {
@@ -158,20 +172,22 @@ export class SkullShrine {
       }
 
       case 'chant': {
-        // One line a second, and one step of altitude with each.
+        // One line per LINE_GAP, and one step of altitude with each.
         const want = Math.min(CHANT_LINES.length - 1, Math.floor(this.pt / LINE_GAP));
         if (want > this.line) {
           this.line = want;
           this.riseStep = want + 1;
-          this.onChant(CHANT_LINES[want]);
+          this.onChant(CHANT_LINES[want], LINE_GAP);
         }
         const target = (this.riseStep / CHANT_LINES.length) * RISE;
         this.hover += (target - this.hover) * Math.min(1, dt * 4.5);
+        this._dance(clamp01(this.pt / CHANT), this.pt);
         if (this.pt >= CHANT) { this.phase = 'glow'; this.pt = 0; }
         break;
       }
 
       case 'glow':
+        this.dance = null;      // they stop, and watch it finish
         if (this.awake === 0) this.onEvent('glow');
         this.awake = easeOut(clamp01(this.pt / (GLOW * 0.55)));
         this.hover = RISE + Math.sin(this.t * 7) * 1.6;    // it shudders at the top
@@ -201,6 +217,26 @@ export class SkullShrine {
         }
         break;
     }
+  }
+
+  // The circuit. `u` runs 0..1 across the whole chant and `pt` is the raw beat
+  // clock, so the orbit is driven by progress and the hop by tempo — the two
+  // stay locked to the phrases however long a phrase is set to last.
+  //
+  // The worshipper always faces the skull, which is the reason this is a dance
+  // and not a pirouette: on the near side they have their back to you, and the
+  // rite is meant to be looked at from behind a naked man.
+  _dance(u, pt) {
+    const a = Math.PI / 2 + u * Math.PI * 2;   // starts due south, one full turn
+    const ox = Math.cos(a), oy = Math.sin(a);
+    const beat = (pt / (LINE_GAP / HOPS_PER_LINE)) % 1;
+    this.dance = {
+      x: this.x + ox * DANCE_R,
+      y: this.y + oy * DANCE_R * DANCE_SQUASH,
+      // face inward: the direction from the worshipper back to the skull
+      dir: Math.abs(ox) > Math.abs(oy) ? (ox > 0 ? 'left' : 'right') : (oy > 0 ? 'up' : 'down'),
+      hop: Math.sin(beat * Math.PI) * HOP_H,
+    };
   }
 
   // Where the skull is actually drawn, floor lift included. Anything that has

@@ -159,35 +159,6 @@ export const LORE = {
       text: 'Leave now and your Devotion is secured.\n\n'
         + 'The abbey will still be here.',
     },
-    bulletin: {
-      speaker: 'The Bulletin',
-      text: 'A board of dark wood by the nave, where the abbey posts what the '
-        + 'season is doing to you.',
-    },
   },
 };
 
-// The bulletin reads live season data, so it is built rather than stored.
-export function bulletinPages(s) {
-  if (!s) {
-    return [{ speaker: 'The Bulletin', text: 'The board is water-stained and unreadable.' }];
-  }
-  if (s.inBreak) {
-    return [{
-      speaker: 'The Bulletin',
-      text: `Season ${s.season} is between cycles.\n\nThe abbey rests. The counting has stopped.`,
-    }];
-  }
-  if (s.isFinalCommunion) {
-    return [{
-      speaker: 'The Bulletin',
-      text: `Season ${s.season}, Day ${s.day}.\n\n`
-        + 'Final Communion is upon us. What is owed is collected today.',
-    }];
-  }
-  return [{
-    speaker: 'The Bulletin',
-    text: `Season ${s.season}, Day ${s.day} of 56.\n\n`
-      + `${s.daysUntilCommunion} days until Final Communion.`,
-  }];
-}

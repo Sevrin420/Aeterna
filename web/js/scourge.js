@@ -1,9 +1,9 @@
 // The scourge — the Abbot's rite, replacing the parcel you used to hand him.
 //
-// A bundle of switches is cut and left leaning against the wall of the skull
-// chamber. You take one, carry it up the stairs and the length of the nave,
-// and put it in the Abbot's hands. He uses it. Five times. The pain is the
-// offering; the Devotion is what is left of you afterwards.
+// Bundles of cut switches stand against the north wall of the nave, behind the
+// Abbot. You take one, walk it around the altar, and put it in his hands. He
+// uses it. Five times. The pain is the offering; the Devotion is what is left
+// of you afterwards.
 //
 // The whole thing is a cutscene: while it runs the scene hands over movement,
 // input and the camera, and this module drives the pose of both figures, the
@@ -18,7 +18,7 @@ import { WOOD, BLOOD, GOLD, BONE, IRON, VOID, SHADOW } from './palette.js';
 import { drawCharacter } from './spritesheet.js';
 
 // ---------------------------------------------------------------------------
-// The switches, leaning against the skull chamber's west wall.
+// The switches, standing against the nave's north wall behind the Abbot.
 // ---------------------------------------------------------------------------
 
 export const STICK_RESPAWN = 90;   // seconds before a cut switch is replaced
@@ -54,8 +54,8 @@ export class StickPile {
     return -1;
   }
 
-  // Three switches leaning butt-down against the wall to the west, bound at
-  // the waist with a leather thong. Drawn on the WOOD ramp and outlined in its
+  // Three switches leaning butt-down against the wall, bound at the waist with
+  // a leather thong. Drawn on the WOOD ramp and outlined in its
   // own dark brown, never black.
   draw(ctx, x, y, seed = 0) {
     ctx.fillStyle = SHADOW;
@@ -526,7 +526,14 @@ export class Scourge {
     }
     ctx.restore();
 
-    this._drawEyes(ctx, x, y + 6 - h * 0.80);
+    // 0.654 is measured, not guessed: the generator stamps one iris-coloured
+    // mark per eye and those are the only pixels of that colour on the figure,
+    // so sampling them gives the eye line exactly — 0.654 of the drawn height
+    // above the ground line, half-spread 0.0875 of it. The bug eyes therefore
+    // start life sitting exactly on top of the sprite's own eyes and swell out
+    // from there, which is the whole gag; anchored anywhere else they read as
+    // two balloons floating near a head.
+    this._drawEyes(ctx, x, y + 6 - h * 0.654);
   }
 
   // The eyes. They start as ordinary dots and by the fifth blow they are out
@@ -536,8 +543,12 @@ export class Scourge {
   _drawEyes(ctx, cx, cy) {
     const r = this.eyeR;
     if (r < 1) return;
+    // 1.9 is the sprite's own half-spread at the rite's draw height (0.0875 of
+    // 21px), so the smallest eye lands dead on the real one and each blow
+    // pushes the pair further apart. The lift is small on purpose — enough that
+    // big eyes bulge up out of the face, not so much that they leave it.
     const spread = 1.9 + r * 0.46;
-    const lift = r * 0.22;
+    const lift = r * 0.14;
     for (const side of [-1, 1]) {
       const ex = cx + side * spread, ey = cy - lift;
       ctx.fillStyle = BLOOD.o;

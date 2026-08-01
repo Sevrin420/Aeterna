@@ -170,13 +170,21 @@ export const SKULL_WALL_ROW = 98;
 // one would read as a bug however convincingly it hovers.
 export const SKULL_SHRINE = { col: 88, row: 105 };
 
-// Bundles of cut switches left standing against the skull chamber's west wall
-// (the wall course is col 77, so col 78 is the floor tile they lean on). The
-// abbey does not say what they are for; the Abbot's empty hands do.
+// Bundles of cut switches, standing against the nave's north wall behind the
+// Abbot — the altar between him and them, so they are the first thing you see
+// past his shoulder. They used to lean against the skull chamber's west wall,
+// which made the rite a round trip down the east stair and back up the whole
+// length of the nave for one stick.
+//
+// Stacked together in the north-west corner rather than spread along the wall,
+// and deliberately clear of columns 56-62: the altar and its two torches stand
+// on row 9 there and are drawn tall, so a bundle on row 8 behind any of them is
+// completely swallowed. Three in one corner is also one place to walk to
+// instead of three, which is the whole point of moving them out of the crypt.
 export const STICKS = [
-  { col: SKULL_ROOM.x0, row: 102 },
-  { col: SKULL_ROOM.x0, row: 105 },
-  { col: SKULL_ROOM.x0, row: 108 },
+  { col: NAVE.x0 + 1, row: NAVE.y0 },
+  { col: NAVE.x0 + 2, row: NAVE.y0 },
+  { col: NAVE.x0 + 3, row: NAVE.y0 },
 ];
 
 function buildGrid() {
@@ -226,7 +234,6 @@ function prop(type, col, row, solid = true, extra = {}) { PROPS.push({ type, col
 // --- CHURCH ---
 prop('altar', NAVE_CX, 9);
 prop('torch', NAVE_CX - 3, 9); prop('torch', NAVE_CX + 3, 9);
-prop('bulletin', NAVE.x0, 11, false);
 prop('pew', NAVE_CX - 3, EXIT_ROW - 7); prop('pew', NAVE_CX + 3, EXIT_ROW - 7);
 for (const st of STATUES) prop('statue', st.col, st.row, false, { kind: st.kind, face: st.face });
 // The confessional: a timber booth filling the back of the north niche, with
