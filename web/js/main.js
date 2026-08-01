@@ -3,6 +3,7 @@ import { BootScene } from './scenes/boot.js';
 import { EntranceScene } from './scenes/entrance.js';
 import { CourtyardScene } from './scenes/courtyard.js';
 import { api } from './api.js';
+import { MancalaBoard } from './mancala.js';
 import { sfx, AUDIO_MASTER } from './sfx.js';
 import { connectWallet, fetchCultists, shortAddr, hasInjectedWallet } from './wallet.js';
 
@@ -27,9 +28,7 @@ const powerKnob = powerSwitch.querySelector('.power-knob');
 const muteToggle = document.getElementById('muteToggle');
 const mancalaOverlay = document.getElementById('mancalaOverlay');
 const mancalaStatus = document.getElementById('mancalaStatus');
-const mancalaStoreA = document.getElementById('mancalaStoreA');
-const mancalaStoreB = document.getElementById('mancalaStoreB');
-const mancalaPits = [...document.querySelectorAll('.mancala-pit')];
+const mancalaCanvas = document.getElementById('mancalaCanvas');
 const mancalaLeaveBtn = document.getElementById('mancalaLeave');
 const mancalaSoloBtn = document.getElementById('mancalaSolo');
 const communionOverlay = document.getElementById('communionOverlay');
@@ -317,18 +316,26 @@ function ensureSocket() {
   return socket;
 }
 
-function renderMancalaBoard(board) {
-  mancalaPits.forEach((b) => { b.textContent = board[Number(b.dataset.pit)]; });
-  mancalaStoreA.textContent = board[6];
-  mancalaStoreB.textContent = board[13];
+// The drawn board owns every pit, every stone and every click on them. It is
+// built on first use rather than at load, because the canvas has no size until
+// the overlay is shown and a zero-sized canvas measures itself as zero forever.
+let mancalaBoard = null;
+function getMancalaBoard() {
+  if (!mancalaBoard) {
+    mancalaBoard = new MancalaBoard(mancalaCanvas, {
+      onPit: (pit) => { if (scene && scene.sendMancalaMove) scene.sendMancalaMove(pit); },
+    });
+  }
+  return mancalaBoard;
 }
 
 function showMancala(state) {
   mancalaOverlay.hidden = false;
+  const mb = getMancalaBoard();
+  mb.start();
 
   if (state.type === 'end' || state.forfeited) {
-    if (state.board) renderMancalaBoard(state.board);
-    mancalaPits.forEach((b) => { b.disabled = true; });
+    mb.setState({ ...state, board: state.board || null });
     mancalaSoloBtn.hidden = true;
     const won = state.winnerSeat === state.seat;
     mancalaStatus.textContent = state.forfeited
@@ -340,20 +347,18 @@ function showMancala(state) {
           : won ? `You win! +${state.payout} Devotion.` : 'You lose the wager.';
     if (!state.forfeited && !state.draw) sfx[won ? 'streakBonus' : 'error']?.();
     api.me().then(updateHud).catch(() => {});
-    setTimeout(() => { mancalaOverlay.hidden = true; }, 3200);
+    setTimeout(() => { mancalaOverlay.hidden = true; mb.stop(); }, 3200);
     return;
   }
 
   if (state.waiting || !state.board) {
     mancalaStatus.textContent = 'Waiting for an opponent to sit...';
-    mancalaPits.forEach((b) => { b.textContent = ''; b.disabled = true; });
-    mancalaStoreA.textContent = '';
-    mancalaStoreB.textContent = '';
+    mb.setState(state);
     mancalaSoloBtn.hidden = false; // offer a solo game against the Abbot
     return;
   }
 
-  renderMancalaBoard(state.board);
+  mb.setState(state);
   mancalaSoloBtn.hidden = true;
   const yourTurn = state.turn === state.seat;
   if (state.solo) {
@@ -361,22 +366,15 @@ function showMancala(state) {
   } else {
     mancalaStatus.textContent = `${state.names[0]} vs ${state.names[1]} · Wager ${state.wager} Devotion each · ${yourTurn ? 'Your move' : "Opponent's move"}`;
   }
-  mancalaPits.forEach((b) => {
-    const pit = Number(b.dataset.pit);
-    const ownPit = state.seat === 0 ? pit <= 5 : pit >= 7;
-    b.disabled = !(yourTurn && ownPit && state.board[pit] > 0);
-  });
 }
 
-mancalaPits.forEach((b) => b.addEventListener('click', () => {
-  if (scene && scene.sendMancalaMove) scene.sendMancalaMove(Number(b.dataset.pit));
-}));
 mancalaSoloBtn.addEventListener('click', () => {
   if (scene && scene.startMancalaSolo) scene.startMancalaSolo();
 });
 mancalaLeaveBtn.addEventListener('click', () => {
   if (scene && scene.leaveMancala) scene.leaveMancala();
   mancalaOverlay.hidden = true;
+  if (mancalaBoard) mancalaBoard.stop();
 });
 
 function showFinalCommunion(info) {
