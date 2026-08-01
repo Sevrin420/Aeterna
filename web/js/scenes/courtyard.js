@@ -124,6 +124,12 @@ export class CourtyardScene {
     this.shrine = new SkullShrine({
       x: px(SKULL_SHRINE.col), y: px(SKULL_SHRINE.row),
       onChant: (line) => { this.showChat('local', line); sfx.click(); },
+      onEvent: (kind) => {
+        if (kind === 'blood') sfx.error();          // a short low sting
+        else if (kind === 'kindle') sfx.confession();
+        else if (kind === 'glow') sfx.streakBonus();
+        else if (kind === 'land') sfx.dutyComplete();
+      },
       onDone: () => this._endWorship(),
     });
     // Already done today: the skull is on the floor with its eyes lit when you
@@ -595,10 +601,25 @@ export class CourtyardScene {
     return true;
   }
 
+  // The day's three duties are performed in a fixed order: feed a brazier,
+  // take the switch to the Abbot, then give the skull your blood. Each rite
+  // simply refuses to start until the one before it is done, and the gold mark
+  // stays away — the absence of the mark IS the instruction, the same way it is
+  // everywhere else in the abbey.
+  //
+  // The order is not arbitrary. You cannot offer blood you have not yet been
+  // made to bleed, and the Abbot will not raise a switch in a cold chapel.
+  _dutyOpen(id) {
+    if (id === 'scourge') return !!this.player.candles_today;
+    if (id === 'shrine') return !!this.player.scourge_today;
+    return true;
+  }
+
   // Standing before the shrine and pressing A. There is no dialogue box and no
-  // instruction: the robe comes off, the chant starts, and the skull answers.
+  // instruction: the robe comes off, the blood falls, and the skull answers.
   _shrineAction() {
-    if (this.shrine.active || this.shrine.grounded) return false;
+    if (this.shrine.active || this.shrine.done) return false;
+    if (!this._dutyOpen('shrine')) return false;
     if (this.carrying || !this.shrine.inReach(this.pc.x, this.pc.y)) return false;
     if (!this.shrine.begin(this.pc.x, this.pc.y)) return false;
     document.body.classList.add('rite-open');
@@ -664,6 +685,7 @@ export class CourtyardScene {
     if (this.scourge.active) return;
     if (!this.carrying || this.carrying.kind !== 'stick') return;
     if (this.player.scourge_today) return;   // the box already said so
+    if (!this._dutyOpen('scourge')) return;  // ditto
     this.carrying = null;
     document.body.classList.add('rite-open');
     this.scourge.begin(this._guruStation().x, this._guruStation().y, this.pc.x, this.pc.y);
@@ -712,7 +734,9 @@ export class CourtyardScene {
   _introFor(s) {
     if (s.id === 'guru') {
       if (this.carrying && this.carrying.kind === 'stick') {
-        return this.player.scourge_today ? LORE.stations.scourgedAlready : LORE.stations.scourge;
+        if (this.player.scourge_today) return LORE.stations.scourgedAlready;
+        if (!this._dutyOpen('scourge')) return LORE.stations.scourgeTooSoon;
+        return LORE.stations.scourge;
       }
       return LORE.stations.guru;
     }
@@ -1713,7 +1737,7 @@ export class CourtyardScene {
       }
       return false;
     }
-    if (this.shrine.inReach(p.x, p.y) && !this.shrine.grounded) return true;
+    if (this.shrine.inReach(p.x, p.y) && !this.shrine.done && this._dutyOpen('shrine')) return true;
     if (this.fire.woodAt(p.x, p.y) >= 0) return true;
     if (this.fire.torchAt(p.x, p.y) >= 0) return true;
     if (this.sticks.at(p.x, p.y) >= 0) return true;
@@ -1736,7 +1760,12 @@ export class CourtyardScene {
       ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving,
       this.pc.moving ? this.pc.bob : this.t,
       bare ? this._nakedSheet() : this.mySheet,
-      null, this.localEmoji, this.localChat, undefined, this._streakAura()
+      // The chat bubble is drawn after the depth sort instead of here — see
+      // render(). A bubble that sorts with its speaker gets covered by
+      // anything standing further down the screen, and the one thing the
+      // player must be able to read during the shrine rite is a bubble in
+      // front of a very large skull.
+      null, this.localEmoji, null, undefined, this._streakAura()
     );
 
     if (this.carrying) {
@@ -1977,6 +2006,11 @@ export class CourtyardScene {
     // world space, so it tracks the player rather than floating in a corner.
     if (this._hasAction() && !this.dialogue.active && !this.scourge.active && !this.shrine.active) {
       drawBang(ctx, Math.round(this.pc.x), Math.round(this.pc.y) - 24, this.t);
+    }
+    // Last thing in world space, so nothing can cover what the player is saying.
+    if (this.localChat) {
+      this._drawSpeechBubble(ctx, Math.round(this.pc.x), Math.round(this.pc.y) - 16,
+        this.localChat.text, Math.min(1, this.localChat.t));
     }
     this._drawFireflies(ctx);
 

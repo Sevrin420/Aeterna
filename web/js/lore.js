@@ -19,8 +19,10 @@ export const LORE = {
         + 'Spirits gather in the sanctuary beneath the inverted cross to earn '
         + 'Devotion. Devotion is the only thing the abbey counts, and it counts '
         + 'everything.\n\n'
-        + 'Kneel in prayer. Feed the braziers. Worship the skull. Put a switch '
-        + 'in the Abbot\'s hands.',
+        + 'Feed a brazier. Put a switch in the Abbot\'s hands. Give the skull '
+        + 'your blood.\n\n'
+        + 'In that order, and no other. The abbey will not take the second '
+        + 'thing before the first.',
     },
     {
       text: 'Four rites, every day.\n\n'
@@ -99,6 +101,12 @@ export const LORE = {
       speaker: 'The Abbot',
       text: 'The pain purifies. What is left is counted.\n\n'
         + '"Again tomorrow."',
+    },
+    // shown when you bring a switch before any brazier is burning
+    scourgeTooSoon: {
+      speaker: 'The Abbot',
+      text: 'He looks past you, down the nave, at ten alcoves of cold iron.\n\n'
+        + '"There is no fire in this house."',
     },
     scourgedAlready: {
       speaker: 'The Abbot',
