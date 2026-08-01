@@ -1977,6 +1977,11 @@ export class CourtyardScene {
         items.push({ y: ty, draw: () => this.fire.drawWallTorch(ctx, tx, ty, this.t, i * 3) });
       }
     }
+    // The kerb and its pool are floor, and sort as floor: everything in the
+    // chamber stands in front of them. The worshipper's circuit runs INSIDE the
+    // ring, so sorting these with the skull would put the near stones over the
+    // dancer for half of every lap.
+    items.push({ y: this.shrine.y - 60, draw: () => this.shrine.drawGround(ctx) });
     items.push({ y: this.shrine.y + 8, draw: () => this.shrine.draw(ctx) });
     if (this.shrine.robeAt) {
       items.push({ y: this.shrine.robeAt.y, draw: () => this.shrine.drawRobe(ctx) });

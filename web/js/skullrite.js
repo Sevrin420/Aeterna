@@ -15,7 +15,7 @@
 // v = up/down, w = front/back) and projected through one rotation about the
 // vertical axis. It is simply held at zero now, facing whoever woke it.
 
-import { BONE, BLOOD, VOID, SOUL, SHADOW, blueFlame, SOULFIRE } from './palette.js';
+import { BONE, BLOOD, VOID, SOUL, WALL, SHADOW, blueFlame, candleFlame, SOULFIRE } from './palette.js';
 
 // How close you have to stand. This was 30, which sounds generous until you
 // remember the skull's own 3x3 footprint is solid: the reachable ring was
@@ -46,10 +46,20 @@ const GLOW = 2.6;               // the sockets fill with fire
 const DESCEND = 2.2;
 const REROBE = 1.4;
 
+// The kerb the skull lies inside: a ring of set stones with a pool of black
+// ooze held in it, and candles burning on three of them. The kerb sits OUTSIDE
+// the worshipper's circuit, so the dance happens ankle-deep in the pool rather
+// than around the outside of it.
+const KERB_N = 14;              // stones in the ring
+const KERB_R = 41;              // how far out they are set
+const POOL_R = 36;              // the ooze reaches almost to them
+const KERB_SQUASH = 0.60;       // the abbey is drawn from slightly above
+const CANDLE_ON = [1, 6, 10];   // which stones carry a candle
+
 // How the worshipper moves while chanting: one full circuit of the skull over
 // the chant, ending where they began, with two hops per phrase. The orbit is
-// squashed vertically because the abbey is drawn from slightly above — a true
-// circle reads as the player sliding rather than walking round.
+// squashed vertically for the same reason the kerb is — a true circle reads as
+// the player sliding rather than walking round.
 const DANCE_R = 30;
 const DANCE_SQUASH = 0.66;
 const HOPS_PER_LINE = 2;
@@ -97,6 +107,134 @@ export class SkullShrine {
     this.splash = [];           // where it hit
     this.embers = [];
     this.dance = null;          // { x, y, dir, hop } while circling; null otherwise
+    this.bubbles = [];          // the ooze, working
+    this._bubT = 0;
+  }
+
+  // The ooze is never still. Bubbles rise somewhere in the pool, swell and go,
+  // faster while the fire is up — the pool is the one thing in the chamber that
+  // reacts to the skull without being lit by it.
+  _ooze(dt) {
+    this._bubT -= dt;
+    if (this._bubT <= 0) {
+      this._bubT = 0.55 + Math.random() * 1.5 - this.fire * 0.35;
+      const a = Math.random() * Math.PI * 2;
+      const d = Math.sqrt(Math.random()) * (POOL_R - 7);
+      this.bubbles.push({
+        x: this.x + Math.cos(a) * d,
+        y: this.y + Math.sin(a) * d * KERB_SQUASH,
+        r: 0, max: 1.4 + Math.random() * 2.4, t: 0, life: 1.1 + Math.random() * 0.9,
+      });
+      if (this.bubbles.length > 14) this.bubbles.shift();
+    }
+    for (let i = this.bubbles.length - 1; i >= 0; i--) {
+      const b = this.bubbles[i];
+      b.t += dt;
+      const u = b.t / b.life;
+      b.r = u < 0.75 ? b.max * (u / 0.75) : b.max * (1 - (u - 0.75) / 0.25);
+      if (b.t >= b.life) this.bubbles.splice(i, 1);
+    }
+  }
+
+  // The kerb and its pool. Drawn as its own depth item BELOW everything else in
+  // the chamber, because it is floor: the worshipper dances inside the ring and
+  // must always be in front of it, and the skull hangs above it.
+  drawGround(ctx) {
+    const t = this.t;
+    const swell = 1 + this.fire * 0.03;
+
+    // --- the pool ---------------------------------------------------------
+    ctx.fillStyle = '#0b0713';                                  // the wet rim it has left
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, POOL_R * swell + 2, POOL_R * KERB_SQUASH * swell + 1.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const oil = ctx.createRadialGradient(this.x - 8, this.y - 5, 2, this.x, this.y, POOL_R);
+    oil.addColorStop(0, '#171030');
+    oil.addColorStop(0.55, '#0d0819');
+    oil.addColorStop(1, '#05030c');
+    ctx.fillStyle = oil;
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, POOL_R * swell, POOL_R * KERB_SQUASH * swell, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Sheen. Two slow arcs drifting across the surface at different rates —
+    // black ooze is only legible as a liquid because of what moves ON it.
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, POOL_R * swell, POOL_R * KERB_SQUASH * swell, 0, 0, Math.PI * 2);
+    ctx.clip();
+    for (let k = 0; k < 2; k++) {
+      const dx = Math.sin(t * (0.18 + k * 0.11) + k * 2.1) * 15;
+      const dy = Math.cos(t * (0.13 + k * 0.09) + k) * 7;
+      ctx.strokeStyle = k ? 'rgba(106,63,176,0.16)' : 'rgba(154,114,220,0.12)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.ellipse(this.x + dx, this.y + dy, POOL_R * (0.42 + k * 0.26), POOL_R * KERB_SQUASH * (0.42 + k * 0.26),
+        0, 0.6 + k, 2.4 + k);
+      ctx.stroke();
+    }
+    for (const b of this.bubbles) {
+      if (b.r <= 0.2) continue;
+      ctx.fillStyle = 'rgba(8,5,16,0.9)';
+      ctx.beginPath(); ctx.ellipse(b.x, b.y, b.r, b.r * 0.72, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = `rgba(140,104,205,${0.30 * (1 - b.t / b.life)})`;
+      ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.ellipse(b.x, b.y - b.r * 0.2, b.r * 0.8, b.r * 0.5, 0, 3.5, 5.9); ctx.stroke();
+    }
+    ctx.restore();
+
+    // --- the kerb ---------------------------------------------------------
+    // Back to front, so a near stone overlaps the far one behind it. Every
+    // stone is the same block seeded differently, which is what a course of
+    // roughly dressed kerb actually looks like.
+    const stones = [];
+    for (let i = 0; i < KERB_N; i++) {
+      const a = (i / KERB_N) * Math.PI * 2 - Math.PI / 2;
+      stones.push({ i, a, x: this.x + Math.cos(a) * KERB_R, y: this.y + Math.sin(a) * KERB_R * KERB_SQUASH });
+    }
+    stones.sort((p, q) => p.y - q.y);
+    for (const s of stones) {
+      const wob = ((s.i * 37) % 7) / 7;                        // stable per-stone variation
+      const w = 8.5 + wob * 3.2, h = 6.4 + ((s.i * 53) % 5) / 5 * 2.6;
+      const top = s.y - h;
+      ctx.fillStyle = 'rgba(6,4,12,0.5)';                      // where it meets the ooze
+      ctx.beginPath(); ctx.ellipse(s.x, s.y + 1, w * 0.62, 2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = WALL.o;
+      ctx.beginPath();
+      ctx.moveTo(s.x - w / 2 - 1, s.y + 1.5); ctx.lineTo(s.x - w / 2 + 0.7 + wob, top - 1);
+      ctx.lineTo(s.x + w / 2 - 0.5, top - 1.4); ctx.lineTo(s.x + w / 2 + 1, s.y + 1.5);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = WALL.b;
+      ctx.beginPath();
+      ctx.moveTo(s.x - w / 2 + 0.4, s.y + 0.6); ctx.lineTo(s.x - w / 2 + 1.6 + wob, top);
+      ctx.lineTo(s.x + w / 2 - 1.2, top - 0.4); ctx.lineTo(s.x + w / 2 - 0.2, s.y + 0.6);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = WALL.l;                                  // the lit cap
+      ctx.beginPath();
+      ctx.ellipse(s.x - 0.2, top + 0.4, w * 0.42, 1.7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = WALL.h;
+      ctx.fillRect(s.x - w * 0.34, top - 0.2, w * 0.32, 0.9);
+      ctx.fillStyle = WALL.d;                                  // the shaded near face
+      ctx.fillRect(s.x + w / 2 - 2.2, top + 1.2, 1.7, h - 1);
+
+      if (CANDLE_ON.includes(s.i)) {
+        const cy = top - 0.4;
+        const ch = 5.2 + wob * 2;
+        ctx.fillStyle = BONE.o; ctx.fillRect(s.x - 1.9, cy - ch, 3.8, ch);
+        ctx.fillStyle = BONE.b; ctx.fillRect(s.x - 1.4, cy - ch, 2.8, ch);
+        ctx.fillStyle = BONE.h; ctx.fillRect(s.x - 1.4, cy - ch, 0.9, ch - 1);
+        ctx.fillStyle = BONE.d;                                // wax run down one side
+        ctx.fillRect(s.x + 0.5, cy - ch + 1.6, 0.9, ch * 0.55);
+        candleFlame(ctx, s.x, cy - ch - 2.2, t, s.i * 2.3);
+        ctx.save();                                            // its light on the stone
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(s.x, cy - ch - 2, 1, s.x, cy - ch - 2, 16);
+        g.addColorStop(0, 'rgba(255,178,80,0.20)');
+        g.addColorStop(1, 'rgba(255,178,80,0)');
+        ctx.fillStyle = g; ctx.fillRect(s.x - 16, cy - ch - 18, 32, 32);
+        ctx.restore();
+      }
+    }
   }
 
   // Marks the day's rite as already performed. There is nothing to restore:
@@ -133,6 +271,7 @@ export class SkullShrine {
 
     this._embers(dt, lift);
     this._splashes(dt);
+    this._ooze(dt);
 
     if (!this.active) return;
 

@@ -29,9 +29,13 @@ const ROW_Y = [30, 74];             // top row, bottom row
 const PIT_X0 = 62, PIT_DX = 21.6;   // six pits across the middle
 const STORE_X = [212, 20];          // [seat 0's store (right), seat 1's (left)]
 
-const HOP_MS = 190;                 // one stone dropped into one pit
-const CAPTURE_MS = 620;
-const SETTLE_MS = 260;              // beat after the last stone lands
+// Three times slower than the first cut, which was quick enough that a
+// thirteen-stone sowing was over before you could follow where the stones had
+// gone — the whole point of sowing them one at a time is that you can count
+// along, and at 190ms you couldn't.
+const HOP_MS = 570;                 // one stone dropped into one pit
+const CAPTURE_MS = 1860;
+const SETTLE_MS = 780;              // beat after the last stone lands
 
 // The stones. Five colours, and which one a stone gets is a pure function of
 // where it is sitting, so the board is stable frame to frame with no per-stone
