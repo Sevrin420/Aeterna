@@ -159,22 +159,6 @@ export const LORE = {
       text: 'Leave now and your Devotion is secured.\n\n'
         + 'The abbey will still be here.',
     },
-    // The dev hatch. These two only ever appear for whoever holds the key, so
-    // they can say plainly what they do — there is no player to keep in the
-    // dark, and a test control that speaks in riddles is a bad test control.
-    'dev-day': {
-      speaker: 'Iron Lever',
-      text: 'A machined switch on a bolted plate. Nothing in the abbey was '
-        + 'made on a lathe.\n\n'
-        + 'Throw it and today is unspent again: all three duties open, streak '
-        + 'and Devotion untouched.',
-    },
-    'dev-streak': {
-      speaker: 'Iron Lever',
-      text: 'The same plate, and the throw is red.\n\n'
-        + 'Throw it and the abbey records a day you missed. Your streak falls '
-        + 'to nothing and the confessor has something to mend.',
-    },
     bulletin: {
       speaker: 'The Bulletin',
       text: 'A board of dark wood by the nave, where the abbey posts what the '

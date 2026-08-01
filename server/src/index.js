@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import path from 'node:path';
-import { randomUUID, timingSafeEqual, createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -315,88 +315,6 @@ fastify.post('/cathedral/:id/claim', async (req, reply) => {
 // exactly the sources listed in gameLogic.js and no back door. If an admin
 // grant is wanted again it needs to sit behind a shared secret before it goes
 // anywhere near a running server.
-
-// ========== DEV HATCH: MANUAL DAY RESET ==========
-// The whole economy is "three duties a day". A route that clears the day's
-// flags is therefore an unlimited Devotion faucet the instant anybody else can
-// reach it — the same shape of mistake the admin-award route was. So it gets
-// the shared secret that comment above asks for, and two locks that both have
-// to open:
-//
-//   1. DEV_KEY must be set in the server's environment. Unset is the default
-//      and what a fresh deploy gets, and unset means every route below refuses
-//      everything — including the check the client uses to decide whether to
-//      draw the levers at all. No key on the box, no levers in the world.
-//   2. The caller must present that key, compared with timingSafeEqual rather
-//      than ===, so it cannot be walked a byte at a time.
-//
-// Scope is deliberately the caller's own player row. Nothing here can touch
-// another player's day, and nothing here adds Devotion directly — it only
-// re-opens duties that must still be performed to pay out.
-function devKeyOk(key) {
-  const want = process.env.DEV_KEY;
-  if (!want) return false;
-  const got = Buffer.from(String(key || ''), 'utf8');
-  const exp = Buffer.from(want, 'utf8');
-  // timingSafeEqual throws on a length mismatch, so compare a fixed-size
-  // digest of each instead of the raw bytes: equal length always, and the
-  // length of the real key is not leaked by how fast this returns.
-  return timingSafeEqual(createHash('sha256').update(got).digest(), createHash('sha256').update(exp).digest());
-}
-
-// Is the hatch open on this server, and does this caller hold the key? The
-// client asks once at boot and only builds the levers on a true.
-fastify.post('/dev/check', async (req, reply) => {
-  const { key } = req.body || {};
-  if (!process.env.DEV_KEY) return reply.code(503).send({ ok: false, error: 'not_configured' });
-  if (!devKeyOk(key)) return reply.code(403).send({ ok: false, error: 'bad_key' });
-  return { ok: true };
-});
-
-function devPlayer(req, reply) {
-  const { wallet, key } = req.body || {};
-  if (!process.env.DEV_KEY) { reply.code(503).send({ error: 'not_configured' }); return null; }
-  if (!devKeyOk(key)) { reply.code(403).send({ error: 'bad_key' }); return null; }
-  if (!wallet) { reply.code(400).send({ error: 'Missing wallet' }); return null; }
-  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(String(wallet).toLowerCase());
-  if (!player) { reply.code(404).send({ error: 'Player not found' }); return null; }
-  return player;
-}
-
-// Re-open today's duties. Note what this deliberately does NOT touch:
-// last_duty_date. The streak advances once per calendar day and is guarded by
-// that column, so resetting the day ten times in an afternoon re-opens the
-// duties ten times without inflating the streak — the payouts you see on the
-// second run are the payouts a real second day would pay.
-fastify.post('/dev/reset-day', async (req, reply) => {
-  const player = devPlayer(req, reply);
-  if (!player) return;
-  db.prepare(`
-    UPDATE players
-    SET pray_today = 0, garden_today = 0, candles_today = 0,
-        gifts_given_today = 0, gifts_received_today = 0, scourge_today = 0,
-        flags_date = ?
-    WHERE id = ?
-  `).run(todayStr(), player.id);
-  return { success: true, reset: 'day', streak: player.streak, devotion: player.devotion };
-});
-
-// Break the streak on purpose, so the confessor has something to mend. There
-// is no other way to reach that rite on demand: it needs a MISSED day, and a
-// missed day takes a day. A streak of zero has nothing to break, so this
-// records at least one — otherwise the lever would silently do nothing on a
-// fresh account, which is the worst possible behaviour for a test control.
-fastify.post('/dev/break-streak', async (req, reply) => {
-  const player = devPlayer(req, reply);
-  if (!player) return;
-  const before = Math.max(player.streak, 1);
-  db.prepare(`
-    INSERT INTO streak_logs (player_id, date, streak_before, broke, confessed, cost_eth)
-    VALUES (?, ?, ?, 1, 0, ?)
-  `).run(player.id, todayStr(), before, confessionCost(player.confession_count));
-  db.prepare('UPDATE players SET streak = 0, last_duty_date = NULL WHERE id = ?').run(player.id);
-  return { success: true, reset: 'streak', brokenFrom: before, cost: confessionCost(player.confession_count) };
-});
 
 // ========== SOCKET.IO ==========
 const io = new Server(fastify.server, {

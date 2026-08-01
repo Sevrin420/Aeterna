@@ -36,28 +36,6 @@ export function clearWalletId() {
   localStorage.removeItem(WALLET_KEY);
 }
 
-// --- the dev hatch's half of the shared secret --------------------------
-// Set it once by loading the game with ?devkey=... — the key is moved into
-// localStorage and stripped from the address bar immediately, so it does not
-// sit in the URL to be shoulder-read, bookmarked or pasted into a screenshot.
-// It is only ever a CLAIM: the server holds the real key and decides, so a
-// forged value in localStorage buys nothing (see devKeyOk in server/src/index.js).
-const DEV_KEY = 'aeterna_devkey';
-
-export function getDevKey() {
-  try {
-    const u = new URL(location.href);
-    const fromUrl = u.searchParams.get('devkey');
-    if (fromUrl !== null) {
-      if (fromUrl) localStorage.setItem(DEV_KEY, fromUrl);
-      else localStorage.removeItem(DEV_KEY);   // ?devkey= with no value turns it off
-      u.searchParams.delete('devkey');
-      history.replaceState(null, '', u.pathname + u.search + u.hash);
-    }
-  } catch { /* no URL/history in some embeddings — fall through to storage */ }
-  return localStorage.getItem(DEV_KEY) || '';
-}
-
 async function req(path, opts = {}) {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
@@ -88,17 +66,6 @@ export const api = {
   },
   save() {
     return req('/save', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
-  },
-  // The dev hatch. Every one of these 503s on a server with no DEV_KEY set,
-  // which is what production gets unless someone deliberately sets one.
-  devCheck() {
-    return req('/dev/check', { method: 'POST', body: JSON.stringify({ key: getDevKey() }) });
-  },
-  devResetDay() {
-    return req('/dev/reset-day', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), key: getDevKey() }) });
-  },
-  devBreakStreak() {
-    return req('/dev/break-streak', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), key: getDevKey() }) });
   },
   leaderboard() {
     return req('/leaderboard');

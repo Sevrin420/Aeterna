@@ -2,16 +2,9 @@ import { Input, makeLoop } from './engine.js';
 import { BootScene } from './scenes/boot.js';
 import { EntranceScene } from './scenes/entrance.js';
 import { CourtyardScene } from './scenes/courtyard.js';
-import { api, getDevKey } from './api.js';
+import { api } from './api.js';
 import { sfx, AUDIO_MASTER } from './sfx.js';
 import { connectWallet, fetchCultists, shortAddr, hasInjectedWallet } from './wallet.js';
-
-// Claim ?devkey=... at boot rather than waiting for the abbey to ask for it.
-// The scene only reads the key once the player has powered on the console and
-// walked in, and until then the secret would sit in the address bar in plain
-// sight — through the title card, the whole entrance, and any screenshot taken
-// of either. This moves it to localStorage and cleans the URL on the first tick.
-getDevKey();
 
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');

@@ -146,16 +146,6 @@ export const STATUES = [
   { col: 69, row: 52, kind: 'grotesque', face: -1 },
 ];
 
-// Two iron levers on the nave's west wall, a few paces from where you spawn
-// and right beside the door — a test control wants to be the shortest walk in
-// the building. They are NOT in PROPS and NOT in STATIONS: the scene adds them
-// at runtime, and only after the server has confirmed the dev key. On any
-// server without a DEV_KEY set they do not exist in the world at all.
-export const DEV_LEVERS = [
-  { id: 'dev-day', col: 50, row: 53, label: 'Reset the day' },
-  { id: 'dev-streak', col: 50, row: 56, label: 'Break the streak' },
-];
-
 // WEST warren: a corridor with six doored rooms (three above, three below).
 const WEST_CORRIDOR = { x0: 10, y0: 105, x1: 41, y1: 108 };
 const ROOM_COLS = [[12, 19], [23, 30], [34, 41]];
