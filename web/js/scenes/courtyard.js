@@ -19,8 +19,15 @@ import {
 } from '../abbeyMap.js';
 import {
   FLOOR, WALL, EARTH, VOID, BLOOD, GOLD, WOOD, IRON, BONE, CLOTH, SOUL, MOSS,
-  SHADOW, SHADOW_SOFT, FIRE, shade, block, flame, candleFlame,
+  SHADOW, SHADOW_SOFT, FIRE, ramp, shade, block, flame, candleFlame,
 } from '../palette.js';
+
+// Statues are cut from the same stone as the walls they stand against, so they
+// use the WALL ramp shifted one whole step brighter. A figure that projects out
+// of a wall catches the abbey's upper-left light where the flat wall behind it
+// cannot; without the shift, eight WALL-coloured figures on a WALL-coloured
+// surface are eight dark smudges nobody can read at ten pixels to the tile.
+const STONE = ramp('#1b1330', '#37294f', '#503c6c', '#6b5488', '#8f76b0');
 
 const W = 208, H = 208; // logical screen size (canvas backing store is RES x this)
 const RES = 2;          // must match the 2x transform main.js sets each frame
@@ -1227,9 +1234,176 @@ export class CourtyardScene {
     }
   }
 
+  // --- STATUARY ------------------------------------------------------------
+  // Eight figures set into the walls of the cross, cut from the STONE ramp
+  // above because that is what they were cut from: BONE appears only where
+  // centuries of hands have rubbed the stone pale, and BLOOD only in the eyes.
+  // Nothing else is allowed in, or the abbey gains a third accent and loses the
+  // crimson-and-gold pairing everywhere else depends on.
+  //
+  // Each figure is drawn facing east and mirrored by `face`, but the lit edge
+  // is painted afterwards in world space, so the abbey's one light angle
+  // survives the mirror instead of flipping with it.
+  _drawStatue(ctx, x, y, kind, face, seed) {
+    const pulse = 0.26 + Math.sin(this.t * 1.3 + seed * 2.7) * 0.13;
+    // the wall's own shadow, cast down beneath whatever juts out of it
+    ctx.fillStyle = 'rgba(14,10,26,0.34)';
+    ctx.beginPath(); ctx.ellipse(x + 1, y + 6.5, 5.5, 1.8, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(face >= 0 ? 1 : -1, 1);
+    let box;
+    if (kind === 'saint') box = this._statueSaint(ctx, pulse, seed);
+    else if (kind === 'grotesque') box = this._statueGrotesque(ctx, pulse, seed);
+    else box = this._statueGargoyle(ctx, pulse, seed);
+    ctx.restore();
+
+    ctx.fillStyle = STONE.l;
+    ctx.fillRect(x + box.left, y + box.top + 2, 1, (box.bot - box.top) - 4);
+    ctx.fillStyle = STONE.h;
+    ctx.fillRect(x + box.left, y + box.top + 2, 1, 3);
+  }
+
+  // A crouched winged beast on a corbel: haunches, folded spiked wings, a
+  // snouted head thrust out over the floor, and claws hooked over the lip so
+  // it reads as holding on rather than resting.
+  _statueGargoyle(ctx, pulse) {
+    const TAU = Math.PI * 2;
+    block(ctx, -5, 2, 10, 4, STONE);                       // the corbel it squats on
+    // Wings first, and swept BACK rather than up — a fan rising straight off
+    // the shoulders reads as a crest, which is the one silhouette a gargoyle
+    // must not have.
+    ctx.fillStyle = STONE.o;
+    ctx.beginPath();
+    ctx.moveTo(-1.4, -1.5); ctx.lineTo(-5.2, -11.5); ctx.lineTo(-3.4, -9.2);
+    ctx.lineTo(-3.0, -11.8); ctx.lineTo(-1.2, -8.4); ctx.lineTo(-0.8, -10.4);
+    ctx.lineTo(0.8, -5.4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.d;
+    ctx.beginPath();
+    ctx.moveTo(-1.6, -2.6); ctx.lineTo(-4.4, -10.2); ctx.lineTo(-3.2, -8.6);
+    ctx.lineTo(-2.9, -10.4); ctx.lineTo(-1.5, -8); ctx.lineTo(-1.2, -9.4);
+    ctx.lineTo(0.1, -5.6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.o;                               // tail, curled down behind
+    ctx.beginPath();
+    ctx.moveTo(-3.6, -3.4); ctx.lineTo(-6.2, 0.4); ctx.lineTo(-4.6, 1.8);
+    ctx.lineTo(-4.4, 0.2); ctx.lineTo(-2.4, -2.2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.o;                               // haunches, wider than tall
+    ctx.beginPath(); ctx.ellipse(-0.8, -2.4, 4.4, 3.7, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = STONE.b;
+    ctx.beginPath(); ctx.ellipse(-0.8, -2.4, 3.5, 2.9, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = STONE.d;                               // hunched shoulder over the neck
+    ctx.beginPath(); ctx.ellipse(1.2, -4.2, 2.4, 1.9, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = STONE.d;                               // a foreleg braced on the lip
+    ctx.fillRect(1.8, -3.4, 1.8, 5);
+    ctx.fillStyle = STONE.o; ctx.fillRect(1.6, -3.4, 0.6, 5);
+    ctx.fillStyle = STONE.o;                               // head on a short neck, thrust out
+    ctx.beginPath(); ctx.ellipse(3.2, -7, 2.9, 2.5, 0, 0, TAU); ctx.fill();
+    ctx.beginPath();                                      // muzzle, blunt not beaked
+    ctx.moveTo(4.4, -8.4); ctx.lineTo(7.2, -7.4); ctx.lineTo(7.2, -4.8); ctx.lineTo(4.4, -4.6);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.b;
+    ctx.beginPath(); ctx.ellipse(3.2, -7, 2.1, 1.8, 0, 0, TAU); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(4.4, -8); ctx.lineTo(6.4, -7.1); ctx.lineTo(6.4, -5.4); ctx.lineTo(4.4, -5.2);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = VOID; ctx.fillRect(4.4, -6.5, 2.6, 0.9);    // mouth, open a crack
+    ctx.fillStyle = BONE.d;                                     // and a tooth in it
+    ctx.fillRect(5.4, -6.5, 0.6, 0.9); ctx.fillRect(6.4, -6.5, 0.5, 0.9);
+    ctx.fillStyle = STONE.d;                               // two back-swept horns
+    ctx.beginPath(); ctx.moveTo(2.4, -8.8); ctx.lineTo(0.4, -12); ctx.lineTo(3.2, -8.6); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(4.2, -8.6); ctx.lineTo(3.4, -11.4); ctx.lineTo(5.1, -8.2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = BONE.d;                               // claws hooked over the corbel lip
+    for (let i = 0; i < 3; i++) ctx.fillRect(1.4 + i * 1.6, 1.4, 1, 2.2);
+    ctx.fillStyle = `rgba(232,90,74,${pulse})`;           // the eye that follows you
+    ctx.beginPath(); ctx.arc(4.2, -7.4, 0.9, 0, TAU); ctx.fill();
+    ctx.fillStyle = `rgba(247,154,120,${pulse * 1.4})`;
+    ctx.beginPath(); ctx.arc(4.2, -7.4, 0.4, 0, TAU); ctx.fill();
+    return { top: -12, bot: 6, left: -5.2 };
+  }
+
+  // A robed column figure on a plinth. The hood is empty — a hollow of
+  // outline-dark stone where a face should be — which does more work than any
+  // carved expression would at ten pixels to the tile.
+  _statueSaint(ctx) {
+    const TAU = Math.PI * 2;
+    block(ctx, -4.5, 3, 9, 3.4, STONE);                    // plinth
+    ctx.fillStyle = STONE.o;                               // robe, a tapering column
+    ctx.beginPath();
+    ctx.moveTo(-4.2, 3); ctx.lineTo(-3.2, -8.6); ctx.lineTo(3.2, -8.6); ctx.lineTo(4.2, 3);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.b;
+    ctx.beginPath();
+    ctx.moveTo(-3.2, 2.6); ctx.lineTo(-2.4, -8); ctx.lineTo(2.4, -8); ctx.lineTo(3.2, 2.6);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.d;                               // folds
+    ctx.fillRect(-1.5, -7, 0.7, 9); ctx.fillRect(0.9, -7, 0.7, 9);
+    ctx.fillStyle = STONE.o;                               // cowl draped over the shoulders
+    ctx.beginPath();
+    ctx.moveTo(-3.6, -7.6); ctx.lineTo(-2.2, -11.2); ctx.lineTo(2.2, -11.2); ctx.lineTo(3.6, -7.6);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.d;
+    ctx.beginPath();
+    ctx.moveTo(-2.9, -8.2); ctx.lineTo(-1.8, -10.8); ctx.lineTo(1.8, -10.8); ctx.lineTo(2.9, -8.2);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.o;                               // hood, peaked
+    ctx.beginPath();
+    ctx.moveTo(-2.4, -10.4); ctx.lineTo(-2.0, -13.6); ctx.lineTo(0, -15.2);
+    ctx.lineTo(2.0, -13.6); ctx.lineTo(2.4, -10.4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.b;
+    ctx.beginPath();
+    ctx.moveTo(-1.9, -10.6); ctx.lineTo(-1.5, -13.2); ctx.lineTo(0, -14.4);
+    ctx.lineTo(1.5, -13.2); ctx.lineTo(1.9, -10.6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.o;                               // the hollow where a face is not
+    ctx.beginPath(); ctx.ellipse(0.3, -11.8, 1.2, 1.5, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = BONE.d;                               // hands clasped, rubbed pale
+    ctx.beginPath(); ctx.ellipse(0.3, -5.2, 1.2, 0.95, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = STONE.o; ctx.fillRect(-0.9, -6.6, 2.6, 0.7);  // sleeve mouths
+    ctx.fillStyle = 'rgba(138,128,105,0.24)';             // weathering streak
+    ctx.fillRect(-2.5, -6, 0.8, 8);
+    ctx.fillStyle = STONE.o;                               // a shoulder chipped away
+    ctx.beginPath(); ctx.moveTo(2.4, -10.8); ctx.lineTo(3.9, -8.4); ctx.lineTo(2.5, -8.2); ctx.closePath(); ctx.fill();
+    return { top: -15.2, bot: 6.4, left: -4.4 };
+  }
+
+  // A screaming face and nothing else — a mouth cut clean through to the void
+  // behind the wall, with the rain-stain of a downspout that has not run in
+  // three hundred years still under it.
+  _statueGrotesque(ctx, pulse) {
+    const TAU = Math.PI * 2;
+    ctx.fillStyle = STONE.o;                               // the corbel it is carved on
+    ctx.beginPath();
+    ctx.moveTo(-4.6, -8.6); ctx.lineTo(5.2, -7); ctx.lineTo(4.4, 5); ctx.lineTo(-4.6, 5.6);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.b;
+    ctx.beginPath();
+    ctx.moveTo(-3.9, -7.8); ctx.lineTo(4.5, -6.4); ctx.lineTo(3.8, 4.3); ctx.lineTo(-3.9, 4.9);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.d; ctx.fillRect(-3.4, -6, 7.6, 1.8);     // brow ridge
+    ctx.fillStyle = STONE.l; ctx.fillRect(-3.4, -6, 7.6, 0.6);
+    ctx.fillStyle = STONE.o;                               // deep-set eyes
+    ctx.beginPath(); ctx.ellipse(-1.5, -3.4, 1.4, 1.2, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(2.2, -3.1, 1.4, 1.2, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = `rgba(232,90,74,${pulse * 0.8})`;
+    ctx.beginPath(); ctx.arc(-1.4, -3.4, 0.6, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(2.3, -3.1, 0.6, 0, TAU); ctx.fill();
+    ctx.fillStyle = STONE.d;                               // nose, broken off flat
+    ctx.beginPath(); ctx.moveTo(0.4, -3); ctx.lineTo(1.5, -0.5); ctx.lineTo(-0.5, -0.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = STONE.o;                               // cheeks pulled back off the jaw
+    ctx.fillRect(-3.4, 0.4, 7.4, 0.7);
+    ctx.fillStyle = VOID;                                 // the mouth, open and going nowhere
+    ctx.beginPath(); ctx.ellipse(0.4, 2.1, 2.5, 1.9, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = BONE.d;                               // teeth
+    for (let i = 0; i < 4; i++) ctx.fillRect(-1.5 + i * 1.1, 0.6, 0.7, 1.1);
+    ctx.fillStyle = 'rgba(58,50,38,0.30)';                // three centuries of rain
+    ctx.fillRect(-2.6, -1.2, 0.8, 6); ctx.fillRect(3, -0.8, 0.7, 5.2);
+    return { top: -8.6, bot: 5.6, left: -4.9 };
+  }
+
   _drawProp(ctx, p) {
     const x = p.col * TILE + TILE / 2, y = p.row * TILE + TILE / 2;
     switch (p.type) {
+      case 'statue': this._drawStatue(ctx, x, y, p.kind, p.face, h2(p.col, p.row)); break;
       case 'fountain': this._drawFountain(ctx, p.col, p.row); break;
       case 'fountain-block': break; // covered by the fountain draw above
       case 'booth-block': break;    // covered by the confessional draw below

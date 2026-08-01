@@ -124,6 +124,28 @@ export const CONFESSIONAL_THROAT = [39, 40, 41];    // walkable cols at TRANSEPT
 export const CONFESSIONAL_BOOTH_ROW = 30;
 export const CONFESSIONAL_BOOTH_COL = 40;
 
+// Eight figures set into the walls of the cross, each on the one side of its
+// wall that fronts open floor, so every one of them looks out over a room
+// rather than into stone. `face` is +1 when the floor is to the east and -1
+// when it is west.
+//
+// They are placed by station in the building rather than scattered: saints at
+// the altar end, where the abbey is still pretending to be a church; gargoyles
+// down the working length of the nave and at the far ends of both arms; and
+// two grotesques over the door, so the last thing you pass on the way out is a
+// pair of open mouths. They sit on wall tiles, which are already solid, so
+// none of them changes where anyone can walk.
+export const STATUES = [
+  { col: 50, row: 10, kind: 'saint',     face:  1 },
+  { col: 69, row: 10, kind: 'saint',     face: -1 },
+  { col: 50, row: 34, kind: 'gargoyle',  face:  1 },
+  { col: 69, row: 34, kind: 'gargoyle',  face: -1 },
+  { col: 35, row: 42, kind: 'gargoyle',  face:  1 },
+  { col: 83, row: 42, kind: 'gargoyle',  face: -1 },
+  { col: 50, row: 52, kind: 'grotesque', face:  1 },
+  { col: 69, row: 52, kind: 'grotesque', face: -1 },
+];
+
 // WEST warren: a corridor with six doored rooms (three above, three below).
 const WEST_CORRIDOR = { x0: 10, y0: 105, x1: 41, y1: 108 };
 const ROOM_COLS = [[12, 19], [23, 30], [34, 41]];
@@ -206,6 +228,7 @@ prop('altar', NAVE_CX, 9);
 prop('torch', NAVE_CX - 3, 9); prop('torch', NAVE_CX + 3, 9);
 prop('bulletin', NAVE.x0, 11, false);
 prop('pew', NAVE_CX - 3, EXIT_ROW - 7); prop('pew', NAVE_CX + 3, EXIT_ROW - 7);
+for (const st of STATUES) prop('statue', st.col, st.row, false, { kind: st.kind, face: st.face });
 // The confessional: a timber booth filling the back of the north niche, with
 // the confessor standing in its open bay. Only the centre tile draws; the rest
 // are solid so the booth is a wall you talk through, not furniture you skirt.
@@ -221,7 +244,7 @@ prop('stair-down', TRANSEPT.x1 - 2, TRANSEPT.y0 + 6, false, { dest: { col: SKULL
 // the way out, at the foot of the cross
 prop('door', NAVE_CX, EXIT_ROW + 1, false);
 
-// --- TEN FIRE ALCOVES ---
+// --- SIX FIRE ALCOVES ---
 // Just the brazier (the interactive fire-shrine) and its fuel. The niche used
 // to also carry a wall torch and a three-candle rack drawn over the brazier by
 // the duty station; both are gone, so the only flame in a nook is the brazier's
