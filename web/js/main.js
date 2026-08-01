@@ -16,11 +16,12 @@ const chatInput = document.getElementById('chatInput');
 const hud = document.getElementById('hud');
 const hudName = document.getElementById('hudName');
 const hudLevel = document.getElementById('hudLevel');
+const hudXp = document.querySelector('.hud-xp');
 const hudXpFill = document.getElementById('hudXpFill');
 const hudXpTxt = document.getElementById('hudXpTxt');
 const hudDevotion = document.getElementById('hudDevotion');
 const hudStreak = document.getElementById('hudStreak');
-const pipPray = document.getElementById('pipPray');
+const pipScourge = document.getElementById('pipScourge');
 const pipGarden = document.getElementById('pipGarden');
 const pipCandles = document.getElementById('pipCandles');
 const toastEl = document.getElementById('toast');
@@ -118,16 +119,73 @@ function levelInfo(devotion) {
   return { level, cur, need, pct: Math.max(0, Math.min(1, cur / need)) };
 }
 
+// Restarting a CSS animation needs the class off, a forced reflow, then the
+// class back on — without the reflow the browser coalesces the two changes and
+// nothing replays. Two awards in quick succession must each get their pulse.
+function replay(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+let lastDevotion = null;
+let lastLevel = null;
+let levelUpTimer = null;
+let awardTimer = null;
+
+// The .awarded class carries BOTH the pulse keyframes and the slow fill
+// transition, so it has to outlive the pulse (0.62s) and stay until the fill
+// has finished (0.22s delay + 1.25s), or the bar would snap the rest of the
+// way the moment the animation ended. It is cleared afterwards so ordinary
+// HUD refreshes — a reconnect, a scene change — go back to being instant.
+function clearAward() {
+  clearTimeout(awardTimer);
+  awardTimer = setTimeout(() => {
+    hudXp.classList.remove('awarded');
+    hudDevotion.classList.remove('awarded');
+  }, 1600);
+}
+
 function updateHud(player) {
   const dev = player.devotion || 0;
   const li = levelInfo(dev);
+  const awarded = lastDevotion != null && dev > lastDevotion;
+  const levelledUp = awarded && lastLevel != null && li.level > lastLevel;
+
   hudLevel.textContent = `LV ${li.level}`;
-  hudXpFill.style.width = `${li.pct * 100}%`;
   hudXpTxt.textContent = `${li.cur} / ${li.need} XP`;
   hudDevotion.textContent = `✦ ${dev}`;
+
+  clearTimeout(levelUpTimer);
+  if (awarded) {
+    // Pulse first, then fill — the .awarded class carries both the keyframes
+    // and the slow transition, so the two are always in step.
+    replay(hudXp, 'awarded');
+    replay(hudDevotion, 'awarded');
+    clearAward();
+    if (levelledUp) {
+      // Run the old bar out to full before starting the new level from empty,
+      // otherwise levelling up reads as the bar going BACKWARDS.
+      hudXpFill.style.width = '100%';
+      levelUpTimer = setTimeout(() => {
+        hudXpFill.style.transition = 'none';
+        hudXpFill.style.width = '0%';
+        void hudXpFill.offsetWidth;
+        hudXpFill.style.transition = '';
+        hudXpFill.style.width = `${li.pct * 100}%`;
+        clearAward();
+      }, 1500);
+    } else {
+      hudXpFill.style.width = `${li.pct * 100}%`;
+    }
+  } else {
+    hudXpFill.style.width = `${li.pct * 100}%`;
+  }
+  lastDevotion = dev;
+  lastLevel = li.level;
   hudName.textContent = `${player.prefix} ${player.name}`;
   hudStreak.textContent = player.streak > 0 ? `${player.streak}d ×${player.multiplier}` : '';
-  pipPray.classList.toggle('done', !!player.pray_today);
+  pipScourge.classList.toggle('done', !!player.scourge_today);
   pipGarden.classList.toggle('done', !!player.garden_today);
   pipCandles.classList.toggle('done', !!player.candles_today);
   hud.hidden = false;

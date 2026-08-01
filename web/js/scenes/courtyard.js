@@ -47,9 +47,6 @@ function drawGrass(ctx, x, y, c, r) {
 
 const STATIONS = [
   // church nave + transept
-  // The altar is a place to read, not a duty. The three that pay Devotion are
-  // Light Fire, Whipping and Skull Chant, and not one of them is a station.
-  { id: 'pray', kind: 'read', label: 'The Altar', x: px(NAVE_CX), y: px(13), r: 13 },
   { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: px(NAVE_CX), y: px(11), r: 13 },
   // In the niche now, two tiles south of the grille — you have to leave the
   // transept and step into the booth's own little room to be heard.
@@ -1697,15 +1694,10 @@ export class CourtyardScene {
         });
       }
     } else if (s.id === 'confession') {
-      // Just the prie-dieu you kneel at. The booth itself is a prop on the
-      // niche's back wall, so it sorts against the walls rather than against
-      // the player standing in front of it.
-      this._dropShadow(ctx, 0, 5, 6, 2.2);
-      block(ctx, -5, -1, 10, 5, WOOD);            // the step
-      ctx.fillStyle = WOOD.o; ctx.fillRect(-5, -7, 10, 6);     // the rail
-      ctx.fillStyle = WOOD.b; ctx.fillRect(-4.5, -6.5, 9, 5);
-      ctx.fillStyle = WOOD.l; ctx.fillRect(-4.5, -6.5, 9, 1.2);
-      ctx.fillStyle = WOOD.h; ctx.fillRect(-4.5, -6.5, 3, 1.2);
+      // Nothing is drawn here. There was a prie-dieu on this spot and at
+      // sprite scale it read as a scroll on a lectern — a thing to consult
+      // rather than a man to speak to. The niche is the booth and the monk
+      // standing in it; the station is only the ground you stand on to talk.
     } else if (s.id === 'leaderboard') {
       this._dropShadow(ctx, 0, 6, 7.5, 2.2);
       block(ctx, -5, 0, 10, 6, WOOD);             // stand
@@ -1714,14 +1706,6 @@ export class CourtyardScene {
       ctx.fillStyle = BONE.h; ctx.fillRect(-6, -6, 12, 1.2);
       ctx.fillStyle = GOLD.o;
       for (let i = -3; i <= 3; i += 3) ctx.fillRect(-4, i, 8, 1);
-    } else if (s.id === 'pray') {
-      ctx.fillStyle = this.player.pray_today ? BLOOD.l : BLOOD.d;
-      const glow = 0.6 + Math.sin(this.t * 4) * 0.25;
-      ctx.globalAlpha = glow;
-      ctx.beginPath();
-      ctx.arc(0, -10, 2.6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
     }
     ctx.restore();
   }

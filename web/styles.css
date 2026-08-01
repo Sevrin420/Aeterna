@@ -322,6 +322,36 @@ html, body {
   box-shadow: 0 0 8px rgba(69, 240, 138, 0.85);
   transition: width 0.35s ease;
 }
+
+/* Devotion awarded: the bar takes a hit of light and swells, and only then
+   does it fill — and it fills slowly. The pulse is what makes you look at it;
+   the slow fill is what makes the number feel earned rather than incremented.
+   The fill is deliberately delayed past the peak of the pulse so the two beats
+   read as cause and effect instead of happening at once. */
+@keyframes devotion-pulse {
+  0%   { transform: scaleY(1);    box-shadow: inset 0 0 4px rgba(0,0,0,.7), 0 0 5px rgba(69,240,138,.25); }
+  22%  { transform: scaleY(1.45); box-shadow: inset 0 0 4px rgba(0,0,0,.7), 0 0 18px rgba(180,255,214,.95); }
+  55%  { transform: scaleY(1.12); box-shadow: inset 0 0 4px rgba(0,0,0,.7), 0 0 11px rgba(69,240,138,.7); }
+  100% { transform: scaleY(1);    box-shadow: inset 0 0 4px rgba(0,0,0,.7), 0 0 5px rgba(69,240,138,.25); }
+}
+@keyframes devotion-flash {
+  0%   { transform: scale(1);    color: var(--neon-hi); }
+  22%  { transform: scale(1.35); color: #ffffff; text-shadow: 0 0 10px rgba(180,255,214,1), 0 1px 2px #000; }
+  100% { transform: scale(1);    color: var(--neon-hi); }
+}
+.hud-xp.awarded { animation: devotion-pulse 0.62s cubic-bezier(.2,.9,.3,1); }
+.hud-xp.awarded .hud-xp-fill {
+  transition: width 1.25s cubic-bezier(.16,.85,.3,1) 0.22s;
+}
+.hud-dev.awarded {
+  display: inline-block;
+  animation: devotion-flash 0.62s cubic-bezier(.2,.9,.3,1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-xp.awarded, .hud-dev.awarded { animation: none; }
+  .hud-xp.awarded .hud-xp-fill { transition: width 0.35s ease; }
+}
 .hud-xp-txt {
   position: absolute;
   inset: 0;

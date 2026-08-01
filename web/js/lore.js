@@ -66,15 +66,6 @@ export const LORE = {
 
   // Read at each duty station, before the rite is performed.
   stations: {
-    // The altar is no longer a duty — it pays nothing and holds you for
-    // nothing. It is where the mantra is written down; the three rites are
-    // where it is said out loud.
-    pray: {
-      speaker: 'The Altar',
-      text: 'Cut into the stone, worn shallow by centuries of hands:\n\n'
-        + 'SANGUIS AETERNUS\nVITA AETERNA\n\n'
-        + 'Say it at the fire, say it under the switch, say it to the skull.',
-    },
     candles: {
       speaker: 'The Brazier',
       text: 'Cold iron, and the smell of the last burning still in it.',
@@ -111,11 +102,11 @@ export const LORE = {
     },
     confession: {
       speaker: 'The Confessor',
-      text: 'A monk in white waits behind the lattice. He does not give his '
-        + 'name.\n\n'
-        + '"A broken streak can be mended here. Once."\n\n'
-        + 'The abbey does not forgive freely. It only keeps accounts, and this '
-        + 'is a line in one.',
+      text: '"You have broken something."\n\n'
+        + '"I can mend it. Once, and once only, and not for nothing — the '
+        + 'abbey does not forgive, it keeps accounts, and this will be a line '
+        + 'in one."\n\n'
+        + '"Kneel, or go."',
     },
     'soul-altar': {
       speaker: 'The Soul Altar',
