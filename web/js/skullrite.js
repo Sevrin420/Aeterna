@@ -17,7 +17,13 @@
 
 import { BONE, BLOOD, VOID, SOUL, SHADOW, blueFlame, SOULFIRE } from './palette.js';
 
-export const WORSHIP_R = 30;    // how close you have to stand
+// How close you have to stand. This was 30, which sounds generous until you
+// remember the skull's own 3x3 footprint is solid: the reachable ring was
+// exactly one tile deep, so walking up to a very large skull and stopping a
+// tile short showed no mark at all and read as "this does nothing". 44 gives
+// two tiles of approach on every side and still cannot be triggered from
+// across the chamber.
+export const WORSHIP_R = 44;
 const SKULL_S = 18;             // cranium half-width in pixels — deliberately large
 const RISE = 34;                // how high it gets by the last line of the chant
 // Even at rest the skull is drawn well above its tile centre. Centred on the
