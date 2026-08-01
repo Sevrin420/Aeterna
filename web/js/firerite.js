@@ -45,6 +45,15 @@ export class FireRite {
     }
   }
 
+  // Put every alcove back to cold iron with its wood stacked and its torch on
+  // the wall. Only the dev day-reset calls this: re-opening the duty on the
+  // server is not enough on its own, because the fuel and the torches carry
+  // their own respawn timers and a tester would otherwise stand in an empty
+  // niche waiting out a clock that has nothing to do with what they are testing.
+  reset() {
+    this.state = this.alcoves.map(() => ({ woodTakenAt: null, laid: false, torchOut: false, litAt: null }));
+  }
+
   isLit(i) { return this.state[i].litAt != null; }
   hasWood(i) { return this.state[i].woodTakenAt == null; }
   isLaid(i) { return this.state[i].laid; }

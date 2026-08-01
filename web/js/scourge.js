@@ -41,6 +41,9 @@ export class StickPile {
 
   has(i) { return this.state[i].takenAt == null; }
   take(i) { this.state[i].takenAt = this.t; }
+  // Stand every bundle back against the wall. Dev day-reset only — see the
+  // matching FireRite.reset() for why re-opening the duty is not sufficient.
+  reset() { this.state = this.state.map(() => ({ takenAt: null })); }
   // A switch carried off and dropped is simply gone; the pile replenishes on
   // its own timer, exactly like the firewood.
   give() {}

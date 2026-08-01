@@ -3,7 +3,7 @@
 // plain canvas primitives and a camera that follows the player, wired to the
 // real Fastify API (duties, rites, confession) and Socket.io presence.
 
-import { api, getWalletId } from '../api.js';
+import { api, getWalletId, getDevKey } from '../api.js';
 import { sfx } from '../sfx.js';
 import { drawCharacter, getCultistSprite, getGuruSprite, getConfessorSprite, getNakedSprite, getCultistSpriteVariant } from '../spritesheet.js';
 import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
@@ -16,6 +16,7 @@ import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, DOORS, ROOMS, SKULL_ROOM, NAVE, TRANSEPT, NAVE_CX,
   EXIT_ROW, EXIT_COLS, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW, SKULL_SHRINE,
+  DEV_LEVERS,
 } from '../abbeyMap.js';
 import {
   FLOOR, WALL, EARTH, VOID, BLOOD, GOLD, WOOD, IRON, BONE, CLOTH, SOUL, MOSS,
@@ -179,6 +180,7 @@ export class CourtyardScene {
     this.mySheet = getCultistSprite(getWalletId(), this.player.sex);
     this._refreshSeason();
     this._refreshCathedral();
+    this._initDevHatch();
     this._bindSocket();
     this._emitJoin();
     this._onKeyDown = (e) => {
@@ -188,6 +190,74 @@ export class CourtyardScene {
       if (e.code === 'KeyT') this.onChatOpen();
     };
     window.addEventListener('keydown', this._onKeyDown);
+  }
+
+  // The dev hatch: two iron levers on the nave's west wall that only exist for
+  // a caller the SERVER has agreed holds the key. Nothing is drawn and no
+  // station is armed until /dev/check comes back ok, which it cannot do on a
+  // server with no DEV_KEY set — so on production, with no key on the box,
+  // this method's only effect is one 503 nobody sees.
+  //
+  // The levers are pushed into the live PROPS and STATIONS arrays rather than
+  // declared in abbeyMap.js, because those two arrays are what the world IS.
+  // Anything less and the renderer, the depth sort and the "!" prompt would
+  // each need a special case for a test control.
+  async _initDevHatch() {
+    if (this.devReady) return;
+    // No key held, no request. A player who has never been given one must not
+    // generate a rejected /dev/check on every entry — that is a red console
+    // error in front of everybody, and it tells anyone reading the network tab
+    // whether this server has a hatch at all.
+    if (!getDevKey()) return;
+    try {
+      const res = await api.devCheck();
+      if (!res || !res.ok) return;
+    } catch {
+      return;   // 503 not_configured or 403 bad_key — the hatch stays shut
+    }
+    this.devReady = true;
+    for (const l of DEV_LEVERS) {
+      PROPS.push({ type: 'dev-lever', col: l.col, row: l.row, solid: false, lever: l.id });
+      STATIONS.push({ id: l.id, kind: l.id, label: l.label, x: px(l.col + 1), y: px(l.row), r: 12 });
+    }
+    this.onToast('Dev hatch open — two levers by the door.');
+  }
+
+  async _handleDevLever(which) {
+    try {
+      if (which === 'dev-day') {
+        await api.devResetDay();
+        // Pull the whole player back from the server rather than patching the
+        // three flags here: the HUD, the "!" marks and _dutyOpen() all read
+        // this object, and a half-updated one would show duties as open that
+        // the server still considers done.
+        const me = await api.me();
+        this.player = me;
+        this.onPlayerUpdate(me);
+        // The world's own props keep state the server knows nothing about, and
+        // all of it has to roll back too or the "reset" day is unplayable: the
+        // shrine latches done, the braziers stay lit with their wood spent and
+        // their torches off the wall, the switch bundles are gone until their
+        // 90-second timer runs out, and whatever you were holding is still in
+        // your hands.
+        this.shrine.done = false;
+        this.fire.reset();
+        this.sticks.reset();
+        this.litBraziers.clear();
+        this.carrying = null;
+        sfx.bootConfirm();
+        this.onToast('The day begins again. All three duties are open.');
+      } else {
+        const res = await api.devBreakStreak();
+        const me = await api.me();
+        this.player = me;
+        this.onPlayerUpdate(me);
+        sfx.error();
+        this.onToast(`Streak broken from ${res.brokenFrom}. The confessor is waiting.`);
+      }
+    } catch (e) {
+      this.onToast(e.message);
+    }
   }
 
   // Queues the day's mantra over the worshipper's head, one line a second.
@@ -824,6 +894,7 @@ export class CourtyardScene {
     else if (s.kind === 'nursery') this._handleNursery();
     else if (s.kind === 'mancala') this._handleMancala();
     else if (s.kind === 'gate') this._handleSaveExit();
+    else if (s.kind === 'dev-day' || s.kind === 'dev-streak') this._handleDevLever(s.kind);
   }
 
   _updateScourge(dt, input) {
@@ -1400,10 +1471,41 @@ export class CourtyardScene {
     return { top: -8.6, bot: 5.6, left: -4.9 };
   }
 
+  // The dev levers. Deliberately the only object in the abbey made of clean
+  // iron and lit gold — everything the cult built is stone, bone or fire, so a
+  // machined switch on a plate reads instantly as not-of-this-world, which is
+  // exactly right for a control that should never be mistaken for a rite.
+  // Day lever throws gold, streak lever throws blood.
+  _drawDevLever(ctx, x, y, which) {
+    const day = which === 'dev-day';
+    const A = day ? GOLD : BLOOD;
+    const glow = 0.45 + Math.sin(this.t * 2.4 + (day ? 0 : 1.7)) * 0.2;
+    block(ctx, x - 4, y - 6, 8, 12, IRON);                 // the backing plate
+    ctx.fillStyle = IRON.o;                                // its four bolts
+    for (const [bx, by] of [[-2.6, -4.4], [2, -4.4], [-2.6, 3.6], [2, 3.6]]) {
+      ctx.fillRect(x + bx, y + by, 1.2, 1.2);
+    }
+    ctx.fillStyle = IRON.d; ctx.fillRect(x - 2.4, y - 2, 5, 4);   // the slot
+    ctx.strokeStyle = A.b; ctx.lineWidth = 1.6;            // the throw
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 3.6, y - 4.2); ctx.stroke();
+    ctx.fillStyle = A.l;                                   // the knob on the end
+    ctx.beginPath(); ctx.arc(x + 3.9, y - 4.5, 1.7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = A.h;
+    ctx.beginPath(); ctx.arc(x + 3.5, y - 4.9, 0.7, 0, Math.PI * 2); ctx.fill();
+    ctx.save();                                            // and its halo
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(x + 3.9, y - 4.5, 0.5, x + 3.9, y - 4.5, 9);
+    g.addColorStop(0, day ? `rgba(242,210,100,${glow * 0.5})` : `rgba(232,90,74,${glow * 0.5})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - 6, y - 14, 20, 20);
+    ctx.restore();
+  }
+
   _drawProp(ctx, p) {
     const x = p.col * TILE + TILE / 2, y = p.row * TILE + TILE / 2;
     switch (p.type) {
       case 'statue': this._drawStatue(ctx, x, y, p.kind, p.face, h2(p.col, p.row)); break;
+      case 'dev-lever': this._drawDevLever(ctx, x, y, p.lever); break;
       case 'fountain': this._drawFountain(ctx, p.col, p.row); break;
       case 'fountain-block': break; // covered by the fountain draw above
       case 'booth-block': break;    // covered by the confessional draw below
@@ -1861,6 +1963,11 @@ export class CourtyardScene {
   // the button will not perform.
   _hasAction() {
     const p = this.pc;
+    // The dev levers sit outside the world's rules on purpose. Everything
+    // below gates the mark on what you are carrying and what is left to do; a
+    // test control that goes dark while your hands are full is unavailable at
+    // exactly the moment you want to reach for it.
+    if (this._activeStation && this._activeStation.kind.startsWith('dev-')) return true;
     if (this.carrying) {
       // A switch has exactly one destination, and it is a man.
       if (this.carrying.kind === 'stick') {
