@@ -20,9 +20,7 @@ const hudXpFill = document.getElementById('hudXpFill');
 const hudXpTxt = document.getElementById('hudXpTxt');
 const hudDevotion = document.getElementById('hudDevotion');
 const hudStreak = document.getElementById('hudStreak');
-const pipScourge = document.getElementById('pipScourge');
-const pipGarden = document.getElementById('pipGarden');
-const pipCandles = document.getElementById('pipCandles');
+const pipDay = document.getElementById('pipDay');
 const toastEl = document.getElementById('toast');
 const leaderboardOverlay = document.getElementById('leaderboardOverlay');
 const leaderboardList = document.getElementById('leaderboardList');
@@ -310,9 +308,9 @@ function updateHud(player) {
   lastLevel = li.level;
   hudName.textContent = `${player.prefix} ${player.name}`;
   hudStreak.textContent = player.streak > 0 ? `${player.streak}d ×${player.multiplier}` : '';
-  pipScourge.classList.toggle('done', !!player.scourge_today);
-  pipGarden.classList.toggle('done', !!player.garden_today);
-  pipCandles.classList.toggle('done', !!player.candles_today);
+  // Lit only when every duty is kept. A partial count would leak the total.
+  const dayKept = !!player.candles_today && !!player.scourge_today && !!player.garden_today;
+  pipDay.classList.toggle('done', dayKept);
   hud.hidden = false;
 }
 

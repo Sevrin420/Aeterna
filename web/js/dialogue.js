@@ -68,6 +68,90 @@ function bevelTile(ctx, x, y) {
   ctx.fillRect(x + TILE - 2, y + 1, 1, TILE - 2);
 }
 
+// ---------------------------------------------------------------------------
+// Pie charts, for the pages of the Doctrine that explain where the money goes.
+//
+// A number in a sentence is something you read; a wedge is something you see.
+// These are drawn to the same rules as everything else in the abbey — each
+// slice is a flat colour from the palette with its own darker outline, no
+// gradients, no anti-aliased hairlines — so a chart sits in the frame as
+// another object in the room rather than as a piece of business software that
+// wandered in.
+//
+// A slice is { label, pct, color, emoji }. Percentages are drawn as given and
+// are not normalised: if they do not sum to 100 that is the writer's error and
+// the chart should look wrong so it gets fixed.
+// Sized against the frame, not by eye. The interior is IN_W wide; the pie
+// takes the left 2*PIE_R and the legend gets what is left, which at 9px
+// Courier is about nineteen characters — every label here has to fit inside
+// that or it prints out through the wall of the box.
+const PIE_R = 24;
+const LEG_GAP = 10;
+const LEG_FONT = '9px "Courier New", monospace';
+
+function legRow(slice) { return 11 + 10 + (slice.sub ? 10 : 0); }
+
+export function chartHeight(chart) {
+  const legend = chart.slices.reduce((h, s) => h + legRow(s), 0) + 6;
+  return Math.max(PIE_R * 2 + 10, legend) + 6;
+}
+
+function drawChart(ctx, x, y, w, chart, t) {
+  const cx = x + PIE_R + 2;
+  const cy = y + PIE_R + 6;
+
+  // a soft shadow under the pie so it reads as a disc sitting on the field
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  ctx.beginPath(); ctx.ellipse(cx, cy + PIE_R - 1, PIE_R * 0.92, PIE_R * 0.30, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Slices sweep in as the page prints, so the chart arrives with the words
+  // rather than sitting there ahead of them.
+  const grow = Math.min(1, t / 0.55);
+  let a0 = -Math.PI / 2;
+  for (const s of chart.slices) {
+    const a1 = a0 + (s.pct / 100) * Math.PI * 2 * grow;
+    ctx.fillStyle = s.color;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, PIE_R, a0, a1);
+    ctx.closePath();
+    ctx.fill();
+    a0 = a1;
+  }
+  ctx.strokeStyle = 'rgba(20,12,26,0.85)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(cx, cy, PIE_R, 0, Math.PI * 2); ctx.stroke();
+  a0 = -Math.PI / 2;
+  for (const s of chart.slices) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a0) * PIE_R, cy + Math.sin(a0) * PIE_R);
+    ctx.stroke();
+    a0 += (s.pct / 100) * Math.PI * 2;
+  }
+
+  // legend down the right: emoji + percentage, then the label, then the
+  // consequence — which is where the actual meaning of a slice lives.
+  const lx = x + PIE_R * 2 + LEG_GAP;
+  let ly = y + 12;
+  for (const s of chart.slices) {
+    ctx.textAlign = 'left';
+    ctx.font = '10px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    ctx.fillText(s.emoji, lx, ly);
+    ctx.font = 'bold 11px "Courier New", monospace';
+    ctx.fillStyle = s.color;
+    ctx.fillText(`${s.pct}%`, lx + 14, ly);
+    ctx.font = LEG_FONT;
+    ctx.fillStyle = BONE.l;
+    ctx.fillText(s.label, lx, ly + 10);
+    if (s.sub) {
+      ctx.fillStyle = shade(BONE.d, 26);
+      ctx.fillText(s.sub, lx, ly + 20);
+    }
+    ly += legRow(s);
+  }
+}
+
 export class DialogueBox {
   constructor() {
     this.pages = [];
@@ -97,11 +181,19 @@ export class DialogueBox {
     for (const p of raw) {
       const text = typeof p === 'string' ? p : p.text;
       const who = typeof p === 'string' ? speaker : (p.speaker ?? speaker);
-      const room = Math.floor((IN_H - (who ? SPEAKER_H : 0)) / LINE_H);
+      const chart = typeof p === 'string' ? null : (p.chart || null);
+      // A chart eats the top of the frame, so its page has fewer lines to give.
+      const used = (who ? SPEAKER_H : 0) + (chart ? chartHeight(chart) : 0);
+      const room = Math.max(1, Math.floor((IN_H - used) / LINE_H));
       const lines = this._wrap(text);
       // long entries spill onto further pages rather than overflowing the frame
       for (let i = 0; i < lines.length; i += room) {
-        this.pages.push({ speaker: i === 0 ? who : null, lines: lines.slice(i, i + room) });
+        this.pages.push({
+          speaker: i === 0 ? who : null,
+          // the chart belongs to the first page of its entry, never a spill
+          chart: i === 0 ? chart : null,
+          lines: lines.slice(i, i + room),
+        });
       }
     }
     this.page = 0;
@@ -240,6 +332,11 @@ export class DialogueBox {
       ctx.fillStyle = 'rgba(232,90,74,0.32)';
       ctx.fillRect(IN_X, y + 3, IN_W, 1);
       y += SPEAKER_H;
+    }
+    if (pg.chart) {
+      drawChart(ctx, IN_X, y - 10, IN_W, pg.chart, this.t);
+      y += chartHeight(pg.chart);
+      ctx.font = FONT;
     }
 
     // print character by character across the page's lines

@@ -11,6 +11,8 @@
 // anything that overflows anyway, so the breaks here are editorial: a page
 // break is a beat.
 
+import { GOLD, BLOOD, SOUL, BONE, IRON } from './palette.js';
+
 export const LORE = {
   doctrine: [
     {
@@ -18,18 +20,50 @@ export const LORE = {
       text: 'Vita Aeterna is a death-cult.\n\n'
         + 'Spirits gather in the sanctuary beneath the inverted cross to earn '
         + 'Devotion. Devotion is the only thing the abbey counts, and it counts '
-        + 'everything.\n\n'
-        + 'Three duties, every day:\n\n'
-        + '  I  LIGHT FIRE\n  II  WHIPPING\n  III  SKULL CHANT\n\n'
-        + 'In that order, and no other. The abbey will not take the second '
-        + 'thing before the first.',
+        + 'everything.',
     },
     {
-      text: 'Ten Devotion for each, paid the moment it is done.\n\n'
-        + 'Keep all three unbroken and your streak multiplies what every duty '
-        + 'pays thereafter. Miss a day and the streak falls to nothing — though '
-        + 'the confessor in the west arm will mend it once, for a price.\n\n'
-        + 'The day turns at midnight, and the abbey keeps its own clock.',
+      text: 'The abbey sets duties, and it sets them fresh every day.\n\n'
+        + 'Walk the halls. Where something can be done, a gold mark appears '
+        + 'over your head. That is the only invitation you will get, and it is '
+        + 'the only one you need.',
+    },
+    {
+      text: 'Keep the day\'s duties and your streak grows.\n\n'
+        + 'A streak multiplies what every duty pays — the longer you hold it, '
+        + 'the more each act is worth. Miss a day and it falls to nothing.\n\n'
+        + 'The confessor in the west arm will mend a broken streak. Once, and '
+        + 'not for free.',
+    },
+    {
+      speaker: 'Where Mint Goes',
+      text: '🩸 Every mint is split two ways.',
+      chart: {
+        slices: [
+          { label: 'Treasury', sub: 'for the players', pct: 90, color: BLOOD.b, emoji: '🩸' },
+          { label: 'Team', sub: 'keeps it running', pct: 10, color: IRON.l, emoji: '👤' },
+        ],
+      },
+    },
+    {
+      speaker: 'The Treasury',
+      text: '⚖️ Two pots, same size.',
+      chart: {
+        slices: [
+          { label: 'Season 1', sub: 'paid to winners', pct: 50, color: GOLD.b, emoji: '🏆' },
+          { label: 'Bloodline', sub: 'Aeterna, long term', pct: 50, color: SOUL.b, emoji: '🧬' },
+        ],
+      },
+    },
+    {
+      speaker: 'Season 1 Winners',
+      text: '💀 Ranked by Devotion.',
+      chart: {
+        slices: [
+          { label: 'Top half', sub: 'split the pot', pct: 50, color: GOLD.b, emoji: '🏆' },
+          { label: 'Bottom half', sub: 'get nothing', pct: 50, color: '#2a2731', emoji: '💀' },
+        ],
+      },
     },
     {
       text: 'Two stairways descend from the nave.\n\n'
@@ -70,9 +104,10 @@ export const LORE = {
       speaker: 'The Brazier',
       text: 'Cold iron, and the smell of the last burning still in it.',
     },
-    // Three lines for one man, chosen by what is in your hands. None of them
-    // tells you where the switches are or what he will do with one — that is
-    // for the skull chamber and the first blow to explain.
+    // Four lines for one man, chosen by what is in your hands and what you
+    // have already done today. None of them names a duty, counts one, or hints
+    // that anything must come before anything else — the order is a thing the
+    // abbey enforces and never explains.
     guru: {
       speaker: 'The Abbot',
       text: 'He does not look up. He never looks up.\n\n'
@@ -89,11 +124,13 @@ export const LORE = {
       text: 'The pain purifies. What is left is counted.\n\n'
         + '"Again tomorrow."',
     },
-    // shown when you bring a switch before any brazier is burning
+    // Shown when he will not take the switch yet. Deliberately says nothing
+    // about why: it named the cold braziers before, which was an instruction
+    // wearing a robe.
     scourgeTooSoon: {
       speaker: 'The Abbot',
-      text: 'He looks past you, down the nave, at ten alcoves of cold iron.\n\n'
-        + '"There is no fire in this house."',
+      text: 'He closes his hands.\n\n'
+        + 'He does not look up, and he does not explain.',
     },
     scourgedAlready: {
       speaker: 'The Abbot',

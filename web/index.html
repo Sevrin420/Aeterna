@@ -38,10 +38,12 @@
             <span class="hud-name" id="hudName"></span>
             <span class="hud-subright">
               <span class="hud-streak" id="hudStreak"></span>
+              <!-- One mark, not a row of them. Three pips told the player
+                   exactly how many duties there are before they had done a
+                   single one; this lights only when the day is complete and
+                   gives no count away. -->
               <span class="hud-duties" id="hudDuties">
-                <span class="duty-pip" id="pipCandles" title="Light Fire">I</span>
-                <span class="duty-pip" id="pipScourge" title="Whipping">II</span>
-                <span class="duty-pip" id="pipGarden" title="Skull Chant">III</span>
+                <span class="duty-pip" id="pipDay" title="The day's duties">✦</span>
               </span>
             </span>
           </div>

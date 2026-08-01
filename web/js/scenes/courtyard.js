@@ -693,7 +693,8 @@ export class CourtyardScene {
       const bonus = res.streakBonus > 0 ? ` (${res.base} +${res.streakBonus} streak)` : '';
       this.onToast(`${res.name}: +${res.devotionGained} Devotion${bonus}`);
       if (res.streakAdvanced) {
-        this.onToast(`All three kept — streak day ${res.streak} (${res.multiplier}x)`);
+        // "All three" would count the duties for them.
+        this.onToast(`The day is kept — streak day ${res.streak} (${res.multiplier}x)`);
       }
     } catch (e) {
       sfx.error();
