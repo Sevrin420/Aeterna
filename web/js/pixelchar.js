@@ -350,12 +350,53 @@ function lttpFace(rows, dir, key) {
   FACE_CACHE.set(ck, out);
   return out;
 }
+/* The ported row data disagrees with itself about who has hair.
+
+   Counting hair cells (K/k) in the head rows of each style, front against
+   profile: bald is 28 / 97, and every hat — fez, topper, bowler, fedora,
+   boater, newsboy, cloche, turban — is 0 / 170ish. So a shaven cultist and
+   every hatted one grow a full mass of hair the instant they turn sideways,
+   and lose it again when they turn back. That is the "hair showing weird from
+   the sides": it is not a shading problem, the hair is simply not supposed to
+   be there.
+
+   Rather than hand-edit twenty-two blocks of row data, the profile is made to
+   agree with the front. If a style shows little or no hair head-on, its
+   profile hair is repainted as skin — K to S, k to s, keeping the light and
+   shadow steps so the skull still reads as rounded. Styles that genuinely have
+   hair (wavy 272/320, curly 410/460, slick 158/189…) are far above the
+   threshold and are left exactly as drawn. */
+const HEAD_ROWS = 22;                 // rows of the 32 that are head, not neck
+const HAIR_MATCH = 0.45;              // profile hair is a lie below this ratio
+
+function hairCells(rows) {
+  let n = 0;
+  for (let y = 0; y < Math.min(HEAD_ROWS, rows.length); y++) {
+    for (const c of rows[y]) if (c === 'K' || c === 'k') n++;
+  }
+  return n;
+}
+
+const SIDE_FIX = new Map();
+function matchProfileHairToFront(h, name) {
+  if (SIDE_FIX.has(name)) return SIDE_FIX.get(name);
+  const front = hairCells(h.down);
+  const side = hairCells(h.side);
+  let out = h.side;
+  if (side > 0 && front / side < HAIR_MATCH) {
+    out = h.side.map((row, y) => (y >= HEAD_ROWS ? row
+      : [...row].map((c) => (c === 'K' ? 'S' : c === 'k' ? 's' : c)).join('')));
+  }
+  SIDE_FIX.set(name, out);
+  return out;
+}
+
 function lttpHead(name) {
   const h = HD_HEADS[name] || HD_HEADS.cowl;
   return {
     down: lttpFace(h.down, 'down', name),
     up: lttpFace(h.up, 'up', name),
-    side: lttpFace(h.side, 'side', name),
+    side: lttpFace(matchProfileHairToFront(h, name), 'side', name),
   };
 }
 

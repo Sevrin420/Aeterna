@@ -347,7 +347,9 @@ function showMancala(state) {
           : won ? `You win! +${state.payout} Devotion.` : 'You lose the wager.';
     if (!state.forfeited && !state.draw) sfx[won ? 'streakBonus' : 'error']?.();
     api.me().then(updateHud).catch(() => {});
-    setTimeout(() => { mancalaOverlay.hidden = true; mb.stop(); }, 3200);
+    // Longer than it was: the final score is now painted on the board itself,
+    // and 3.2s was not enough to read a scoreline you were not expecting.
+    setTimeout(() => { mancalaOverlay.hidden = true; mb.stop(); }, 6000);
     return;
   }
 

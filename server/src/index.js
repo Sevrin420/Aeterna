@@ -499,6 +499,11 @@ function soloSettle(socket, g) {
 
 // The Abbot takes one move; if it earns an extra turn, it keeps going (with a
 // short delay so the player can watch each move land).
+// Three times slower than it was. The client sows each stone over 570ms now,
+// so at 650ms the Abbot's reply landed while his previous move was still
+// visibly in the air: the board jumped and you never saw what he had done.
+const ABBOT_THINK = 1950;
+
 function soloAiStep(socket) {
   const g = soloGames.get(socket.id);
   if (!g || !g.active || g.turn !== 1) return;
@@ -508,7 +513,7 @@ function soloAiStep(socket) {
   if (gameOver) return soloSettle(socket, g);
   g.turn = extraTurn ? 1 : 0;
   soloEmit(socket, g);
-  if (g.turn === 1) setTimeout(() => soloAiStep(socket), 650);
+  if (g.turn === 1) setTimeout(() => soloAiStep(socket), ABBOT_THINK);
 }
 
 function mancalaLeave(socket) {
@@ -616,7 +621,7 @@ io.on('connection', (socket) => {
       if (gameOver) return soloSettle(socket, g);
       g.turn = extraTurn ? 0 : 1;
       soloEmit(socket, g);
-      if (g.turn === 1) setTimeout(() => soloAiStep(socket), 650);
+      if (g.turn === 1) setTimeout(() => soloAiStep(socket), ABBOT_THINK);
       return;
     }
 

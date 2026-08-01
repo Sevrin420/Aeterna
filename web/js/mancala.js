@@ -96,6 +96,9 @@ export function deriveSow(prev, next) {
   return null;
 }
 
+// Board index of each seat's store, and the label for each side.
+const STORE_OF = [6, 13];
+
 export class MancalaBoard {
   constructor(canvas, { onPit = () => {} } = {}) {
     this.cv = canvas;
@@ -285,6 +288,7 @@ export class MancalaBoard {
     this._table(ctx, w, h);
     if (fit.vertical) ctx.setTransform(0, s, -s, 0, ox + BH * s, oy);
     else ctx.setTransform(s, 0, 0, s, ox, oy);
+    this._scoreT = { s, ox, oy, w, h, vertical: fit.vertical };
     ctx.imageSmoothingEnabled = false;
     ctx.lineJoin = 'round';
 
@@ -292,6 +296,77 @@ export class MancalaBoard {
     const board = this.anim ? this.anim.board : (this.shown || new Array(14).fill(0));
     for (let i = 0; i < 14; i++) this._pit(ctx, i, board[i]);
     if (this.anim) this._flying(ctx);
+    this._score(ctx, board, w, h);
+  }
+
+  // The running score, in screen space above the board.
+  //
+  // The store counts are on the board already, but they are 7px numerals at
+  // the far ends of a table that fills the screen — you cannot hold both in
+  // your eye at once, which is exactly what a score is for. This reads off the
+  // ANIMATED board, so it ticks up as each stone lands rather than jumping to
+  // the final figure the moment a move is sent.
+  _score(ctx, board, w, h) {
+    const st = this.state;
+    if (!st || !st.board || st.waiting) return;
+    const seat = st.seat === 1 ? 1 : 0;
+    const mine = board[STORE_OF[seat]];
+    const theirs = board[STORE_OF[1 - seat]];
+    const themName = st.solo ? 'ABBOT' : ((st.names && st.names[1 - seat]) || 'THEM').toUpperCase().slice(0, 10);
+    const over = st.type === 'end' || st.forfeited;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const scale = Math.max(1, Math.min(w, h) / 190);
+    const big = Math.round(17 * scale);
+    const small = Math.round(7.5 * scale);
+    const cy = Math.round(h * 0.055) + big * 0.5;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `bold ${big}px "Courier New", monospace`;
+    const gap = big * 1.5;
+    const lead = mine === theirs ? 0 : (mine > theirs ? 1 : -1);
+
+    // A plate to sit on, so the numbers read over the flagstones.
+    const pw = gap * 2 + big * 3.4, ph = big * 1.55 + small * 1.5;
+    ctx.fillStyle = 'rgba(6,3,12,0.78)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(w / 2 - pw / 2, cy - ph * 0.52, pw, ph, 4 * scale);
+    else ctx.rect(w / 2 - pw / 2, cy - ph * 0.52, pw, ph);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(154,112,24,0.55)';
+    ctx.lineWidth = Math.max(1, scale);
+    ctx.stroke();
+
+    // Whoever is ahead is gold; the other is bone. On a tie both are bone, so
+    // "level" is legible at a glance and not just an equal pair of numbers.
+    const paint = (txt, x, ahead) => {
+      ctx.fillStyle = 'rgba(6,3,12,0.9)';
+      ctx.fillText(txt, x + scale, cy + scale);
+      ctx.fillStyle = ahead ? GOLD.h : BONE.b;
+      ctx.fillText(txt, x, cy);
+    };
+    paint(String(mine), w / 2 - gap, lead > 0);
+    paint(String(theirs), w / 2 + gap, lead < 0);
+    ctx.fillStyle = 'rgba(180,160,120,0.65)';
+    ctx.fillText('\u00b7', w / 2, cy);
+
+    ctx.font = `${small}px "Courier New", monospace`;
+    ctx.fillStyle = 'rgba(190,170,130,0.8)';
+    ctx.fillText('YOU', w / 2 - gap, cy + big * 0.72);
+    ctx.fillText(themName, w / 2 + gap, cy + big * 0.72);
+
+    if (over) {
+      const won = st.winnerSeat === st.seat;
+      ctx.font = `bold ${small * 1.5}px "Courier New", monospace`;
+      const line = st.forfeited ? 'NO CONTEST'
+        : st.draw ? `FINAL \u00b7 ${mine}\u2013${theirs} \u00b7 DRAWN`
+          : `FINAL \u00b7 ${mine}\u2013${theirs} \u00b7 ${won ? 'YOU WIN' : 'YOU LOSE'}`;
+      ctx.fillStyle = 'rgba(6,3,12,0.9)';
+      ctx.fillText(line, w / 2 + scale, cy + big * 1.35 + scale);
+      ctx.fillStyle = st.forfeited || st.draw ? BONE.b : (won ? GOLD.h : BLOOD.b);
+      ctx.fillText(line, w / 2, cy + big * 1.35);
+    }
   }
 
   // A board is two-and-a-bit times as wide as it is tall and no amount of
