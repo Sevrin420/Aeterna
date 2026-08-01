@@ -1,13 +1,29 @@
 // Core Devotion / streak rules from docs/Aeterna_GDD_v4.1.md section 5-6.
 // Exact per-duty Devotion amounts aren't specified in the GDD (only gift and
-// confession amounts are), so DUTY_DEVOTION / STREAK_BONUS_BASE below are this
-// server's concrete choice for that gap, tuned to the documented multiplier curve.
+// confession amounts are), so DUTY_DEVOTION below is this server's concrete
+// choice for that gap, tuned to the documented multiplier curve.
 
-export const DUTY_DEVOTION = 5;
-export const STREAK_BONUS_BASE = 15;
-// The scourge is the Abbot's rite and the only thing he gives Devotion for.
-// It is worth what the parcel used to be worth, and is likewise once a day.
-export const SCOURGE_DEVOTION = 50;
+// The three daily duties. These ids are what the database columns and the API
+// are keyed on; DUTY_NAMES carries what the abbey actually calls them, so the
+// display name can change without a migration.
+export const DUTIES = ['candles', 'scourge', 'garden'];
+export const DUTY_NAMES = {
+  candles: 'Light Fire',
+  scourge: 'Whipping',
+  garden: 'Skull Chant',
+};
+
+// Ten a task, and the streak multiplier is applied to each task as it is
+// completed rather than being paid once when the set is finished. A player on
+// a 28-day streak therefore sees 30 land three separate times instead of 10,
+// 10, 40 — the reward arrives with the act that earned it.
+export const DUTY_DEVOTION = 10;
+
+// Devotion for engagement on X. These are per interaction, and each one is
+// credited exactly once — the ledger is keyed on (player, kind, post), so
+// unliking and liking again does not pay twice.
+export const X_DEVOTION = { like: 2, comment: 3, repost: 5 };
+export const X_KINDS = Object.keys(X_DEVOTION);
 
 export function todayStr(d = new Date()) {
   return d.toISOString().slice(0, 10);
@@ -74,6 +90,8 @@ export function ensureFreshDay(db, player) {
     player.streak = 0;
   }
 
+  // The day rolls at 00:00 UTC: todayStr() is an ISO date, which is UTC by
+  // construction, so there is no local-time drift to correct for here.
   db.prepare(`
     UPDATE players
     SET pray_today = 0, garden_today = 0, candles_today = 0,

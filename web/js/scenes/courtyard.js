@@ -47,7 +47,9 @@ function drawGrass(ctx, x, y, c, r) {
 
 const STATIONS = [
   // church nave + transept
-  { id: 'pray', kind: 'duty', label: 'Kneel & Pray', x: px(NAVE_CX), y: px(13), r: 13 },
+  // The altar is a place to read, not a duty. The three that pay Devotion are
+  // Light Fire, Whipping and Skull Chant, and not one of them is a station.
+  { id: 'pray', kind: 'read', label: 'The Altar', x: px(NAVE_CX), y: px(13), r: 13 },
   { id: 'guru', kind: 'guru', label: 'Offer to the Abbot', x: px(NAVE_CX), y: px(11), r: 13 },
   // In the niche now, two tiles south of the grille — you have to leave the
   // transept and step into the booth's own little room to be heard.
@@ -68,18 +70,15 @@ const STATIONS = [
 ];
 const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
 
-// Praying is the one station whose box is the rite rather than a preface to
-// it. The mantra prints six times over a mandatory ten seconds: A cannot rush
-// it and cannot dismiss it, because a prayer you can mash through is not a
-// prayer. The print rate is derived from the text so the last character lands
-// exactly as the hold expires, however the mantra is later reworded.
-const PRAYER_HOLD = 10;
+// The mantra every rite is performed to. All three daily duties speak it in
+// bubbles over the worshipper's head, so the whole day has one voice — the
+// shrine simply says it three times over.
+const CHANT_PAIR = ['Sanguis aeternus', 'Vita aeterna'];
 
-function boxOpts(station) {
-  if (station.id !== 'pray') return {};
-  const chars = LORE.stations.pray.text.replace(/\n/g, '').length;
-  return { hold: PRAYER_HOLD, cps: chars / PRAYER_HOLD };
-}
+// The altar's box used to hold for a mandatory ten seconds because reading it
+// WAS the prayer duty. Praying pays nothing now, so holding the player there
+// would be a toll with no rite behind it.
+function boxOpts() { return {}; }
 
 export class CourtyardScene {
   constructor({ player, onPlayerUpdate, onToast, socket, onLeaderboard, onSaveExit, onChatOpen, onMancala, onFinalCommunion, crowd }) {
@@ -114,7 +113,13 @@ export class CourtyardScene {
     this.fire = new FireRite(ALCOVES, px);
     this.sticks = new StickPile(STICKS, px);
     this.scourge = new Scourge({
-      onLash: (i) => sfx.lash(i),
+      // Said through the blows: the first line as the switch comes down the
+      // first time, the second after the fourth.
+      onLash: (i) => {
+        sfx.lash(i);
+        if (i === 0) this._speak([CHANT_PAIR[0]]);
+        else if (i === 3) this._speak([CHANT_PAIR[1]]);
+      },
       onDone: () => this._endScourge(),
     });
     // null | { kind: 'wood' | 'torch', alcove: i } | { kind: 'stick' }
@@ -180,6 +185,22 @@ export class CourtyardScene {
       if (e.code === 'KeyT') this.onChatOpen();
     };
     window.addEventListener('keydown', this._onKeyDown);
+  }
+
+  // Queues the day's mantra over the worshipper's head, one line a second.
+  // Every duty uses it, so all three rites are performed to the same words.
+  _speak(lines, delay = 0) {
+    this._chantQ = (this._chantQ || []).concat(
+      lines.map((text, i) => ({ text, at: this.t + delay + i * 1.0 }))
+    );
+  }
+
+  _updateSpeech() {
+    if (!this._chantQ || !this._chantQ.length) return;
+    while (this._chantQ.length && this._chantQ[0].at <= this.t) {
+      this.showChat('local', this._chantQ.shift().text);
+      sfx.click();
+    }
   }
 
   showChat(key, text) {
@@ -565,7 +586,7 @@ export class CourtyardScene {
           this.carrying = null;
           this.litBraziers.add(`${ALCOVES[b].brazier.col},${ALCOVES[b].brazier.row}`);
           if (this.player.candles_today) sfx.dutyComplete();
-          else this._handleDuty('candles');
+          else { this._speak(CHANT_PAIR, 0.35); this._handleDuty('candles'); }
           return true;
         }
       }
@@ -645,6 +666,7 @@ export class CourtyardScene {
     this.pc.moving = false;
     this._activeStation = null;
     this._activeDoor = null;
+    this._updateSpeech();
     if (this.localChat) {
       this.localChat.t -= dt;
       if (this.localChat.t <= 0) this.localChat = null;
@@ -654,11 +676,15 @@ export class CourtyardScene {
     input.consumeBPress();
   }
 
+  // One call for all three duties: Light Fire, Whipping, Skull Chant. The
+  // server pays the base plus the streak bonus for THIS task, so the toast can
+  // show both — the bonus arrives with the act rather than at the end of the
+  // day, and the player should be able to see that happen.
   async _handleDuty(id) {
     try {
       const res = await api.duty(id);
       if (res.alreadyDone) {
-        this.onToast('Already done today.');
+        this.onToast(`${res.name} — already done today.`);
         return;
       }
       this.player[`${id}_today`] = 1;
@@ -666,12 +692,12 @@ export class CourtyardScene {
       this.player.streak = res.streak;
       this.player.multiplier = res.multiplier;
       this.onPlayerUpdate(this.player);
-      res.streakAdvanced ? sfx.streakBonus() : sfx.dutyComplete();
-      this.onToast(
-        res.streakAdvanced
-          ? `+${res.devotionGained} Devotion — streak day ${res.streak} (${res.multiplier}x)`
-          : `+${res.devotionGained} Devotion`
-      );
+      res.streakBonus > 0 ? sfx.streakBonus() : sfx.dutyComplete();
+      const bonus = res.streakBonus > 0 ? ` (${res.base} +${res.streakBonus} streak)` : '';
+      this.onToast(`${res.name}: +${res.devotionGained} Devotion${bonus}`);
+      if (res.streakAdvanced) {
+        this.onToast(`All three kept — streak day ${res.streak} (${res.multiplier}x)`);
+      }
     } catch (e) {
       sfx.error();
       this.onToast(e.message);
@@ -700,21 +726,9 @@ export class CourtyardScene {
     this.pc.x = this.scourge.mx;
     this.pc.y = this.scourge.my;
     this.pc.dir = 'down';
-    this.player.scourge_today = 1;           // optimistic; the server is the truth
     sfx.purify();
     this.dialogue.show([LORE.stations.scourged]);
-    try {
-      const res = await api.scourge();
-      if (!res.alreadyDone) {
-        this.player.devotion += res.devotionGained;
-        this.onPlayerUpdate(this.player);
-        this.onToast(`The pain is counted. +${res.devotionGained} Devotion`);
-      }
-    } catch (e) {
-      this.player.scourge_today = 0;
-      sfx.error();
-      this.onToast(e.message);
-    }
+    this._handleDuty('scourge');
   }
 
   // Taking a switch from the bundle by the skull-chamber wall.
@@ -808,8 +822,7 @@ export class CourtyardScene {
   // box can call it on close — read first, then act — without duplicating the
   // dispatch in two places.
   _runStation(s) {
-    if (s.kind === 'duty') this._handleDuty(s.id);
-    else if (s.kind === 'guru') this._handleGuru();
+    if (s.kind === 'guru') this._handleGuru();
     else if (s.kind === 'confession') this._handleConfession();
     else if (s.kind === 'leaderboard') this._handleLeaderboard();
     else if (s.kind === 'bulletin') this._handleBulletin();
@@ -828,6 +841,11 @@ export class CourtyardScene {
     this.sticks.update(dt * ws);
     if (this.crowd.length) this._updateCrowd(dt * ws);
 
+    this._updateSpeech();
+    if (this.localChat) {
+      this.localChat.t -= dt;
+      if (this.localChat.t <= 0) this.localChat = null;
+    }
     this.pc.x = this.scourge.penX;
     this.pc.y = this.scourge.penY;
     this.pc.dir = 'down';
@@ -900,6 +918,7 @@ export class CourtyardScene {
     this.fire.update(dt);
     this.sticks.update(dt);
     this.shrine.update(dt);
+    this._updateSpeech();
     if (this.crowd.length) this._updateCrowd(dt);
     this._updateCamera(dt);
 

@@ -8,7 +8,7 @@ import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
 import db from './db/database.js';
 import {
-  DUTY_DEVOTION, STREAK_BONUS_BASE, SCOURGE_DEVOTION,
+  DUTY_DEVOTION, DUTIES, DUTY_NAMES, X_DEVOTION, X_KINDS,
   todayStr, streakMultiplier, confessionCost, ensureFreshDay, pendingConfession, getSeasonInfo,
 } from './lib/gameLogic.js';
 
@@ -156,13 +156,20 @@ fastify.post('/confession', async (req, reply) => {
   };
 });
 
-// ========== DUTIES ==========
+// ========== THE THREE DAILY DUTIES ==========
+// Light Fire, Whipping, Skull Chant. One endpoint for all three: they are the
+// same transaction with a different column, and the scourge used to have its
+// own route purely because it arrived later — which meant its award and its
+// streak accounting could drift away from the other two. They cannot now.
+//
+// Devotion is paid PER TASK at the streak multiplier, so a player on a long
+// streak sees the bonus land with each act rather than once at the end of the
+// set. The streak itself still advances once, on the task that completes all
+// three, and the day rolls at 00:00 UTC (todayStr is an ISO date).
 fastify.post('/duty/:type', async (req, reply) => {
   const { type } = req.params;
   const { wallet } = req.body || {};
-  if (!['pray', 'garden', 'candles'].includes(type)) {
-    return reply.code(400).send({ error: 'Invalid duty' });
-  }
+  if (!DUTIES.includes(type)) return reply.code(400).send({ error: 'Invalid duty' });
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
 
   const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
@@ -170,23 +177,22 @@ fastify.post('/duty/:type', async (req, reply) => {
 
   const fresh = ensureFreshDay(db, player);
   const col = `${type}_today`;
-  if (fresh[col]) return { success: true, duty: type, alreadyDone: true, devotionGained: 0 };
+  if (fresh[col]) {
+    return { success: true, duty: type, name: DUTY_NAMES[type], alreadyDone: true, devotionGained: 0 };
+  }
 
   db.prepare(`UPDATE players SET ${col} = 1 WHERE id = ?`).run(fresh.id);
 
-  let devotionGained = DUTY_DEVOTION;
-  const allDone =
-    (col === 'pray_today' || fresh.pray_today) &&
-    (col === 'garden_today' || fresh.garden_today) &&
-    (col === 'candles_today' || fresh.candles_today);
+  const multiplier = streakMultiplier(fresh.streak, fresh.level);
+  const streakBonus = Math.round(DUTY_DEVOTION * (multiplier - 1));
+  const devotionGained = DUTY_DEVOTION + streakBonus;
 
+  const allDone = DUTIES.every((d) => d === type || fresh[`${d}_today`]);
   let streakAdvanced = false;
   let newStreak = fresh.streak;
   const today = todayStr();
 
   if (allDone && fresh.last_duty_date !== today) {
-    const multiplier = streakMultiplier(fresh.streak, fresh.level);
-    devotionGained += Math.round(STREAK_BONUS_BASE * (multiplier - 1));
     newStreak = fresh.streak + 1;
     streakAdvanced = true;
     db.prepare('UPDATE players SET streak = ?, last_duty_date = ? WHERE id = ?').run(newStreak, today, fresh.id);
@@ -197,32 +203,69 @@ fastify.post('/duty/:type', async (req, reply) => {
   return {
     success: true,
     duty: type,
+    name: DUTY_NAMES[type],
     devotionGained,
+    base: DUTY_DEVOTION,
+    streakBonus,
     streakAdvanced,
     streak: newStreak,
     multiplier: streakMultiplier(newStreak, fresh.level),
+    remaining: DUTIES.filter((d) => d !== type && !fresh[`${d}_today`]).length,
   };
 });
 
-// ========== THE SCOURGE ==========
-// The Abbot's rite. The client walks a cut switch up the nave and plays the
-// five blows; the server only cares that it happened, and only once a day.
-fastify.post('/scourge', async (req, reply) => {
-  const { wallet } = req.body || {};
+// ========== ENGAGEMENT ON X ==========
+// Like 2, comment 3, repost 5, credited once per interaction per post.
+//
+// This route will not pay out until X verification is configured, and that is
+// deliberate. An endpoint that awards Devotion because the CLIENT says a like
+// happened is a faucet anyone can turn on with curl — the same mistake the old
+// admin-award route made. verifyXInteraction() is the seam: give it real X API
+// credentials and it starts returning true for interactions that actually
+// exist; without them it refuses, and the endpoint refuses with it.
+//
+// To switch it on: set X_BEARER_TOKEN in the server environment and implement
+// the lookup below against the X API v2 (liking_users / retweeted_by for a
+// post, or a search for replies by the author). The ledger, the amounts and
+// the double-claim guard are already done.
+async function verifyXInteraction(handle, kind, postId) {
+  if (!process.env.X_BEARER_TOKEN) return { ok: false, reason: 'not_configured' };
+  // TODO: call the X API here and confirm `handle` performed `kind` on `postId`.
+  return { ok: false, reason: 'not_implemented' };
+}
+
+fastify.post('/x/claim', async (req, reply) => {
+  const { wallet, kind, postId } = req.body || {};
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+  if (!X_KINDS.includes(kind)) return reply.code(400).send({ error: 'Invalid interaction' });
+  if (!postId) return reply.code(400).send({ error: 'Missing postId' });
 
   const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
   if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (!player.x_handle) return reply.code(400).send({ error: 'No X handle bound to this Cultist' });
 
-  const fresh = ensureFreshDay(db, player);
-  if (fresh.scourge_today) {
-    return { success: true, alreadyDone: true, devotionGained: 0 };
+  const already = db.prepare(
+    'SELECT 1 FROM x_interactions WHERE player_id = ? AND kind = ? AND post_id = ?'
+  ).get(player.id, kind, String(postId));
+  if (already) return { success: true, alreadyClaimed: true, devotionGained: 0 };
+
+  const check = await verifyXInteraction(player.x_handle, kind, String(postId));
+  if (!check.ok) {
+    return reply.code(503).send({ error: 'X verification unavailable', reason: check.reason });
   }
 
-  db.prepare('UPDATE players SET scourge_today = 1, devotion = devotion + ? WHERE id = ?')
-    .run(SCOURGE_DEVOTION, fresh.id);
+  const amount = X_DEVOTION[kind];
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO x_interactions (player_id, kind, post_id, devotion, awarded_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(player.id, kind, String(postId), amount, now);
+    db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(amount, player.id);
+  });
+  tx();
 
-  return { success: true, devotionGained: SCOURGE_DEVOTION };
+  return { success: true, kind, devotionGained: amount };
 });
 
 // ========== SOCIAL ==========
@@ -265,21 +308,13 @@ fastify.post('/cathedral/:id/claim', async (req, reply) => {
   return { success: true, room: { id, owner_id: player.id, owner_name: `${player.prefix} ${player.name}`, claimed_at } };
 });
 
-// ========== ADMIN AWARD ==========
-fastify.post('/admin/award', async (req, reply) => {
-  const { wallet, amount, reason } = req.body || {};
-  // TODO: protect with admin wallet check
-  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet?.toLowerCase());
-  if (!player) return reply.code(404).send({ error: 'Player not found' });
-
-  db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(amount, player.id);
-  db.prepare(`
-    INSERT INTO admin_awards (player_id, amount, reason, awarded_at)
-    VALUES (?, ?, ?, ?)
-  `).run(player.id, amount, reason || null, new Date().toISOString());
-
-  return { success: true, newDevotion: player.devotion + amount };
-});
+// The admin award endpoint has been removed. It added arbitrary Devotion to
+// any wallet with no authentication of any kind — it carried a "TODO: protect
+// with admin wallet check" that was never done — so anyone who could reach the
+// server could mint themselves to the top of the leaderboard. Devotion now has
+// exactly the sources listed in gameLogic.js and no back door. If an admin
+// grant is wanted again it needs to sit behind a shared secret before it goes
+// anywhere near a running server.
 
 // ========== SOCKET.IO ==========
 const io = new Server(fastify.server, {
@@ -329,7 +364,18 @@ if (process.env.REDIS_URL) {
 // NOTE: same dev-mode stand-in as confession/save elsewhere in this file —
 // the "wager" moves real Devotion between players, not real ETH (no
 // on-chain payment verification exists yet anywhere in this server).
-const MANCALA_WAGER = 20;
+// Mancala is wagered in crypto, not in Devotion. The table used to stake and
+// pay out Devotion, which made the game a fourth way to gain (and lose) it;
+// nothing here touches Devotion any more.
+//
+// The escrow itself is NOT implemented. There is no on-chain hold, no
+// settlement and no transfer — the server runs the game and reports who won
+// and what the pot would have been. MANCALA_WAGER is denominated in ETH and
+// the 5% rake is applied to the pot, so the numbers the client shows are the
+// real ones; what is missing is the part that moves money. Until that exists,
+// the table is a friendly game with a scoreboard.
+const MANCALA_WAGER = 0.01;      // ETH staked by each seat
+const MANCALA_RAKE = 0.05;       // the house takes 5% of the pot
 const mancalaTable = { seats: [null, null], wallets: [null, null], names: [null, null], board: null, turn: null, active: false };
 
 function mancalaNewBoard() { return [4, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 0]; }
@@ -399,15 +445,13 @@ function mancalaSettle() {
   const winnerSeat = s0 === s1 ? null : s0 > s1 ? 0 : 1;
   const p0 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[0]);
   const p1 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[1]);
+  // A draw returns both stakes; a win pays the pot less the house's 5%. No
+  // Devotion changes hands either way — see MANCALA_WAGER. When escrow exists,
+  // this is the one place that has to settle it.
   let payout = 0;
-  if (winnerSeat === null) {
-    if (p0) db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(MANCALA_WAGER, p0.id);
-    if (p1) db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(MANCALA_WAGER, p1.id);
-  } else {
+  if (winnerSeat !== null) {
     const pot = MANCALA_WAGER * 2;
-    payout = pot - Math.floor(pot * 0.05); // 5% house rake, per GDD section 10
-    const winner = winnerSeat === 0 ? p0 : p1;
-    if (winner) db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(payout, winner.id);
+    payout = Number((pot * (1 - MANCALA_RAKE)).toFixed(6));
   }
   mancalaTable.seats.forEach((sid, seat) => {
     if (!sid) return;
@@ -472,11 +516,8 @@ function mancalaLeave(socket) {
   const seat = mancalaTable.seats.indexOf(socket.id);
   if (seat === -1) return;
   if (mancalaTable.active) {
-    // Forfeit mid-match: refund both wagers rather than adjudicate a winner.
-    const p0 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[0]);
-    const p1 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[1]);
-    if (p0) db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(MANCALA_WAGER, p0.id);
-    if (p1) db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(MANCALA_WAGER, p1.id);
+    // Forfeit mid-match: both stakes are returned rather than adjudicating a
+    // winner. (Nothing to undo while escrow is unimplemented.)
     const otherSeat = 1 - seat;
     if (mancalaTable.seats[otherSeat]) io.to(mancalaTable.seats[otherSeat]).emit('mancala_end', { forfeited: true, seat: otherSeat });
   } else if (mancalaTable.seats[1 - seat]) {
@@ -544,22 +585,8 @@ io.on('connection', (socket) => {
     mancalaTable.names[seat] = `${p.prefix} ${p.name}`;
 
     if (mancalaTable.seats[0] && mancalaTable.seats[1]) {
-      const p0 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[0]);
-      const p1 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[1]);
-      if (!p0 || !p1 || p0.devotion < MANCALA_WAGER || p1.devotion < MANCALA_WAGER) {
-        const lackingSeat = !p0 || p0.devotion < MANCALA_WAGER ? 0 : 1;
-        mancalaTable.seats.forEach((sid, s) => {
-          if (sid) io.to(sid).emit('mancala_error', {
-            message: s === lackingSeat
-              ? `You need ${MANCALA_WAGER} Devotion to sit at this table.`
-              : 'Your opponent lacks enough Devotion to wager. Table reset.',
-          });
-        });
-        mancalaResetTable();
-        return;
-      }
-      db.prepare('UPDATE players SET devotion = devotion - ? WHERE id = ?').run(MANCALA_WAGER, p0.id);
-      db.prepare('UPDATE players SET devotion = devotion - ? WHERE id = ?').run(MANCALA_WAGER, p1.id);
+      // No Devotion check and no Devotion stake: the wager is in crypto, and
+      // there is nothing to escrow against yet.
       mancalaTable.board = mancalaNewBoard();
       mancalaTable.turn = 0;
       mancalaTable.active = true;

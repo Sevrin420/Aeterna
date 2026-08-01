@@ -59,8 +59,10 @@ export const api = {
   confession() {
     return req('/confession', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
   },
-  scourge() {
-    return req('/scourge', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
+  // Engagement on X. Refuses with 503 until X verification is configured on
+  // the server — see verifyXInteraction() there.
+  xClaim(kind, postId) {
+    return req('/x/claim', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), kind, postId }) });
   },
   save() {
     return req('/save', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });

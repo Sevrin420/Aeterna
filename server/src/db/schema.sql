@@ -90,3 +90,18 @@ CREATE INDEX IF NOT EXISTS idx_players_devotion ON players(devotion DESC);
 CREATE INDEX IF NOT EXISTS idx_players_wallet ON players(wallet);
 CREATE INDEX IF NOT EXISTS idx_gifts_spawned ON gifts(spawned_at);
 CREATE INDEX IF NOT EXISTS idx_saves_player ON saves(player_id);
+
+-- Engagement on X, one row per credited interaction. The UNIQUE constraint is
+-- the anti-double-claim: a given player can be paid for a given kind of
+-- interaction on a given post exactly once, forever.
+CREATE TABLE IF NOT EXISTS x_interactions (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id   TEXT NOT NULL,
+  kind        TEXT NOT NULL,               -- like | comment | repost
+  post_id     TEXT NOT NULL,               -- the X post's id
+  devotion    INTEGER NOT NULL,
+  awarded_at  TEXT NOT NULL,
+  UNIQUE (player_id, kind, post_id)
+);
+CREATE INDEX IF NOT EXISTS idx_x_player ON x_interactions(player_id);
+

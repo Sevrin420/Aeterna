@@ -19,17 +19,17 @@ export const LORE = {
         + 'Spirits gather in the sanctuary beneath the inverted cross to earn '
         + 'Devotion. Devotion is the only thing the abbey counts, and it counts '
         + 'everything.\n\n'
-        + 'Feed a brazier. Put a switch in the Abbot\'s hands. Give the skull '
-        + 'your blood.\n\n'
+        + 'Three duties, every day:\n\n'
+        + '  I  LIGHT FIRE\n  II  WHIPPING\n  III  SKULL CHANT\n\n'
         + 'In that order, and no other. The abbey will not take the second '
         + 'thing before the first.',
     },
     {
-      text: 'Four rites, every day.\n\n'
-        + 'Keep them unbroken and your streak multiplies every Devotion you earn '
-        + 'thereafter. Miss a day and the streak falls to nothing — though the '
-        + 'confessor in the west arm will mend it once, for a price.\n\n'
-        + 'The abbey does not forgive. It keeps accounts.',
+      text: 'Ten Devotion for each, paid the moment it is done.\n\n'
+        + 'Keep all three unbroken and your streak multiplies what every duty '
+        + 'pays thereafter. Miss a day and the streak falls to nothing — though '
+        + 'the confessor in the west arm will mend it once, for a price.\n\n'
+        + 'The day turns at midnight, and the abbey keeps its own clock.',
     },
     {
       text: 'Two stairways descend from the nave.\n\n'
@@ -66,18 +66,14 @@ export const LORE = {
 
   // Read at each duty station, before the rite is performed.
   stations: {
+    // The altar is no longer a duty — it pays nothing and holds you for
+    // nothing. It is where the mantra is written down; the three rites are
+    // where it is said out loud.
     pray: {
       speaker: 'The Altar',
-      // Six repetitions, and the box holds for a full ten seconds — see
-      // PRAYER_HOLD in courtyard.js. The rite is the waiting.
-      //
-      // Short form deliberately. At 12px the box fits 22 characters to a line
-      // and seven lines to a page, so the two-part mantra would wrap to twelve
-      // lines and split the prayer across two pages — which would need a page
-      // turn in the middle of a rite that is supposed to be one held breath.
-      // The full "Sanguis Aeternus, Vita Aeterna" still belongs to the shrine,
-      // where it is spoken aloud rather than read.
-      text: Array(6).fill('Sanguis aeternus.').join('\n'),
+      text: 'Cut into the stone, worn shallow by centuries of hands:\n\n'
+        + 'SANGUIS AETERNUS\nVITA AETERNA\n\n'
+        + 'Say it at the fire, say it under the switch, say it to the skull.',
     },
     candles: {
       speaker: 'The Brazier',
