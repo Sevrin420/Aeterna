@@ -52,14 +52,14 @@ const STATIONS = [
   // transept and step into the booth's own little room to be heard.
   { id: 'confession', kind: 'confession', label: 'Confess',
     x: px(CONFESSIONAL_BOOTH_COL), y: px(CONFESSIONAL_BOOTH_ROW + 2), r: 13 },
-  { id: 'leaderboard', kind: 'leaderboard', label: 'View the Devout', x: px(TRANSEPT.x1 - 3), y: px(58), r: 13 },
-  { id: 'gate', kind: 'gate', label: 'Save & Exit', x: px(NAVE_CX), y: px(75), r: 14 },
+  // Derived off the threshold rather than pinned to a row number, so shortening
+  // the nave can never leave the gate stranded in the middle of the floor.
+  { id: 'gate', kind: 'gate', label: 'Save & Exit', x: px(NAVE_CX), y: px(EXIT_ROW - 3), r: 14 },
   { id: 'bulletin', kind: 'bulletin', label: 'Read the Bulletin', x: px(NAVE.x0 + 1), y: px(11), r: 12 },
   // The skull chamber's daily rite is worshipping the shrine, not chanting at
   // the wall. It is deliberately NOT a station: a station opens a box and runs
   // a rite, and the shrine takes over the whole scene instead. See _shrineAction().
   { id: 'nursery', kind: 'nursery', label: 'Approach the Cradle', x: px(ROOMS[0].x0 + 3), y: px(ROOMS[0].y0 + 3), r: 12 },
-  { id: 'soul-altar', kind: 'soul-altar', label: 'Approach the Soul Altar', x: px(SKULL_ROOM.x0 + 4), y: px(SKULL_ROOM.y1 - 2), r: 12 },
   { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(SKULL_ROOM.x1 - 4), y: px(SKULL_ROOM.y1 - 2), r: 12 },
   // The braziers are deliberately NOT stations. A station opens a box and runs
   // a rite; a brazier is a container you put things in, and it has to behave
@@ -78,12 +78,11 @@ const CHANT_PAIR = ['Sanguis aeternus', 'Vita aeterna'];
 function boxOpts() { return {}; }
 
 export class CourtyardScene {
-  constructor({ player, onPlayerUpdate, onToast, socket, onLeaderboard, onSaveExit, onChatOpen, onMancala, onFinalCommunion, crowd }) {
+  constructor({ player, onPlayerUpdate, onToast, socket, onSaveExit, onChatOpen, onMancala, onFinalCommunion, crowd }) {
     this.player = player;
     this.crowd = this._spawnCrowd(crowd || 0); // demo NPC cultists wandering the sanctuary
     this.onPlayerUpdate = onPlayerUpdate || (() => {});
     this.onToast = onToast || (() => {});
-    this.onLeaderboard = onLeaderboard || (() => {});
     this.onSaveExit = onSaveExit || (() => {});
     this.onChatOpen = onChatOpen || (() => {});
     this.onMancala = onMancala || (() => {});
@@ -143,10 +142,10 @@ export class CourtyardScene {
       // get here, so you come in at the near end and the nave runs away from
       // you toward the altar.
       //
-      // Row 72, not 74: the gate station sits at row 75 with a 14px radius, so
-      // row 74 spawned the player inside its trigger with a "!" already up and
-      // one careless A press between them and the exit. Row 72 clears it.
-      x: px(NAVE_CX), y: px(72),
+      // Three tiles north of the gate station, not one: the gate has a 14px
+      // radius, and spawning inside it put a "!" up immediately with one
+      // careless A press between the player and the door back out.
+      x: px(NAVE_CX), y: px(EXIT_ROW - 6),
       w: 7, h: 7,
       speed: 60, // +30% walk speed (was 46)
       dir: 'up',
@@ -771,15 +770,6 @@ export class CourtyardScene {
     }
   }
 
-  async _handleLeaderboard() {
-    try {
-      const rows = await api.leaderboard();
-      this.onLeaderboard(rows);
-    } catch (e) {
-      this.onToast(e.message);
-    }
-  }
-
   async _handleSaveExit() {
     try {
       const res = await api.save();
@@ -822,10 +812,8 @@ export class CourtyardScene {
   _runStation(s) {
     if (s.kind === 'guru') this._handleGuru();
     else if (s.kind === 'confession') this._handleConfession();
-    else if (s.kind === 'leaderboard') this._handleLeaderboard();
     else if (s.kind === 'bulletin') this._handleBulletin();
     else if (s.kind === 'cathedral') this._handleCathedral(s.roomId);
-    else if (s.kind === 'soul-altar') this._handleSoulAltar();
     else if (s.kind === 'nursery') this._handleNursery();
     else if (s.kind === 'mancala') this._handleMancala();
     else if (s.kind === 'gate') this._handleSaveExit();
@@ -855,13 +843,6 @@ export class CourtyardScene {
     // Nothing the player can press changes what happens to them now.
     input.consumeAPress();
     input.consumeBPress();
-  }
-
-  _handleSoulAltar() {
-    const season = this.seasonInfo?.season ?? 1;
-    this.onToast(season >= 2
-      ? 'The Soul Altar stirs, but binding is not yet consecrated.'
-      : 'The Soul Altar lies dormant. It will awaken in Season 2.');
   }
 
   _handleNursery() {
@@ -1461,20 +1442,6 @@ export class CourtyardScene {
         }
         break;
       }
-      case 'soul-altar': {
-        const active = (this.seasonInfo?.season ?? 1) >= 2;
-        this._dropShadow(ctx, x, y + 5, 7.5, 2.6);
-        block(ctx, x - 6, y - 3, 12, 7, WALL);
-        ctx.fillStyle = GOLD.d; ctx.fillRect(x - 6, y - 3, 12, 1.4);
-        const glowA = active ? 0.5 + Math.sin(this.t * 2.4) * 0.3 : 0.12;
-        ctx.fillStyle = SOUL.o;
-        ctx.beginPath(); ctx.arc(x, y - 5, 3.2, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = `rgba(154,114,220,${glowA})`;
-        ctx.beginPath(); ctx.arc(x, y - 5, 2.6, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = `rgba(200,174,242,${glowA})`;
-        ctx.beginPath(); ctx.arc(x - 0.8, y - 5.8, 1, 0, Math.PI * 2); ctx.fill();
-        break;
-      }
       case 'nursery':
         this._dropShadow(ctx, x, y + 4, 6.5, 2.2);
         block(ctx, x - 5, y - 4, 10, 8, WOOD);     // cradle
@@ -1699,14 +1666,6 @@ export class CourtyardScene {
       // sprite scale it read as a scroll on a lectern — a thing to consult
       // rather than a man to speak to. The niche is the booth and the monk
       // standing in it; the station is only the ground you stand on to talk.
-    } else if (s.id === 'leaderboard') {
-      this._dropShadow(ctx, 0, 6, 7.5, 2.2);
-      block(ctx, -5, 0, 10, 6, WOOD);             // stand
-      ctx.fillStyle = BONE.o; ctx.fillRect(-6.5, -6.5, 13, 9);
-      ctx.fillStyle = BONE.l; ctx.fillRect(-6, -6, 12, 8);     // vellum scroll
-      ctx.fillStyle = BONE.h; ctx.fillRect(-6, -6, 12, 1.2);
-      ctx.fillStyle = GOLD.o;
-      for (let i = -3; i <= 3; i += 3) ctx.fillRect(-4, i, 8, 1);
     }
     ctx.restore();
   }

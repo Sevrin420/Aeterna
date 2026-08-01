@@ -1,6 +1,6 @@
 // The unhallowed church — a death-cult sanctuary laid out as an INVERTED CROSS
 // (a long north nave with a low transept and a short foot below it), surrounded
-// by pitch-black void. Down the nave are ten pointed alcoves (five per side),
+// by pitch-black void. Down the nave are six pointed alcoves (three per side),
 // each a fire-shrine. Two staircases descend: the WEST stair to a warren of six
 // private rooms with doors; the EAST stair to a chamber walled with skulls.
 //
@@ -41,8 +41,14 @@ function wallRing(grid, x0, y0, x1, y1) {
 }
 
 // ---- landmark coordinates (single source of truth, shared with courtyard) ----
-export const NAVE = { x0: 51, y0: 8, x1: 68, y1: 77 };      // long stem
-export const TRANSEPT = { x0: 27, y0: 52, x1: 92, y1: 64 };  // low crossbar
+// The church, pulled in by about a third on both long axes. It was 70 tiles
+// from altar to door and 66 across the crossbar, which made crossing it a
+// commute rather than a walk — most of a minute of holding one direction with
+// nothing happening. The nave's WIDTH and the transept's HEIGHT are untouched,
+// as is every prop and every fire niche; what went is empty floor and two of
+// the five alcove pairs.
+export const NAVE = { x0: 51, y0: 8, x1: 68, y1: 57 };      // long stem, was 70 tall
+export const TRANSEPT = { x0: 36, y0: 36, x1: 82, y1: 48 };  // crossbar, was 66 wide
 export const NAVE_CX = 59;                                   // nave centre column
 
 // The way out. These tiles are cut clean through the south wall as walkable
@@ -52,12 +58,15 @@ export const NAVE_CX = 59;                                   // nave centre colu
 export const EXIT_ROW = NAVE.y1 + 1;              // the south wall course
 export const EXIT_COLS = [NAVE_CX - 1, NAVE_CX, NAVE_CX + 1];
 
-// Ten fire alcoves down the nave, five per side. The niche used to be a plain
+// Six fire alcoves down the nave, three per side. The niche used to be a plain
 // 4x4 box with a pointed-arch prop drawn inside it; the point is now the SHAPE
 // of the room itself — the floor runs full height at the nave opening and
 // tapers to a single tile at its far end, so the nook comes to a point without
 // any decoration standing in for one. Walls follow the taper (see wrapWalls).
-const ALCOVE_ROWS = [12, 20, 28, 36, 44]; // top row of each 5-tall niche
+// Three pairs, not five. The niches themselves are exactly the size they
+// always were — the two that went are the two the shorter nave has no room
+// for, and six braziers is still more than a day's rite needs.
+const ALCOVE_ROWS = [12, 20, 28]; // top row of each 5-tall niche
 const ALCOVE_DEPTH = 5;                   // columns from the tip to the opening
 const ALCOVE_HALF = 2;                    // half-height once the taper is full
 export const ALCOVES = [];
@@ -103,17 +112,17 @@ for (const r of ALCOVE_ROWS) {
 }
 
 // A confessional alcove cut NORTH out of the transept's west arm — the left
-// arm of the inverted cross. The transept's north wall course is row 51, so
-// the niche breaks through it and runs back into what was void; only a
-// three-tile throat is opened, which keeps the arm reading as a wall with a
-// door in it rather than as an open-plan room.
-export const CONFESSIONAL = { x0: 29, y0: 46, x1: 33, y1: 50 };
-export const CONFESSIONAL_THROAT = [30, 31, 32];    // walkable cols at row 51
+// arm of the inverted cross. It breaks through the transept's north wall
+// course and runs back into what was void; only a three-tile throat is
+// opened, which keeps the arm reading as a wall with a door in it rather than
+// as an open-plan room.
+export const CONFESSIONAL = { x0: 38, y0: 30, x1: 42, y1: 34 };
+export const CONFESSIONAL_THROAT = [39, 40, 41];    // walkable cols at TRANSEPT.y0 - 1
 // The booth stands across the whole back wall of the niche. Its centre tile
 // carries the prop; the rest are invisible blockers, so the player can walk up
 // to the grille but never behind it.
-export const CONFESSIONAL_BOOTH_ROW = 46;
-export const CONFESSIONAL_BOOTH_COL = 31;
+export const CONFESSIONAL_BOOTH_ROW = 30;
+export const CONFESSIONAL_BOOTH_COL = 40;
 
 // WEST warren: a corridor with six doored rooms (three above, three below).
 const WEST_CORRIDOR = { x0: 10, y0: 105, x1: 41, y1: 108 };
@@ -196,7 +205,7 @@ function prop(type, col, row, solid = true, extra = {}) { PROPS.push({ type, col
 prop('altar', NAVE_CX, 9);
 prop('torch', NAVE_CX - 3, 9); prop('torch', NAVE_CX + 3, 9);
 prop('bulletin', NAVE.x0, 11, false);
-prop('pew', NAVE_CX - 3, 70); prop('pew', NAVE_CX + 3, 70);
+prop('pew', NAVE_CX - 3, EXIT_ROW - 7); prop('pew', NAVE_CX + 3, EXIT_ROW - 7);
 // The confessional: a timber booth filling the back of the north niche, with
 // the confessor standing in its open bay. Only the centre tile draws; the rest
 // are solid so the booth is a wall you talk through, not furniture you skirt.
@@ -205,10 +214,12 @@ for (let c = CONFESSIONAL.x0; c <= CONFESSIONAL.x1; c++) {
   if (c !== CONFESSIONAL_BOOTH_COL) prop('booth-block', c, CONFESSIONAL_BOOTH_ROW);
 }
 // staircases down (walkable — step to descend)
-prop('stair-down', TRANSEPT.x0 + 2, 58, false, { dest: { col: WEST_CORRIDOR.x0 + 2, row: 106 } });  // WEST -> warren
-prop('stair-down', TRANSEPT.x1 - 2, 58, false, { dest: { col: SKULL_ROOM.x1 - 3, row: 101 } });      // EAST -> skulls
+// Stair rows are expressed off the transept rather than as absolute numbers,
+// so moving the crossbar can never leave a staircase standing in a wall.
+prop('stair-down', TRANSEPT.x0 + 2, TRANSEPT.y0 + 6, false, { dest: { col: WEST_CORRIDOR.x0 + 2, row: 106 } });  // WEST -> warren
+prop('stair-down', TRANSEPT.x1 - 2, TRANSEPT.y0 + 6, false, { dest: { col: SKULL_ROOM.x1 - 3, row: 101 } });      // EAST -> skulls
 // the way out, at the foot of the cross
-prop('door', NAVE_CX, 76, false);
+prop('door', NAVE_CX, EXIT_ROW + 1, false);
 
 // --- TEN FIRE ALCOVES ---
 // Just the brazier (the interactive fire-shrine) and its fuel. The niche used
@@ -224,15 +235,14 @@ for (const a of ALCOVES) {
 }
 
 // --- WEST WARREN (six doored rooms; a private meeting place) ---
-prop('stair-up', WEST_CORRIDOR.x0 + 2, 106, false, { dest: { col: TRANSEPT.x0 + 2, row: 60 } });
+prop('stair-up', WEST_CORRIDOR.x0 + 2, 106, false, { dest: { col: TRANSEPT.x0 + 2, row: TRANSEPT.y0 + 8 } });
 for (const rm of ROOMS) prop('room-door', rm.door.col, rm.door.row, false);
 prop('nursery', ROOMS[0].x0 + 3, ROOMS[0].y0 + 3, false); // cradle in the first room
 
 // --- EAST SKULL CHAMBER (chant to the skulls; also holds the ritual games) ---
-prop('stair-up', SKULL_ROOM.x1 - 3, 101, false, { dest: { col: TRANSEPT.x1 - 2, row: 60 } });
+prop('stair-up', SKULL_ROOM.x1 - 3, 101, false, { dest: { col: TRANSEPT.x1 - 2, row: TRANSEPT.y0 + 8 } });
 prop('skull-wall', Math.round((SKULL_ROOM.x0 + SKULL_ROOM.x1) / 2), SKULL_WALL_ROW, false,
   { x0: SKULL_ROOM.x0, x1: SKULL_ROOM.x1 });
-prop('soul-altar', SKULL_ROOM.x0 + 4, SKULL_ROOM.y1 - 2, false);
 prop('mancala-table', SKULL_ROOM.x1 - 4, SKULL_ROOM.y1 - 2);
 // The shrine's footprint. Nothing draws from these — the skull is scene-owned
 // because it floats, spins, wakes and descends — they exist only to be solid.

@@ -66,10 +66,9 @@ export const LORE = {
       },
     },
     {
-      text: 'Two stairways descend from the nave.\n\n'
-        + 'The ossuary holds the soul altar, where the season takes what it is '
-        + 'owed. The ritual chamber holds the mancala table, where lots are cast '
-        + 'against whoever else has come down into the dark.\n\n'
+      text: 'Two stairways descend from the transept.\n\n'
+        + 'West, a warren of shuttered rooms. East, a chamber walled with '
+        + 'skulls, where something very old is lying on the floor.\n\n'
         + 'Both are open to you. Neither is safe.',
     },
     {
@@ -145,11 +144,6 @@ export const LORE = {
         + 'in one."\n\n'
         + '"Kneel, or go."',
     },
-    'soul-altar': {
-      speaker: 'The Soul Altar',
-      text: 'Below the ossuary, in the dark, the altar waits for what the season '
-        + 'is owed.',
-    },
     nursery: {
       speaker: 'The Cradle',
       text: 'Something is kept here that the order does not name aloud.',
@@ -164,10 +158,6 @@ export const LORE = {
       speaker: 'The Gate',
       text: 'Leave now and your Devotion is secured.\n\n'
         + 'The abbey will still be here.',
-    },
-    leaderboard: {
-      speaker: 'The Devout',
-      text: 'The names of those who have given most, cut into the wall in order.',
     },
     bulletin: {
       speaker: 'The Bulletin',

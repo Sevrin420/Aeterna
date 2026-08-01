@@ -22,9 +22,6 @@ const hudDevotion = document.getElementById('hudDevotion');
 const hudStreak = document.getElementById('hudStreak');
 const pipDay = document.getElementById('pipDay');
 const toastEl = document.getElementById('toast');
-const leaderboardOverlay = document.getElementById('leaderboardOverlay');
-const leaderboardList = document.getElementById('leaderboardList');
-const leaderboardClose = document.getElementById('leaderboardClose');
 const bootVeil = document.getElementById('bootVeil');
 const powerKnob = powerSwitch.querySelector('.power-knob');
 const muteToggle = document.getElementById('muteToggle');
@@ -320,14 +317,6 @@ function ensureSocket() {
   return socket;
 }
 
-function showLeaderboard(rows) {
-  leaderboardList.innerHTML = rows.map((r) => `
-    <li><span>${r.prefix} ${r.name}</span><span class="lb-devotion">${r.devotion}${r.streak > 0 ? ` · ${r.streak}d` : ''}</span></li>
-  `).join('') || '<li>No Cultists yet.</li>';
-  leaderboardOverlay.hidden = false;
-}
-leaderboardClose.addEventListener('click', () => { leaderboardOverlay.hidden = true; });
-
 function renderMancalaBoard(board) {
   mancalaPits.forEach((b) => { b.textContent = board[Number(b.dataset.pit)]; });
   mancalaStoreA.textContent = board[6];
@@ -432,7 +421,6 @@ function enterCourtyard(player) {
     onPlayerUpdate: updateHud,
     onToast: showToast,
     socket: ensureSocket(),
-    onLeaderboard: showLeaderboard,
     onSaveExit: returnToEntrance,
     onChatOpen: openChat,
     onMancala: showMancala,
@@ -694,7 +682,6 @@ function powerOff() {
   chatForm.hidden = true;
   hud.hidden = true;
   toastEl.hidden = true;
-  leaderboardOverlay.hidden = true;
   mancalaOverlay.hidden = true;
   communionOverlay.hidden = true;
   walletOverlay.hidden = true;
@@ -734,14 +721,13 @@ powerSwitch.addEventListener('pointermove', (e) => {
 // window, so this runs before the engine's own B handling and can swallow the
 // press — the scene underneath never sees it, so B won't also drop a gift etc.
 const backableOverlays = () => [
-  communionOverlay, mancalaOverlay, leaderboardOverlay,
+  communionOverlay, mancalaOverlay,
   walletOverlay, chatForm,
 ];
 function anyOverlayOpen() { return backableOverlays().some((o) => o && !o.hidden); }
 function backOut() {
   if (!communionOverlay.hidden) { communionOverlay.hidden = true; return true; }
   if (!mancalaOverlay.hidden) { if (scene && scene.leaveMancala) scene.leaveMancala(); mancalaOverlay.hidden = true; return true; }
-  if (!leaderboardOverlay.hidden) { leaderboardOverlay.hidden = true; return true; }
   if (!walletOverlay.hidden) { walletOverlay.hidden = true; if (scene && scene.resume) scene.resume(); return true; }
   if (!chatForm.hidden) { chatForm.hidden = true; return true; }
   return false;
