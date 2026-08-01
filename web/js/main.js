@@ -47,6 +47,12 @@ const communionClose = document.getElementById('communionClose');
 // playback — pre-creating Audio elements on page load can silently fail.
 let _bgm = null;
 let _gameBgm = null;
+// The title-card stinger. This was referenced in two places and declared in
+// none: `stinger.currentTime` threw a ReferenceError every time, and both call
+// sites sat inside a bare try/catch, so the sound simply never played and
+// nothing ever said why. Declared here and built in powerOn(), inside the
+// power switch's real user gesture, so unlockAudio() can prime it.
+let _stinger = null;
 const MUSIC = () => [_bgm, _gameBgm].filter(Boolean);
 function applyMute(m) { for (const a of MUSIC()) a.muted = m; }
 
@@ -95,6 +101,16 @@ let scene = null;
 let stopLoop = null;
 let toastTimer = null;
 let socket = null;
+
+// The beat between the title card's A press and the abbey fading up.
+function playStinger() {
+  if (!_stinger || sfx.isMuted()) return;
+  try {
+    _stinger.currentTime = 0;
+    const p = _stinger.play();
+    if (p && p.catch) p.catch(() => {});
+  } catch { /* a missing stinger must never block the transition */ }
+}
 
 function drawOff() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -489,7 +505,7 @@ walletBackBtn.addEventListener('click', () => {
 });
 
 async function afterBoot() {
-  if (!sfx.isMuted()) { try { stinger.currentTime = 0; stinger.play().catch(() => {}); } catch {} }
+  playStinger();
   try {
     let player;
     try { player = await api.me(); }
@@ -515,7 +531,7 @@ function startBoot() {
 function startPresenter() {
   scene = new PresenterScene({
     onComplete: () => {
-      if (!sfx.isMuted()) { try { stinger.currentTime = 0; stinger.play().catch(() => {}); } catch { /* ignore */ } }
+      playStinger();
       startBoot();
     },
   });
@@ -532,7 +548,15 @@ function powerOn() {
   _bgm.volume = 0.55;
   _bgm.muted = sfx.isMuted();
   _bgm.play().catch(() => {});
+  // Strict-autoplay browsers only allow later programmatic play() on an element
+  // whose FIRST play() happened inside a real gesture — which is what
+  // unlockAudio() is for, and why the stinger has to be built here rather than
+  // at the moment it is needed. (unlockAudio had no callers at all until now.)
+  _stinger = new Audio('assets/title-a.mp3');
+  _stinger.volume = 0.7;
+  unlockAudio(_stinger);
   powerSwitch.setAttribute('aria-pressed', 'true');
+  document.body.classList.add('powered');
   startBoot();
   if (!stopLoop) {
     stopLoop = makeLoop(
@@ -556,6 +580,8 @@ function powerOff() {
   for (const a of MUSIC()) { try { a.pause(); a.currentTime = 0; } catch {} }
   _bgm = null; _gameBgm = null;
   powerSwitch.setAttribute('aria-pressed', 'false');
+  document.body.classList.remove('powered');
+  _stinger = null;
   if (scene && scene.exit) scene.exit();
   scene = null;
   if (socket) { socket.disconnect(); socket = null; }

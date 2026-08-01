@@ -172,7 +172,14 @@ html, body {
 /* ===== Mute toggle ===== */
 /* sits fully inside the top-right corner of the screen (the bezel spans
    4.69%..95.22% wide, 3.45% from the top) */
+/* The mute toggle lives ON the screen, so it has no business being visible
+   while the screen is dark — a lit green button floating over a dead CRT reads
+   as a rendering bug. It fades in and out with the power, on the same easing
+   the screen uses, and is not clickable while the console is off. */
 .mute-toggle {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s ease;
   position: absolute;
   right: 5.6%;
   top: 4.8%;
@@ -189,6 +196,11 @@ html, body {
   touch-action: none;
   box-shadow: 0 0 6px rgba(69, 240, 138, 0.35), inset 0 0 4px rgba(69, 240, 138, 0.2);
 }
+body.powered .mute-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .mute-toggle[aria-pressed="true"] {
   color: #2f5a3e;
   border-color: #2f5a3e;
