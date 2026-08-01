@@ -2,6 +2,14 @@
 // tones. Browsers require a user gesture before audio can play, so the
 // AudioContext is created lazily on first call (button presses qualify).
 
+// One master trim on everything the game makes noise with — the oscillator
+// tones below and, via main.js, the three music elements. Every individual
+// gain and volume in the codebase is a mix decision relative to the others;
+// scaling them all here keeps that mix intact while moving the whole thing
+// down, and means the next overall adjustment is one number rather than
+// thirty.
+export const AUDIO_MASTER = 0.7;
+
 let ctx = null;
 let muted = localStorage.getItem('aeterna_muted') === '1';
 
@@ -27,6 +35,7 @@ function getCtx() {
 
 function tone({ freq = 440, duration = 0.15, type = 'sine', gain = 0.15, delay = 0, glideTo = null }) {
   if (muted) return;
+  gain *= AUDIO_MASTER;
   try {
     const c = getCtx();
     if (!c) return;

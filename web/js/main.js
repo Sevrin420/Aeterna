@@ -3,7 +3,7 @@ import { BootScene } from './scenes/boot.js';
 import { EntranceScene } from './scenes/entrance.js';
 import { CourtyardScene } from './scenes/courtyard.js';
 import { api } from './api.js';
-import { sfx } from './sfx.js';
+import { sfx, AUDIO_MASTER } from './sfx.js';
 import { connectWallet, fetchCultists, shortAddr, hasInjectedWallet } from './wallet.js';
 
 const canvas = document.getElementById('screen');
@@ -425,7 +425,7 @@ function enterCourtyard(player) {
   if (_bgm) try { _bgm.pause(); } catch {}
   _gameBgm = new Audio('assets/hymn-game.mp3');
   _gameBgm.loop = true;
-  _gameBgm.volume = 0.5;
+  _gameBgm.volume = 0.5 * AUDIO_MASTER;
   _gameBgm.muted = false;
   _want = _gameBgm;
   tryPlay(_gameBgm, 'game-hymn');
@@ -513,7 +513,7 @@ function enterEntrance(player, spawn = 'centre') {
   if (!_bgm) {
     _bgm = new Audio('assets/hymn.mp3');
     _bgm.loop = true;
-    _bgm.volume = 0.55;
+    _bgm.volume = 0.55 * AUDIO_MASTER;
     _bgm.muted = sfx.isMuted();
     tryPlay(_bgm, 'hymn@lobby');
   } else {
@@ -649,7 +649,7 @@ function powerOn() {
   // Fresh Audio inside user gesture = most reliable on mobile browsers
   _bgm = new Audio('assets/hymn.mp3');
   _bgm.loop = true;
-  _bgm.volume = 0.55;
+  _bgm.volume = 0.55 * AUDIO_MASTER;
   _bgm.muted = sfx.isMuted();
   tryPlay(_bgm, 'hymn@power');
   // Strict-autoplay browsers only allow later programmatic play() on an element
@@ -658,7 +658,7 @@ function powerOn() {
   // at the moment it is needed. (unlockAudio had no callers at all until now.)
   _want = _bgm;
   _stinger = new Audio('assets/title-a.mp3');
-  _stinger.volume = 0.7;
+  _stinger.volume = 0.7 * AUDIO_MASTER;
   _stingerPrimed = false;
   kickAudio();          // primes the stinger, and retries the hymn if it balked
   powerSwitch.setAttribute('aria-pressed', 'true');
