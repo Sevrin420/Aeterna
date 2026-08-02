@@ -737,14 +737,11 @@ body.dialogue-open .emoji-toggle { opacity: 0; pointer-events: none; }
 }
 .ew-face {
   position: absolute;
-  background: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  font-size: clamp(13px, 7cqw, 30px);
+  font-size: clamp(15px, 8cqw, 34px);
   line-height: 1;
   will-change: transform, opacity;
-  transition: filter 0.12s linear;
+  pointer-events: none;   /* the d-pad chooses, not the finger */
+  user-select: none;
 }
 /* the one at the front gets a seat to sit on, so it reads as chosen */
 .ew-front {

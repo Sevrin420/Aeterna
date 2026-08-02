@@ -48,7 +48,7 @@ emojiToggle.addEventListener('click', (ev) => {
   ev.stopPropagation();
   // Only meaningful with a scene that can speak — the menu has no one to
   // speak to, so the button does nothing there rather than opening onto a
-  // ring that cannot send.
+  // ring that cannot send. Turned with the d-pad and sent with A once open.
   if (!scene || !scene._sendEmoji) { showToast('Nobody to speak to here.'); return; }
   emojiWheel.toggle();
 });
@@ -978,7 +978,12 @@ function powerOn() {
   startBoot();
   if (!stopLoop) {
     stopLoop = makeLoop(
-      (dt) => { if (scene) scene.update(dt, input); },
+      (dt) => {
+        // The ring owns the controls while it is up, so a d-pad press turns it
+        // instead of also walking the player underneath.
+        if (emojiWheel.open) { emojiWheel.handleInput(input); return; }
+        if (scene) scene.update(dt, input);
+      },
       () => {
         if (powered && scene) {
           ctx.setTransform(RES, 0, 0, RES, 0, 0);
