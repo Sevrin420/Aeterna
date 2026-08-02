@@ -10,6 +10,7 @@ import { sfx, AUDIO_MASTER } from './sfx.js';
 import {
   connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen,
   fetchPricePerCultist, formatAvax, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
+  ensureChain, currentChainId,
 } from './wallet.js';
 
 const canvas = document.getElementById('screen');
@@ -581,6 +582,11 @@ async function menuConnect(menu) {
   try {
     const addr = await connectWallet();
     connectedAddr = addr;
+    // Move the wallet to Avalanche before reading anything. On any other chain
+    // this contract does not exist, and every answer comes back as zero —
+    // which the game would otherwise show as "no Bloodlines, mint closed".
+    menu.status = 'SWITCHING TO AVALANCHE…';
+    await ensureChain();
     menu.status = 'READING THE CHAIN…';
     heldBloodlines = await fetchBloodlines(addr);
     heldCultists = totalCultists(heldBloodlines);
@@ -605,6 +611,8 @@ async function menuConnect(menu) {
       NO_ACCOUNT: 'NO ACCOUNT RETURNED',
       NO_CONTRACT: 'COLLECTION NOT CONFIGURED',
       CHAIN_UNREACHABLE: 'COULD NOT REACH THE CHAIN',
+      WRONG_CHAIN: 'SWITCH YOUR WALLET TO AVALANCHE',
+      NO_CONTRACT_HERE: 'NO COLLECTION AT THAT ADDRESS',
     }[e && e.message] || 'CONNECTION REFUSED';
     menu.status = why;
     sfx.error();
@@ -801,13 +809,22 @@ async function openMintPicker(menu) {
 
   let price;
   try {
+    await ensureChain();
     if (!(await fetchMintOpen())) {
       walletMsg.textContent = 'The mint is not open yet. Leave by the Back door.';
       return;
     }
     price = await fetchPricePerCultist();
-  } catch {
-    walletMsg.textContent = 'Could not reach the chain. Try again shortly.';
+  } catch (e) {
+    // Each of these used to surface as "the mint is not open", because a chain
+    // with no contract on it answers every call with zero.
+    const chain = await currentChainId();
+    walletMsg.textContent = {
+      WRONG_CHAIN: `Your wallet is on chain ${chain ?? '?'}. The Bloodlines live on Avalanche (43114) — switch, then try again.`,
+      NO_CONTRACT_HERE: 'No collection found at the configured address.',
+      NO_WALLET: 'No wallet connected.',
+      NO_CONTRACT: 'The collection is not configured.',
+    }[e && e.message] || 'Could not reach the chain. Try again shortly.';
     return;
   }
 
@@ -866,6 +883,8 @@ async function openMintPicker(menu) {
         BAD_CULTISTS: 'A Bloodline holds between 1 and 20 Cultists.',
         NO_WALLET: 'No wallet connected.',
         NO_CONTRACT: 'The collection is not configured.',
+        WRONG_CHAIN: 'Switch your wallet to Avalanche and try again.',
+        NO_CONTRACT_HERE: 'No collection found at the configured address.',
       }[e && e.message] || (e && e.message) || 'The rite failed.';
       walletMsg.textContent = why;
       sfx.error();

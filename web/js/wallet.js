@@ -155,14 +155,73 @@ function words(hex) {
   return out;
 }
 
+// Which chain the wallet is actually pointed at right now.
+export async function currentChainId() {
+  const p = activeProvider();
+  if (!p) return null;
+  try {
+    return Number(await p.request({ method: 'eth_chainId' }));
+  } catch {
+    return null;
+  }
+}
+
+const AVALANCHE_PARAMS = {
+  chainId: '0xa86a',                       // 43114
+  chainName: 'Avalanche C-Chain',
+  nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
+  rpcUrls: ['https://api.avax.network/ext/bc/C/rpc'],
+  blockExplorerUrls: ['https://snowtrace.io'],
+};
+
+// Ask the wallet to move to Avalanche, adding it if it has never heard of it.
+// MetaMask opens on whichever chain the player last used — usually Ethereum —
+// and every read below would then be answered by a chain that has never heard
+// of this contract.
+export async function ensureChain() {
+  const p = activeProvider();
+  if (!p) throw new Error('NO_WALLET');
+  if ((await currentChainId()) === BLOODLINE_CHAIN_ID) return true;
+  try {
+    await p.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: AVALANCHE_PARAMS.chainId }] });
+  } catch (e) {
+    // 4902: the wallet does not know this chain yet. Anything else is the
+    // player declining, and declining is their right — it is not an error to
+    // shout about, but nothing on-chain can be read until they relent.
+    if (e && (e.code === 4902 || e.code === -32603)) {
+      try {
+        await p.request({ method: 'wallet_addEthereumChain', params: [AVALANCHE_PARAMS] });
+      } catch {
+        throw new Error('WRONG_CHAIN');
+      }
+    } else {
+      throw new Error('WRONG_CHAIN');
+    }
+  }
+  if ((await currentChainId()) !== BLOODLINE_CHAIN_ID) throw new Error('WRONG_CHAIN');
+  return true;
+}
+
 async function ethCall(data) {
   const p = activeProvider();
   if (!p) throw new Error('NO_WALLET');
   if (!BLOODLINE_ADDRESS) throw new Error('NO_CONTRACT');
-  return p.request({
+
+  // Ask what chain we are on BEFORE trusting an answer from it. A wallet
+  // sitting on Ethereum answers every one of these calls with '0x' — there is
+  // no contract at this address there — and '0x' decodes to zero, which reads
+  // as "mint closed" and "you hold nothing". Both are lies, and both are
+  // indistinguishable from the truth unless the chain is checked here.
+  const chain = await currentChainId();
+  if (chain !== null && chain !== BLOODLINE_CHAIN_ID) throw new Error('WRONG_CHAIN');
+
+  const out = await p.request({
     method: 'eth_call',
     params: [{ to: BLOODLINE_ADDRESS, data }, 'latest'],
   });
+  // Right chain, no code at the address: a misconfigured meta tag, not a false.
+  if (!out || out === '0x') throw new Error('NO_CONTRACT_HERE');
+  return out;
 }
 
 // uint256[] comes back as [offset][length][...items]. The offset is always 0x20
@@ -214,9 +273,12 @@ export async function fetchBloodlines(address) {
   let ids;
   try {
     ids = decodeUintArray(await ethCall(SEL.bloodlinesOf + padAddr(address)));
-  } catch {
-    // A dead RPC must not read as "you own nothing" — that would quietly demote
-    // a holder to a ghost and start them a second pile of Devotion.
+  } catch (e) {
+    // A dead RPC — or a wallet on the wrong chain — must not read as "you own
+    // nothing". That would quietly demote a holder to a ghost and start them a
+    // second pile of Devotion. The specific reasons are passed through so the
+    // player is told which one it is.
+    if (e && (e.message === 'WRONG_CHAIN' || e.message === 'NO_CONTRACT_HERE')) throw e;
     throw new Error('CHAIN_UNREACHABLE');
   }
   const out = [];
