@@ -995,7 +995,19 @@ export class CourtyardScene {
         const key = `${st.id}|${this.carrying ? this.carrying.kind : ''}`;
         if (intro && this._lastIntro !== key) {
           this._lastIntro = key;
-          this.dialogue.show([intro], { onClose: () => this._runStation(st), ...boxOpts(st) });
+          // The bed is the one station that asks before it acts: lying down
+          // ends the day and drops the player out of the abbey, which is not
+          // something to do to somebody who pressed A walking past. Every
+          // other station reads, closes, and runs.
+          if (st.kind === 'bed') {
+            this.dialogue.show([intro], {
+              choices: ['Yes', 'No'],
+              onChoice: (i) => { if (i === 0) this._runStation(st); },
+              ...boxOpts(st),
+            });
+          } else {
+            this.dialogue.show([intro], { onClose: () => this._runStation(st), ...boxOpts(st) });
+          }
         } else {
           this._runStation(this._activeStation);
         }

@@ -150,12 +150,17 @@ export const LORE = {
         + 'are no longer attached to anyone.\n\n'
         + 'Sit, and cast lots against whoever else is fool enough to sit.',
     },
+    // One page, and it ends in a question — so it has to say what lying down
+    // costs in the space of a few lines. The old second paragraph (the abbey
+    // waking you in another cell) is flavour the player learns by waking there.
     bed: {
       speaker: 'The Cot',
-      text: 'A plank frame, a straw pallet and a blanket that someone else has '
-        + 'already worn thin.\n\n'
-        + 'Lie down and the day is closed and counted. The abbey will wake you '
-        + 'in one of these, though not necessarily this one.',
+      // Five lines is all one page holds once the speaker and the Yes/No row
+      // have taken their share — three of prose, a blank, and the question.
+      // Anything longer silently spills to a second page, which is the thing
+      // this entry exists to avoid, so keep the prose under about 60 chars.
+      text: 'A plank frame, a thin blanket. The day is closed and counted.\n\n'
+        + 'Sleep now?',
     },
   },
 };

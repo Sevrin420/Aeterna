@@ -47,6 +47,7 @@ const FONT = '12px "Courier New", monospace';
 const LINE_H = 17;
 const SPEAKER_H = 22;            // extra top offset when a page names a speaker
 const CPS = 14;                  // characters per second — a third of the old 42
+const CHOICE_H = 24;             // the room a Yes/No row takes at the foot of the box
 
 // A single frame square. The bevel is drawn rather than blitted so the frame
 // can be any size without a spritesheet, and so every tile is guaranteed to
@@ -202,15 +203,27 @@ export class DialogueBox {
   // `hold` makes the box mandatory: A will not rush the printing and will not
   // close it, and it stays up until at least `hold` seconds have passed. Used
   // by the prayer, where the point is that the rite takes as long as it takes.
-  show(pages, { speaker = null, onClose = null, hold = 0, cps = CPS } = {}) {
+  // `choices` turns the last page into a question: an array of labels, shown
+  // as a row along the bottom, chosen with left/right and confirmed with A.
+  // `onChoice(index, label)` fires instead of onClose. B picks the LAST label,
+  // because the way out of a question the player did not mean to open should
+  // be the same button as the way out of everything else — and the last label
+  // is the refusal by convention here ("Yes / No").
+  show(pages, { speaker = null, onClose = null, hold = 0, cps = CPS,
+    choices = null, onChoice = null } = {}) {
     const raw = Array.isArray(pages) ? pages : [pages];
+    this.choices = Array.isArray(choices) && choices.length ? choices : null;
+    this.onChoice = onChoice || null;
+    this.choiceIndex = 0;
     this.pages = [];
     for (const p of raw) {
       const text = typeof p === 'string' ? p : p.text;
       const who = typeof p === 'string' ? speaker : (p.speaker ?? speaker);
       const chart = typeof p === 'string' ? null : (p.chart || null);
       // A chart eats the top of the frame, so its page has fewer lines to give.
-      const used = (who ? SPEAKER_H : 0) + (chart ? chartHeight(chart) : 0);
+      // So does a row of choices, which sits where the close indicator would.
+      const used = (who ? SPEAKER_H : 0) + (chart ? chartHeight(chart) : 0)
+        + (this.choices ? CHOICE_H : 0);
       const room = Math.max(1, Math.floor((IN_H - used) / LINE_H));
       const lines = this._wrap(text);
       // long entries spill onto further pages rather than overflowing the frame
@@ -239,6 +252,8 @@ export class DialogueBox {
   }
 
   close() {
+    this.choices = null;
+    this.onChoice = null;
     this.open = false;
     this.pages = [];
     this.hold = 0;
@@ -295,6 +310,33 @@ export class DialogueBox {
     // player cannot skim it, and cannot leave it early.
     if (this.hold > 0 && this.held < this.hold) {
       input.consumeAPress(); input.consumeBPress();
+      return true;
+    }
+
+    // A question owns the buttons once its page has finished printing. It is
+    // only ever asked on the LAST page, so earlier pages page forward normally.
+    const asking = this.choices && this.page >= this.pages.length - 1 && this._pageDone;
+    if (asking) {
+      const d = input.consumeDir ? input.consumeDir() : null;
+      if (d === 'left' || d === 'right') {
+        const n = this.choices.length;
+        this.choiceIndex = (this.choiceIndex + (d === 'right' ? 1 : n - 1)) % n;
+        sfx.click();
+      }
+      if (input.consumeAPress()) {
+        const i = this.choiceIndex;
+        const label = this.choices[i];
+        const cb = this.onChoice;
+        sfx.bootConfirm();
+        this.close();                       // clears the question before firing
+        if (cb) cb(i, label);
+      } else if (input.consumeBPress()) {
+        const i = this.choices.length - 1;  // B is the refusal
+        const label = this.choices[i];
+        const cb = this.onChoice;
+        this.close();
+        if (cb) cb(i, label);
+      }
       return true;
     }
 
@@ -380,7 +422,26 @@ export class DialogueBox {
     // continue / close indicator, only once the page has finished printing —
     // and never while the box is holding, since there is nothing to press
     const holding = this.hold > 0 && this.held < this.hold;
-    if (this._pageDone && !holding && Math.floor(this._blink * 2) % 2 === 0) {
+    const askingNow = this.choices && this.page >= this.pages.length - 1;
+    if (askingNow && this._pageDone) {
+      // The question, along the foot of the frame. The chosen one is bracketed
+      // as well as brightened, so it reads on a small screen without relying
+      // on colour alone.
+      ctx.font = FONT;
+      ctx.textAlign = 'center';
+      const labels = this.choices.map((c, i) => (i === this.choiceIndex ? `[${c.toUpperCase()}]` : ` ${c.toUpperCase()} `));
+      const widths = labels.map((l) => ctx.measureText(l).width);
+      const gap = 14;
+      const total = widths.reduce((a, b) => a + b, 0) + gap * (labels.length - 1);
+      let cx = W / 2 - total / 2;
+      const cy = BOX_Y + BOX_H - TILE - PAD - 2;
+      labels.forEach((l, i) => {
+        ctx.fillStyle = i === this.choiceIndex ? GOLD.h : shade(BONE.d, -25);
+        ctx.fillText(l, cx + widths[i] / 2, cy);
+        cx += widths[i] + gap;
+      });
+      ctx.textAlign = 'left';
+    } else if (this._pageDone && !holding && Math.floor(this._blink * 2) % 2 === 0) {
       const last = this.page >= this.pages.length - 1;
       ctx.fillStyle = GOLD.h;
       const cx = BOX_X + BOX_W - TILE - 9;
