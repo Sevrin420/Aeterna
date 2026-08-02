@@ -652,8 +652,11 @@ async function bindBloodline(bl, menu) {
     showToast(`Playing Bloodline #${bl.id} — ${bl.cultists} Cultists, ${full.devotion || 0} Devotion.`);
     await offerXHandleAndReferral(full);
   } catch (e) {
-    if (menu) menu.status = 'BIND REFUSED';
-    showToast(e.message || 'Could not bind that Bloodline.');
+    // A failed bind leaves a paid-for Bloodline that the game cannot see, so
+    // it must say so plainly and say how to retry. Pressing WALLET re-reads the
+    // chain and comes straight back here.
+    if (menu) menu.status = 'BIND FAILED — PRESS WALLET';
+    showToast(`${e.message || 'Could not bind that Bloodline.'} Your Bloodline is safe on-chain — press WALLET to try again.`);
     sfx.error();
   }
 }
