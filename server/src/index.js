@@ -138,6 +138,19 @@ function playerFor(wallet, tokenId) {
   return db.prepare('SELECT * FROM players WHERE wallet = ? ORDER BY created_at LIMIT 1').get(w);
 }
 
+// A ghost earns nothing. Devotion belongs to a Bloodline, so a player with no
+// token bound is a spectator: they may walk the abbey, but no duty, confession,
+// claim or referral pays them. Without this the pseudo-id in localStorage is a
+// free, resettable identity that can farm Devotion forever and then carry it
+// onto a token at mint time.
+function requireBloodline(player, reply) {
+  if (player && player.token_id) return null;
+  reply.code(403).send({
+    error: 'A ghost earns nothing here. Bind a Bloodline first — connect your wallet and choose one.',
+  });
+  return reply;
+}
+
 // ========== BIND A BLOODLINE ==========
 // Ties a player row to one Bloodline. The unit of progress is the TOKEN, not
 // the wallet: a holder of several gets a row (and a pile of Devotion) each, and
@@ -240,10 +253,19 @@ fastify.post('/bind', async (req, reply) => {
   if (taken) return reply.code(409).send({ error: 'That Bloodline is already bound to another player' });
 
   // A wallet's first-ever row may exist with no token (it registered as a
-  // ghost). Adopt it rather than stranding the Devotion it already earned.
+  // ghost). The row is adopted so the player keeps their name and face — but
+  // A BLOODLINE STARTS AT ZERO. Whatever a ghost accumulated before the rule
+  // that ghosts earn nothing does not travel onto a token: a localStorage
+  // pseudo-id is free and resettable, so carrying its Devotion across would
+  // make every mint a way to cash in a farmed identity.
   const ghost = db.prepare('SELECT * FROM players WHERE wallet = ? AND token_id IS NULL').get(w);
   if (ghost) {
-    db.prepare('UPDATE players SET token_id = ?, cultists = ? WHERE id = ?').run(tid, onChain.cultists, ghost.id);
+    db.prepare(`UPDATE players SET
+        token_id = ?, cultists = ?,
+        devotion = 0, streak = 0, level = 1, last_duty_date = NULL, confession_count = 0,
+        flags_date = ?, pray_today = 0, garden_today = 0, candles_today = 0,
+        scourge_today = 0, gifts_given_today = 0, gifts_received_today = 0
+      WHERE id = ?`).run(tid, onChain.cultists, todayStr(), ghost.id);
     return ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE id = ?').get(ghost.id));
   }
 
@@ -338,6 +360,7 @@ fastify.post('/save', async (req, reply) => {
 
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (requireBloodline(player, reply)) return reply;
 
   // TODO: Call Cloudflare Worker
   // const sigRes = await fetch(process.env.WORKER_URL, { method: 'POST', body: JSON.stringify({...}) })
@@ -369,6 +392,7 @@ fastify.post('/confession', async (req, reply) => {
 
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (requireBloodline(player, reply)) return reply;
 
   const fresh = ensureFreshDay(db, player);
   const pending = pendingConfession(db, fresh.id);
@@ -417,6 +441,7 @@ fastify.post('/duty/:type', async (req, reply) => {
 
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (requireBloodline(player, reply)) return reply;
 
   const fresh = ensureFreshDay(db, player);
   const col = `${type}_today`;
@@ -487,6 +512,7 @@ fastify.post('/x/handle', async (req, reply) => {
 
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (requireBloodline(player, reply)) return reply;
 
   const handle = String(xHandle || '').trim().replace(/^@/, '');
   if (!handle) {
@@ -530,6 +556,7 @@ fastify.post('/referral', async (req, reply) => {
 
   const referee = playerFor(wallet, tokenId);
   if (!referee) return reply.code(404).send({ error: 'Player not found' });
+  if (requireBloodline(referee, reply)) return reply;
 
   const handle = String(xHandle || '').trim().replace(/^@/, '');
   if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) {
@@ -542,7 +569,9 @@ fastify.post('/referral', async (req, reply) => {
     return reply.code(409).send({ error: `You were already brought in by @${already.referrer_handle}` });
   }
 
-  const referrer = db.prepare('SELECT * FROM players WHERE x_handle = ? COLLATE NOCASE').get(handle);
+  // The referrer must hold a Bloodline too, or the 10 Devotion would be paid
+  // onto a ghost row that is not allowed to earn any.
+  const referrer = db.prepare('SELECT * FROM players WHERE x_handle = ? COLLATE NOCASE AND token_id IS NOT NULL').get(handle);
   if (!referrer) return reply.code(404).send({ error: 'No Cultist here goes by that handle' });
   if (referrer.wallet === w) {
     return reply.code(400).send({ error: 'You cannot bring yourself into the abbey' });
@@ -584,6 +613,7 @@ fastify.post('/x/claim', async (req, reply) => {
 
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (requireBloodline(player, reply)) return reply;
   if (!player.x_handle) return reply.code(400).send({ error: 'No X handle bound to this Cultist' });
 
   const already = db.prepare(
@@ -635,6 +665,7 @@ fastify.post('/cathedral/:id/claim', async (req, reply) => {
 
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (requireBloodline(player, reply)) return reply;
 
   const room = db.prepare('SELECT * FROM cathedral_rooms WHERE id = ?').get(id);
   if (!room) return reply.code(404).send({ error: 'No such room' });

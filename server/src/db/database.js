@@ -103,6 +103,21 @@ try {
   console.warn('x_handle uniqueness NOT enforced — duplicates already exist:', e.message);
 }
 
+// Ghosts earn nothing, so no unbound row should be holding Devotion. Any that
+// does earned it before that rule existed, and leaving it would put rows on the
+// leaderboard that can never be audited against a Bloodline. Idempotent: once
+// the rows are zeroed this matches nothing. An hourly backup and a boot backup
+// both predate it, so the old numbers remain recoverable.
+try {
+  const stale = db.prepare('SELECT COUNT(*) n FROM players WHERE token_id IS NULL AND (devotion > 0 OR streak > 0)').get();
+  if (stale && stale.n > 0) {
+    db.prepare('UPDATE players SET devotion = 0, streak = 0, level = 1, last_duty_date = NULL WHERE token_id IS NULL AND (devotion > 0 OR streak > 0)').run();
+    console.log(`cleared legacy Devotion from ${stale.n} unbound row(s) — a ghost earns nothing`);
+  }
+} catch (e) {
+  console.warn('ghost Devotion cleanup skipped:', e.message);
+}
+
 // ---- BACKUPS ---------------------------------------------------------------
 // Devotion is the only thing the abbey counts and it exists in exactly one
 // file. sqlite's online backup API copies a consistent snapshot while the

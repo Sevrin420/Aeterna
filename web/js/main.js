@@ -596,7 +596,7 @@ async function menuConnect(menu) {
     if (!heldBloodlines.length) {
       // No Bloodline: they walk in as a spirit, exactly as before.
       menu.sel = 2;                     // point them at MINT
-      showToast(`${shortAddr(addr)} holds no Bloodline. Enter as a spirit, or MINT.`);
+      showToast(`${shortAddr(addr)} holds no Bloodline. A spirit may walk the abbey but earns no Devotion — MINT to be counted.`);
     } else if (heldBloodlines.length === 1) {
       await bindBloodline(heldBloodlines[0], menu);
     } else {
