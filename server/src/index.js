@@ -39,6 +39,80 @@ await fastify.register(fastifyStatic, {
 // ========== HEALTH ==========
 fastify.get('/health', async () => ({ status: 'ok', service: 'aeterna' }));
 
+// ========== BLOODLINE METADATA ==========
+// What the contract's tokenURI points at, and the whole of "the NFT is
+// upgradable": the card a marketplace shows is built here, now, from live
+// Devotion. Nothing is minted, migrated or signed to make a Bloodline improve —
+// its holder plays, this number goes up, and the metadata says so next time
+// anyone looks.
+//
+// Cultists come from the chain and never change; Devotion comes from play and
+// only ever rises. The two are separate on purpose: Cultists multiply the
+// end-of-season payout and have no effect on what an act of Devotion is worth.
+fastify.get('/nft/:tokenId', async (req, reply) => {
+  const tokenId = Number(req.params.tokenId);
+  if (!Number.isInteger(tokenId) || tokenId < 1) return reply.code(400).send({ error: 'bad token' });
+
+  const row = db.prepare('SELECT * FROM players WHERE token_id = ?').get(tokenId);
+  const cultists = row ? row.cultists || 0 : 0;
+  const devotion = row ? row.devotion || 0 : 0;
+  const streak = row ? row.streak || 0 : 0;
+
+  reply.header('Cache-Control', 'public, max-age=60');
+  return {
+    name: `Aeterna Bloodline #${tokenId}`,
+    description: 'A bloodline of the abbey of Vita Aeterna. It holds a fixed '
+      + 'number of Cultists, set the day it was raised and never added to. Its '
+      + 'Devotion is earned, and rises for as long as the line is kept.',
+    external_url: `https://membersonly.cc/?bloodline=${tokenId}`,
+    image: `https://membersonly.cc/nft/${tokenId}/image.svg`,
+    attributes: [
+      { trait_type: 'Cultists', value: cultists },
+      { trait_type: 'Devotion', value: devotion },
+      { trait_type: 'Streak', value: streak },
+      { trait_type: 'Payout Multiplier', value: `${cultists}x` },
+      { trait_type: 'Awakened', value: row ? 'Yes' : 'Not yet' },
+    ],
+  };
+});
+
+// The card itself. Drawn as SVG rather than a stored PNG so it costs nothing to
+// keep current — there is no pipeline to re-render and re-pin every time
+// somebody finishes a day's duties.
+fastify.get('/nft/:tokenId/image.svg', async (req, reply) => {
+  const tokenId = Number(req.params.tokenId);
+  const row = Number.isInteger(tokenId)
+    ? db.prepare('SELECT * FROM players WHERE token_id = ?').get(tokenId) : null;
+  const cultists = row ? row.cultists || 0 : 0;
+  const devotion = row ? row.devotion || 0 : 0;
+  const esc = (v) => String(v).replace(/[<>&]/g, '');
+
+  reply.header('Content-Type', 'image/svg+xml');
+  reply.header('Cache-Control', 'public, max-age=60');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#4a1119"/><stop offset="1" stop-color="#160610"/>
+  </linearGradient></defs>
+  <rect width="600" height="600" fill="url(#g)"/>
+  <rect x="18" y="18" width="564" height="564" fill="none" stroke="#9a7018" stroke-width="3"/>
+  <rect x="28" y="28" width="544" height="544" fill="none" stroke="#4a0d16" stroke-width="1"/>
+  <text x="300" y="96" font-family="Courier New,monospace" font-size="30" font-weight="bold"
+        fill="#e85a4a" text-anchor="middle">VITA AETERNA</text>
+  <text x="300" y="132" font-family="Courier New,monospace" font-size="17"
+        fill="#c9a35f" text-anchor="middle">BLOODLINE #${esc(tokenId)}</text>
+  <text x="300" y="300" font-family="Courier New,monospace" font-size="128" font-weight="bold"
+        fill="#f2d264" text-anchor="middle">${esc(cultists)}</text>
+  <text x="300" y="340" font-family="Courier New,monospace" font-size="19"
+        fill="#c9a35f" text-anchor="middle">CULTISTS</text>
+  <text x="300" y="452" font-family="Courier New,monospace" font-size="62" font-weight="bold"
+        fill="#e8e2c8" text-anchor="middle">${esc(devotion)}</text>
+  <text x="300" y="486" font-family="Courier New,monospace" font-size="19"
+        fill="#8a8069" text-anchor="middle">DEVOTION</text>
+  <text x="300" y="548" font-family="Courier New,monospace" font-size="15"
+        fill="#6b5227" text-anchor="middle">${esc(cultists)}x PAYOUT MULTIPLIER</text>
+</svg>`;
+});
+
 // ========== REGISTER (dev/testnet stand-in for wallet-signature auth) ==========
 // No real wallet is connected yet (see server/README.md "still needed"). The
 // client generates a local pseudo-id and this upserts a Cultist row for it so
