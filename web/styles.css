@@ -690,3 +690,73 @@ body.rite-open .hud {
   border-radius: 2px;
   cursor: pointer;
 }
+
+
+/* ===== Emoji: the button, and the ring it opens ========================== */
+/* The button lives in the screen's bottom-right and fades in with the console,
+   exactly as the mute toggle does at the top-right — same transition, same
+   powered gate, so the two read as a pair rather than as two separate ideas. */
+.emoji-toggle {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s ease;
+  position: absolute;
+  right: 3.2%;
+  bottom: 3.2%;
+  width: 11%;
+  aspect-ratio: 1;
+  z-index: 7;
+  border-radius: 50%;
+  background: rgba(6, 20, 12, 0.8);
+  border: 1px solid #2f7a4e;
+  color: #59ffa6;
+  font-size: clamp(9px, 4.4cqw, 18px);
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+body.powered .emoji-toggle { opacity: 1; pointer-events: auto; }
+.emoji-toggle:active { background: rgba(12, 40, 24, 0.95); }
+/* while a dialogue box owns the screen the button steps aside, the way the HUD does */
+body.dialogue-open .emoji-toggle { opacity: 0; pointer-events: none; }
+
+.emoji-wheel[hidden] { display: none; }
+.emoji-wheel {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  background: radial-gradient(ellipse at 50% 55%, rgba(6,10,18,0.72), rgba(4,6,12,0.93));
+  touch-action: none;
+  overflow: hidden;
+}
+.ew-ring {
+  position: absolute;
+  left: 6%; right: 6%;
+  top: 30%; height: 44%;
+}
+.ew-face {
+  position: absolute;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-size: clamp(13px, 7cqw, 30px);
+  line-height: 1;
+  will-change: transform, opacity;
+  transition: filter 0.12s linear;
+}
+/* the one at the front gets a seat to sit on, so it reads as chosen */
+.ew-front {
+  text-shadow: 0 0 10px rgba(120, 255, 170, 0.35);
+}
+.ew-hint {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 6%;
+  margin: 0;
+  text-align: center;
+  color: #7f9a86;
+  font-size: clamp(5px, 2.1cqw, 9px);
+  letter-spacing: 0.06em;
+}

@@ -2,6 +2,7 @@ import { Input, makeLoop } from './engine.js';
 import { BootScene } from './scenes/boot.js';
 import { MenuScene } from './scenes/menu.js';
 import { DialogueBox, THEMES } from './dialogue.js';
+import { EmojiWheel } from './emojiwheel.js';
 import { LORE } from './lore.js';
 import { CourtyardScene } from './scenes/courtyard.js';
 import { api, setTokenId, getTokenId } from './api.js';
@@ -34,6 +35,23 @@ const muteToggle = document.getElementById('muteToggle');
 const communionOverlay = document.getElementById('communionOverlay');
 const communionBody = document.getElementById('communionBody');
 const communionClose = document.getElementById('communionClose');
+const emojiToggle = document.getElementById('emojiToggle');
+const emojiWheelEl = document.getElementById('emojiWheel');
+
+// Speech in the abbey is emoji and nothing else. The ring is built once and
+// reused; picking sends through the scene, which broadcasts it and floats it
+// over the player's own head for a moment.
+const emojiWheel = new EmojiWheel(emojiWheelEl, (e) => {
+  if (scene && scene._sendEmoji) scene._sendEmoji(e);
+});
+emojiToggle.addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  // Only meaningful with a scene that can speak — the menu has no one to
+  // speak to, so the button does nothing there rather than opening onto a
+  // ring that cannot send.
+  if (!scene || !scene._sendEmoji) { showToast('Nobody to speak to here.'); return; }
+  emojiWheel.toggle();
+});
 
 // Two looping hymns. Created fresh inside their respective user-gesture
 // handlers (powerOn / enterCourtyard) so mobile browsers always allow
