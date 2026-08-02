@@ -692,3 +692,71 @@ body.rite-open .hud {
   pointer-events: none;
   transition: opacity .12s ease-out;
 }
+
+/* ---- The mint rite's Cultist slider ------------------------------------- */
+/* Replaces a grid of twenty buttons. The count is fixed at mint and can never
+   be raised, so the number and its cost are shown large and live rather than
+   being read off whichever tile the thumb is nearest. */
+.cultist-slider {
+  width: 86%;
+  max-width: 260px;
+  margin: 2px auto 6px;
+}
+.cultist-count {
+  margin: 0;
+  color: #f2d264;
+  font-size: clamp(11px, 3.4cqw, 17px);
+  letter-spacing: 0.04em;
+}
+.cultist-cost {
+  margin: 2px 0 6px;
+  color: #8ef06e;
+  font-size: clamp(8px, 2.6cqw, 12px);
+}
+.cultist-ticks {
+  display: flex;
+  justify-content: space-between;
+  margin: 2px 0 0;
+  color: #6b5227;
+  font-size: clamp(6px, 2cqw, 9px);
+}
+#cultistRange {
+  width: 100%;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+#cultistRange:focus { outline: none; }
+#cultistRange::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #3a2408;
+  border: 1px solid #6b5227;
+  border-radius: 2px;
+}
+#cultistRange::-moz-range-track {
+  height: 4px;
+  background: #3a2408;
+  border: 1px solid #6b5227;
+  border-radius: 2px;
+}
+/* A big thumb: this is dragged with a thumb on a phone, not a mouse. */
+#cultistRange::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -7px;
+  background: #d24b4b;
+  border: 1px solid #f2d264;
+  border-radius: 2px;
+  cursor: pointer;
+}
+#cultistRange::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #d24b4b;
+  border: 1px solid #f2d264;
+  border-radius: 2px;
+  cursor: pointer;
+}

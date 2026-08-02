@@ -9,7 +9,7 @@ import { MancalaBoard } from './mancala.js';
 import { sfx, AUDIO_MASTER } from './sfx.js';
 import {
   connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen,
-  fetchPricePerCultist, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
+  fetchPricePerCultist, formatAvax, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
 } from './wallet.js';
 
 const canvas = document.getElementById('screen');
@@ -482,6 +482,14 @@ const walletBackBtn = document.getElementById('walletBack');
 const walletInput = document.getElementById('walletInput');
 const walletSubmitBtn = document.getElementById('walletSubmit');
 const walletSkipBtn = document.getElementById('walletSkip');
+const cultistSlider = document.getElementById('cultistSlider');
+const cultistRange = document.getElementById('cultistRange');
+const cultistCount = document.getElementById('cultistCount');
+const cultistCost = document.getElementById('cultistCost');
+// Cleanup for whichever mint rite is currently open. Held at module level
+// because opening MINT a second time must dismantle the first: two live
+// onRaise listeners would send two transactions for one press.
+let _mintTeardown = null;
 
 // The Doctrine and the mint rite are read in the in-canvas dialogue box now,
 // so the only DOM overlay the entrance still raises is the wallet flow.
@@ -645,9 +653,14 @@ async function bindBloodline(bl, menu) {
 // The picker, for a wallet holding more than one. Reuses the entrance overlay
 // the Cultist chooser already lived in.
 function openBloodlinePicker(menu) {
+  if (_mintTeardown) _mintTeardown();
   walletOverlay.hidden = false;
   walletConnectBtn.hidden = true;
   walletEnterBtn.hidden = true;
+  walletInput.hidden = true;
+  walletSubmitBtn.hidden = true;
+  walletSkipBtn.hidden = true;
+  cultistSlider.hidden = true;
   cultistGrid.hidden = false;
   cultistGrid.innerHTML = '';
   walletTitle.textContent = 'Choose your Bloodline';
@@ -672,9 +685,11 @@ function openBloodlinePicker(menu) {
 // they share this. Resolves with the trimmed string, or null if skipped.
 function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = 'Not now' }) {
   return new Promise((resolve) => {
+    if (_mintTeardown) _mintTeardown();
     walletOverlay.hidden = false;
     cultistGrid.hidden = true;
     cultistGrid.innerHTML = '';
+    cultistSlider.hidden = true;
     walletConnectBtn.hidden = true;
     walletEnterBtn.hidden = true;
     walletTitle.textContent = title;
@@ -773,9 +788,12 @@ async function openMintPicker(menu) {
     if (menu) menu.sel = 0;
     return;
   }
+  if (_mintTeardown) _mintTeardown();
   walletOverlay.hidden = false;
   walletConnectBtn.hidden = true;
   walletEnterBtn.hidden = true;
+  walletInput.hidden = true;
+  walletSkipBtn.hidden = true;
   cultistGrid.hidden = true;
   cultistGrid.innerHTML = '';
   walletTitle.textContent = 'Raise a Bloodline';
@@ -793,52 +811,73 @@ async function openMintPicker(menu) {
     return;
   }
 
-  const avax = (wei) => {
-    const s = (wei * 100000n / 10n ** 18n).toString().padStart(3, '0');
-    return `${s.slice(0, -2)}.${s.slice(-2)}`;
-  };
-  walletMsg.innerHTML = `How many Cultists shall this Bloodline hold? The count is fixed forever `
-    + `at the moment it is raised. <span class="addr">${avax(price)} AVAX</span> each.`;
-  cultistGrid.hidden = false;
+  const total = (n) => price * BigInt(n);
+  walletMsg.innerHTML = 'How many Cultists shall this Bloodline hold? The count is fixed '
+    + `forever at the moment it is raised. <span class="addr">${formatAvax(price)} AVAX</span> each.`;
 
-  for (let n = 1; n <= 20; n++) {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'cultist-card';
-    card.textContent = `${n} — ${avax(price * BigInt(n))} AVAX`;
-    card.addEventListener('click', async () => {
-      [...cultistGrid.children].forEach((el) => { el.disabled = true; });
-      walletMsg.textContent = `Confirm ${n} Cultist${n === 1 ? '' : 's'} in your wallet…`;
-      try {
-        const hash = await mintBloodline(connectedAddr, n);
-        walletMsg.innerHTML = `Sent. Waiting for the chain to seal it…<br><span class="addr">${String(hash).slice(0, 18)}…</span>`;
-        const receipt = await waitForTx(hash);
-        if (receipt && receipt.status === '0x0') throw new Error('The transaction was reverted.');
-        walletOverlay.hidden = true;
-        if (!receipt) {
-          showToast('Mint sent but not yet confirmed. Reconnect in a moment to see it.');
-          return;
-        }
-        // Re-read holdings and bind the new Bloodline.
-        heldBloodlines = await fetchBloodlines(connectedAddr);
-        heldCultists = totalCultists(heldBloodlines);
-        const fresh = heldBloodlines[heldBloodlines.length - 1];
-        showToast(`The Bloodline is raised — ${n} Cultist${n === 1 ? '' : 's'}.`);
-        if (fresh) await bindBloodline(fresh, menu);
-      } catch (e) {
-        const why = {
-          MINT_CLOSED: 'The mint is not open yet.',
-          BAD_CULTISTS: 'A Bloodline holds between 1 and 20 Cultists.',
-          NO_WALLET: 'No wallet connected.',
-          NO_CONTRACT: 'The collection is not configured.',
-        }[e && e.message] || (e && e.message) || 'The rite failed.';
-        walletMsg.textContent = why;
-        [...cultistGrid.children].forEach((el) => { el.disabled = false; });
-        sfx.error();
+  cultistSlider.hidden = false;
+  walletSubmitBtn.hidden = false;
+  walletSubmitBtn.textContent = 'Raise it';
+  cultistRange.value = '1';
+
+  const paint = () => {
+    const n = Number(cultistRange.value);
+    cultistCount.textContent = `${n} Cultist${n === 1 ? '' : 's'}`;
+    cultistCost.textContent = `${formatAvax(total(n))} AVAX`;
+  };
+  paint();
+
+  // Cleared on every exit from this rite, or the listeners stack up each time
+  // the player opens MINT and one press would fire several mints.
+  const teardown = () => {
+    cultistSlider.hidden = true;
+    walletSubmitBtn.hidden = true;
+    cultistRange.removeEventListener('input', paint);
+    walletSubmitBtn.removeEventListener('click', onRaise);
+    walletBackBtn.removeEventListener('click', teardown);
+    _mintTeardown = null;
+  };
+  _mintTeardown = teardown;
+
+  async function onRaise() {
+    const n = Number(cultistRange.value);
+    cultistRange.disabled = true;
+    walletSubmitBtn.disabled = true;
+    walletMsg.textContent = `Confirm ${n} Cultist${n === 1 ? '' : 's'} in your wallet…`;
+    try {
+      const hash = await mintBloodline(connectedAddr, n);
+      walletMsg.innerHTML = `Sent. Waiting for the chain to seal it…<br><span class="addr">${String(hash).slice(0, 18)}…</span>`;
+      const receipt = await waitForTx(hash);
+      if (receipt && receipt.status === '0x0') throw new Error('The transaction was reverted.');
+      teardown();
+      walletOverlay.hidden = true;
+      if (!receipt) {
+        showToast('Mint sent but not yet confirmed. Reconnect in a moment to see it.');
+        return;
       }
-    });
-    cultistGrid.appendChild(card);
+      heldBloodlines = await fetchBloodlines(connectedAddr);
+      heldCultists = totalCultists(heldBloodlines);
+      const fresh = heldBloodlines[heldBloodlines.length - 1];
+      showToast(`The Bloodline is raised — ${n} Cultist${n === 1 ? '' : 's'}.`);
+      if (fresh) await bindBloodline(fresh, menu);
+    } catch (e) {
+      const why = {
+        MINT_CLOSED: 'The mint is not open yet.',
+        BAD_CULTISTS: 'A Bloodline holds between 1 and 20 Cultists.',
+        NO_WALLET: 'No wallet connected.',
+        NO_CONTRACT: 'The collection is not configured.',
+      }[e && e.message] || (e && e.message) || 'The rite failed.';
+      walletMsg.textContent = why;
+      sfx.error();
+    } finally {
+      cultistRange.disabled = false;
+      walletSubmitBtn.disabled = false;
+    }
   }
+
+  cultistRange.addEventListener('input', paint);
+  walletSubmitBtn.addEventListener('click', onRaise);
+  walletBackBtn.addEventListener('click', teardown);
 }
 
 // The entrance overlay used to run a whole second wallet flow of its own —

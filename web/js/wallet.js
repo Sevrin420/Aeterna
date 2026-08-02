@@ -179,6 +179,21 @@ export async function fetchPricePerCultist() {
   return hexToBig(await ethCall(SEL.pricePerCultist));
 }
 
+// wei -> a human AVAX string. BigInt the whole way: a Number cannot hold wei
+// without losing the low digits, and the earlier version of this scaled by 1e5
+// and then split the string as if it were hundredths, so 0.01 AVAX read as
+// "10.00". Display only — what is actually SENT is computed from the chain's
+// own price in mintBloodline() and never from this.
+export function formatAvax(wei, dp = 4, minDp = 2) {
+  const scale = 10n ** 18n;
+  const whole = wei / scale;
+  const frac = ((wei % scale) * 10n ** BigInt(dp)) / scale;
+  // Trim the noise off the end, but never below minDp — this is a price, and
+  // "0.2 AVAX" reads as an odd amount where "0.20 AVAX" reads as money.
+  const fs = frac.toString().padStart(dp, '0').replace(/0+$/, '').padEnd(minDp, '0');
+  return fs ? `${whole}.${fs}` : `${whole}`;
+}
+
 export async function fetchMintOpen() {
   return hexToBig(await ethCall(SEL.mintOpen)) === 1n;
 }

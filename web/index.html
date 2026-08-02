@@ -82,6 +82,15 @@
                they are asked one after the other and never at the same time. -->
           <input class="naming-input" id="walletInput" type="text" maxlength="16"
                  autocomplete="off" autocapitalize="none" spellcheck="false" hidden />
+          <!-- The mint rite: how many Cultists this Bloodline will hold, fixed
+               forever the moment it is raised. -->
+          <div class="cultist-slider" id="cultistSlider" hidden>
+            <p class="cultist-count" id="cultistCount">1 Cultist</p>
+            <p class="cultist-cost" id="cultistCost">0.01 AVAX</p>
+            <input type="range" id="cultistRange" min="1" max="20" step="1" value="1"
+                   aria-label="Cultists in this Bloodline" />
+            <p class="cultist-ticks"><span>1</span><span>20</span></p>
+          </div>
           <button type="button" class="naming-submit" id="walletSubmit" hidden>Confirm</button>
           <button type="button" class="naming-submit" id="walletSkip" hidden>Not now</button>
           <button type="button" class="naming-submit" id="walletConnect">Connect Wallet</button>
