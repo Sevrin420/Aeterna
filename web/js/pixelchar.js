@@ -377,17 +377,19 @@ function hairCells(rows) {
   return n;
 }
 
-const SIDE_FIX = new Map();
-function matchProfileHairToFront(h, name) {
-  if (SIDE_FIX.has(name)) return SIDE_FIX.get(name);
+const HAIR_FIX = new Map();
+function matchHairToFront(h, name, view) {
+  const key = `${name}|${view}`;
+  if (HAIR_FIX.has(key)) return HAIR_FIX.get(key);
   const front = hairCells(h.down);
-  const side = hairCells(h.side);
-  let out = h.side;
-  if (side > 0 && front / side < HAIR_MATCH) {
-    out = h.side.map((row, y) => (y >= HEAD_ROWS ? row
+  const rows = h[view];
+  const here = hairCells(rows);
+  let out = rows;
+  if (here > 0 && front / here < HAIR_MATCH) {
+    out = rows.map((row, y) => (y >= HEAD_ROWS ? row
       : [...row].map((c) => (c === 'K' ? 'S' : c === 'k' ? 's' : c)).join('')));
   }
-  SIDE_FIX.set(name, out);
+  HAIR_FIX.set(key, out);
   return out;
 }
 
@@ -395,8 +397,11 @@ function lttpHead(name) {
   const h = HD_HEADS[name] || HD_HEADS.cowl;
   return {
     down: lttpFace(h.down, 'down', name),
-    up: lttpFace(h.up, 'up', name),
-    side: lttpFace(matchProfileHairToFront(h, name), 'side', name),
+    // The BACK view has the same disagreement as the profile — bald is 28 hair
+    // cells from the front and 96 from behind — and it is the view the shrine
+    // rite spends most of its time in, with the worshipper turned away.
+    up: lttpFace(matchHairToFront(h, name, 'up'), 'up', name),
+    side: lttpFace(matchHairToFront(h, name, 'side'), 'side', name),
   };
 }
 
@@ -683,6 +688,24 @@ function makeCharacterHD_human(t) {
     E: t.iris || '#1a1216', W: '#fff6e6', M: t.mouth || '#8e4a42',
     B: pants.base, b: pants.sh, F: shoes.base, f: shoes.sh
   };
+  // A bare figure. Every garment cell becomes the HEAD's exact skin ramp.
+  //
+  // Setting the garment colours to the skin colour is not enough, and that is
+  // what was wrong: the head is built with ramp(), the coat and pants with
+  // rampWool() and the belt with rampLeather(), and those three mix their
+  // highlights and shadows differently. Same base colour, three different
+  // materials — so the body read as a skin-coloured garment rather than as
+  // skin, and rampLeather's highlight (56% toward cream) drew a bright band
+  // across the waist that looked exactly like a thin belt.
+  if (t.bare) {
+    pal['3'] = skin.hi; pal.J = skin.base; pal.j = skin.sh;      // coat
+    pal.B = skin.base; pal.b = skin.sh;                          // legs
+    pal.C = skin.base; pal.R = skin.base;                        // shirt, tie
+    pal.T = skin.base; pal.Y = skin.base;                        // the belt, gone
+    pal.L = skin.sh;                                             // trim
+    pal.F = skin.base; pal.f = skin.sh;                          // shoes
+    pal.G = skin.base; pal.g = skin.base;                        // buttons, buckles
+  }
   const metal = ramp(t.metal || '#d9c07a');
   const jewel = ramp(t.jewel || '#b02a3c');
   const bycol = t.bycocketCol ? ramp(t.bycocketCol) : ramp('#2f6a38');
@@ -868,6 +891,10 @@ export function traitsForNaked(seed, sex) {
     // as a skin-coloured robe rather than as a body — whereas vest over suit
     // legs gives a torso and two legs, which is what a bare figure needs.
     body: 'vest', legs: 'suit',
+    // `bare` makes the palette build every garment cell from the head's own
+    // skin ramp — see makeCharacterHD. The colours below still matter as a
+    // fallback, but they are no longer what makes the figure read as skin.
+    bare: true,
     hat: skin, coat: skin, pants: skin, shirt: skin, shoes: skin,
     leather: skin, trim: skin, tie: skin,
     cloak: null,
