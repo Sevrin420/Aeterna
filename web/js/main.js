@@ -5,7 +5,6 @@ import { DialogueBox } from './dialogue.js';
 import { LORE } from './lore.js';
 import { CourtyardScene } from './scenes/courtyard.js';
 import { api, setTokenId, getTokenId } from './api.js';
-import { MancalaBoard } from './mancala.js';
 import { sfx, AUDIO_MASTER } from './sfx.js';
 import {
   connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen,
@@ -32,11 +31,6 @@ const toastEl = document.getElementById('toast');
 const bootVeil = document.getElementById('bootVeil');
 const powerKnob = powerSwitch.querySelector('.power-knob');
 const muteToggle = document.getElementById('muteToggle');
-const mancalaOverlay = document.getElementById('mancalaOverlay');
-const mancalaStatus = document.getElementById('mancalaStatus');
-const mancalaCanvas = document.getElementById('mancalaCanvas');
-const mancalaLeaveBtn = document.getElementById('mancalaLeave');
-const mancalaSoloBtn = document.getElementById('mancalaSolo');
 const communionOverlay = document.getElementById('communionOverlay');
 const communionBody = document.getElementById('communionBody');
 const communionClose = document.getElementById('communionClose');
@@ -323,68 +317,6 @@ function ensureSocket() {
 }
 
 // The drawn board owns every pit, every stone and every click on them. It is
-// built on first use rather than at load, because the canvas has no size until
-// the overlay is shown and a zero-sized canvas measures itself as zero forever.
-let mancalaBoard = null;
-function getMancalaBoard() {
-  if (!mancalaBoard) {
-    mancalaBoard = new MancalaBoard(mancalaCanvas, {
-      onPit: (pit) => { if (scene && scene.sendMancalaMove) scene.sendMancalaMove(pit); },
-    });
-  }
-  return mancalaBoard;
-}
-
-function showMancala(state) {
-  mancalaOverlay.hidden = false;
-  const mb = getMancalaBoard();
-  mb.start();
-
-  if (state.type === 'end' || state.forfeited) {
-    mb.setState({ ...state, board: state.board || null });
-    mancalaSoloBtn.hidden = true;
-    const won = state.winnerSeat === state.seat;
-    mancalaStatus.textContent = state.forfeited
-      ? 'Your opponent left the table. Your wager was refunded.'
-      : state.solo
-        ? (state.draw ? 'A stalemate with the Abbot.' : won ? 'You beat the Abbot! The order takes note.' : 'The Abbot bests you.')
-        : state.draw
-          ? 'A draw — both wagers refunded.'
-          : won ? `You win! +${state.payout} Devotion.` : 'You lose the wager.';
-    if (!state.forfeited && !state.draw) sfx[won ? 'streakBonus' : 'error']?.();
-    api.me().then(updateHud).catch(() => {});
-    // Longer than it was: the final score is now painted on the board itself,
-    // and 3.2s was not enough to read a scoreline you were not expecting.
-    setTimeout(() => { mancalaOverlay.hidden = true; mb.stop(); }, 6000);
-    return;
-  }
-
-  if (state.waiting || !state.board) {
-    mancalaStatus.textContent = 'Waiting for an opponent to sit...';
-    mb.setState(state);
-    mancalaSoloBtn.hidden = false; // offer a solo game against the Abbot
-    return;
-  }
-
-  mb.setState(state);
-  mancalaSoloBtn.hidden = true;
-  const yourTurn = state.turn === state.seat;
-  if (state.solo) {
-    mancalaStatus.textContent = yourTurn ? 'You vs the Abbot · Your move' : 'The Abbot contemplates…';
-  } else {
-    mancalaStatus.textContent = `${state.names[0]} vs ${state.names[1]} · Wager ${state.wager} Devotion each · ${yourTurn ? 'Your move' : "Opponent's move"}`;
-  }
-}
-
-mancalaSoloBtn.addEventListener('click', () => {
-  if (scene && scene.startMancalaSolo) scene.startMancalaSolo();
-});
-mancalaLeaveBtn.addEventListener('click', () => {
-  if (scene && scene.leaveMancala) scene.leaveMancala();
-  mancalaOverlay.hidden = true;
-  if (mancalaBoard) mancalaBoard.stop();
-});
-
 function showFinalCommunion(info) {
   communionBody.textContent = `Season ${info.season}, Day ${info.day} has arrived. The abbey gathers for Final Communion — gold reveal and the choice to Leave or Tithe are not yet available in this build; the Abbot will announce next steps.`;
   communionOverlay.hidden = false;
@@ -433,7 +365,6 @@ function enterCourtyard(player) {
     socket: ensureSocket(),
     onSaveExit: returnToEntrance,
     onChatOpen: openChat,
-    onMancala: showMancala,
     onFinalCommunion: showFinalCommunion,
     crowd: CROWD,
   });
@@ -1057,7 +988,6 @@ function powerOff() {
   chatForm.hidden = true;
   hud.hidden = true;
   toastEl.hidden = true;
-  mancalaOverlay.hidden = true;
   communionOverlay.hidden = true;
   walletOverlay.hidden = true;
   drawOff();
@@ -1096,13 +1026,12 @@ powerSwitch.addEventListener('pointermove', (e) => {
 // window, so this runs before the engine's own B handling and can swallow the
 // press — the scene underneath never sees it, so B won't also drop a gift etc.
 const backableOverlays = () => [
-  communionOverlay, mancalaOverlay,
+  communionOverlay,
   walletOverlay, chatForm,
 ];
 function anyOverlayOpen() { return backableOverlays().some((o) => o && !o.hidden); }
 function backOut() {
   if (!communionOverlay.hidden) { communionOverlay.hidden = true; return true; }
-  if (!mancalaOverlay.hidden) { if (scene && scene.leaveMancala) scene.leaveMancala(); mancalaOverlay.hidden = true; return true; }
   if (!walletOverlay.hidden) { walletOverlay.hidden = true; if (scene && scene.resume) scene.resume(); return true; }
   if (!chatForm.hidden) { chatForm.hidden = true; return true; }
   return false;

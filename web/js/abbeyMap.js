@@ -125,18 +125,19 @@ export const CONFESSIONAL_BOOTH_ROW = 30;
 export const CONFESSIONAL_BOOTH_COL = 40;
 
 // The gaming hall: an alcove cut SOUTH out of the transept's west arm, so the
-// confessor's niche and this open off the same arm on opposite sides — you
-// settle your account with the abbey upstairs and gamble it away three tiles
-// later. It is the one room in the building with no rite in it, which is why
-// it gets benches: somewhere to sit is the whole difference between a chamber
-// and a den.
-export const MANCALA_HALL = { x0: 37, y0: 50, x1: 45, y1: 57 };
-export const MANCALA_THROAT = [40, 41, 42];   // walkable cols at TRANSEPT.y1 + 1
-export const MANCALA_SEAT = { col: 41, row: 54 };
-export const MANCALA_BENCHES = [
+// confessor's niche and this open off the same arm on opposite sides. It is the
+// one room in the building with no rite in it, which is why it gets benches:
+// somewhere to sit is the whole difference between a chamber and a den.
+//
+// The gaming table that stood in the middle is gone, and with it the game.
+// The room stays: an alcove off the transept with benches round the walls and
+// nothing asked of anyone who sits in it.
+export const BENCH_HALL = { x0: 37, y0: 50, x1: 45, y1: 57 };
+export const BENCH_THROAT = [40, 41, 42];   // walkable cols at TRANSEPT.y1 + 1
+export const HALL_BENCHES = [
   { col: 38, row: 53 }, { col: 38, row: 55 },
   { col: 44, row: 53 }, { col: 44, row: 55 },
-  { col: 41, row: 51 },
+  { col: 41, row: 51 }, { col: 41, row: 56 },
 ];
 
 // Eight figures set into the walls of the cross, each on the one side of its
@@ -308,7 +309,7 @@ export const SKULL_SHRINE = { col: STAR_C.col, row: STAR_C.row };
 // without a word of instruction.
 export const SKULL_ALTAR = { col: STAR_C.col, row: STAR_C.row + 5 };
 
-// The stair lands in the star's upper-right arm. The mancala table used to sit
+// The stair lands in the star's upper-right arm. The gaming table used to sit
 // in the lower-left one; it has its own hall off the transept now, because a
 // wager table in the shrine room meant the one place you go to gamble was also
 // the one place you go to be worshipped at.
@@ -347,8 +348,8 @@ function buildGrid() {
   fillRect(grid, CONFESSIONAL.x0, CONFESSIONAL.y0, CONFESSIONAL.x1, CONFESSIONAL.y1, '.');
   for (const c of CONFESSIONAL_THROAT) grid[TRANSEPT.y0 - 1][c] = '.';
   // gaming hall + its throat through the transept's SOUTH wall
-  fillRect(grid, MANCALA_HALL.x0, MANCALA_HALL.y0, MANCALA_HALL.x1, MANCALA_HALL.y1, '.');
-  for (const c of MANCALA_THROAT) grid[TRANSEPT.y1 + 1][c] = '.';
+  fillRect(grid, BENCH_HALL.x0, BENCH_HALL.y0, BENCH_HALL.x1, BENCH_HALL.y1, '.');
+  for (const c of BENCH_THROAT) grid[TRANSEPT.y1 + 1][c] = '.';
   // the mouth of each cell — walkable, and nothing stands in it any more
   for (const rm of ROOMS) for (const c of rm.mouthCols) grid[rm.mouth.row][c] = 'c';
 
@@ -364,8 +365,8 @@ function buildGrid() {
   wallRing(grid, CONFESSIONAL.x0 - 2, CONFESSIONAL.y0 - 2, CONFESSIONAL.x1 + 2, TRANSEPT.y0 - 1);
   // Same two courses for the hall, for the same reason: it pushes out into the
   // void below the arm rather than being carved from a lit room.
-  wallRing(grid, MANCALA_HALL.x0 - 1, TRANSEPT.y1 + 1, MANCALA_HALL.x1 + 1, MANCALA_HALL.y1 + 1);
-  wallRing(grid, MANCALA_HALL.x0 - 2, TRANSEPT.y1 + 1, MANCALA_HALL.x1 + 2, MANCALA_HALL.y1 + 2);
+  wallRing(grid, BENCH_HALL.x0 - 1, TRANSEPT.y1 + 1, BENCH_HALL.x1 + 1, BENCH_HALL.y1 + 1);
+  wallRing(grid, BENCH_HALL.x0 - 2, TRANSEPT.y1 + 1, BENCH_HALL.x1 + 2, BENCH_HALL.y1 + 2);
   wallRing(grid, WEST_CORRIDOR.x0 - 1, WEST_CORRIDOR.y0 - 1, WEST_CORRIDOR.x1 + 1, WEST_CORRIDOR.y1 + 1);
   for (const rm of ROOMS) wallRing(grid, rm.x0 - 1, rm.y0 - 1, rm.x1 + 1, rm.y1 + 1);
   // The star gets its walls wrapped around its actual cells — a ring round the
@@ -419,8 +420,7 @@ for (const b of BEDS) prop('bed', b.col, b.row);
 
 // --- EAST SKULL CHAMBER (chant to the skulls; also holds the ritual games) ---
 prop('stair-up', SKULL_STAIR.col, SKULL_STAIR.row, false, { dest: { col: TRANSEPT.x1 - 2, row: TRANSEPT.y0 + 8 } });
-prop('mancala-table', MANCALA_SEAT.col, MANCALA_SEAT.row);
-for (const b of MANCALA_BENCHES) prop('bench', b.col, b.row);
+for (const b of HALL_BENCHES) prop('bench', b.col, b.row);
 // The shrine's footprint. Nothing draws from these — the skull is scene-owned
 // because it floats, spins, wakes and descends — they exist only to be solid.
 for (let dc = -1; dc <= 1; dc++) {

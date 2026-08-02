@@ -147,12 +147,6 @@ export const LORE = {
         + 'in one."\n\n'
         + '"Kneel, or go."',
     },
-    mancala: {
-      speaker: 'The Mancala Table',
-      text: 'Forty-eight stones and two rows of pits, worn smooth by hands that '
-        + 'are no longer attached to anyone.\n\n'
-        + 'Sit, and cast lots against whoever else is fool enough to sit.',
-    },
     // One page, and it ends in a question — so it has to say what lying down
     // costs in the space of a few lines. The old second paragraph (the abbey
     // waking you in another cell) is flavour the player learns by waking there.

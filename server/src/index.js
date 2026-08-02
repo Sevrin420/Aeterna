@@ -783,178 +783,12 @@ if (process.env.REDIS_URL) {
   }
 }
 
-// ========== MANCALA (2-player wager game, GDD section 10) ==========
-// One physical table. Classic Kalah rules: indices 0-5 are seat 0's pits,
-// 6 is seat 0's store; 7-12 are seat 1's pits, 13 is seat 1's store.
-// NOTE: same dev-mode stand-in as confession/save elsewhere in this file —
-// the "wager" moves real Devotion between players, not real ETH (no
-// on-chain payment verification exists yet anywhere in this server).
-// Mancala is wagered in crypto, not in Devotion. The table used to stake and
-// pay out Devotion, which made the game a fourth way to gain (and lose) it;
-// nothing here touches Devotion any more.
+// The mancala table is gone, and with it the wager game, its solo Abbot
+// opponent and the shared two-seat table. The room it stood in remains: an
+// alcove off the transept with benches and no rite in it.
 //
-// The escrow itself is NOT implemented. There is no on-chain hold, no
-// settlement and no transfer — the server runs the game and reports who won
-// and what the pot would have been. MANCALA_WAGER is denominated in ETH and
-// the 5% rake is applied to the pot, so the numbers the client shows are the
-// real ones; what is missing is the part that moves money. Until that exists,
-// the table is a friendly game with a scoreboard.
-const MANCALA_WAGER = 0.01;      // ETH staked by each seat
-const MANCALA_RAKE = 0.05;       // the house takes 5% of the pot
-const mancalaTable = { seats: [null, null], wallets: [null, null], names: [null, null], board: null, turn: null, active: false };
-
-function mancalaNewBoard() { return [4, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 0]; }
-const mancalaOwnPits = (seat) => (seat === 0 ? [0, 1, 2, 3, 4, 5] : [7, 8, 9, 10, 11, 12]);
-const mancalaOwnStore = (seat) => (seat === 0 ? 6 : 13);
-const mancalaOppStore = (seat) => (seat === 0 ? 13 : 6);
-
-function mancalaCheckGameOver(board) {
-  const side0Empty = [0, 1, 2, 3, 4, 5].every((i) => board[i] === 0);
-  const side1Empty = [7, 8, 9, 10, 11, 12].every((i) => board[i] === 0);
-  if (!side0Empty && !side1Empty) return false;
-  const sweep = side0Empty ? [7, 8, 9, 10, 11, 12] : [0, 1, 2, 3, 4, 5];
-  const store = side0Empty ? 13 : 6;
-  for (const i of sweep) { board[store] += board[i]; board[i] = 0; }
-  return true;
-}
-
-function mancalaApplyMove(board, seat, pit) {
-  let seeds = board[pit];
-  board[pit] = 0;
-  const oppStore = mancalaOppStore(seat);
-  let idx = pit;
-  while (seeds > 0) {
-    idx = (idx + 1) % 14;
-    if (idx === oppStore) continue;
-    board[idx] += 1;
-    seeds -= 1;
-  }
-  const ownStore = mancalaOwnStore(seat);
-  const landedInOwnStore = idx === ownStore;
-  if (!landedInOwnStore && mancalaOwnPits(seat).includes(idx) && board[idx] === 1) {
-    const oppIdx = 12 - idx;
-    if (board[oppIdx] > 0) {
-      board[ownStore] += board[oppIdx] + 1;
-      board[idx] = 0;
-      board[oppIdx] = 0;
-    }
-  }
-  return { extraTurn: landedInOwnStore, gameOver: mancalaCheckGameOver(board) };
-}
-
-function mancalaResetTable() {
-  mancalaTable.seats = [null, null];
-  mancalaTable.wallets = [null, null];
-  mancalaTable.names = [null, null];
-  mancalaTable.board = null;
-  mancalaTable.turn = null;
-  mancalaTable.active = false;
-}
-
-function mancalaBroadcast() {
-  mancalaTable.seats.forEach((sid, seat) => {
-    if (!sid) return;
-    io.to(sid).emit('mancala_state', {
-      board: mancalaTable.board,
-      turn: mancalaTable.turn,
-      active: mancalaTable.active,
-      seat,
-      names: mancalaTable.names,
-      wager: MANCALA_WAGER,
-    });
-  });
-}
-
-function mancalaSettle() {
-  const [s0, s1] = [mancalaTable.board[6], mancalaTable.board[13]];
-  const winnerSeat = s0 === s1 ? null : s0 > s1 ? 0 : 1;
-  const p0 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[0]);
-  const p1 = db.prepare('SELECT * FROM players WHERE wallet = ?').get(mancalaTable.wallets[1]);
-  // A draw returns both stakes; a win pays the pot less the house's 5%. No
-  // Devotion changes hands either way — see MANCALA_WAGER. When escrow exists,
-  // this is the one place that has to settle it.
-  let payout = 0;
-  if (winnerSeat !== null) {
-    const pot = MANCALA_WAGER * 2;
-    payout = Number((pot * (1 - MANCALA_RAKE)).toFixed(6));
-  }
-  mancalaTable.seats.forEach((sid, seat) => {
-    if (!sid) return;
-    io.to(sid).emit('mancala_end', { board: mancalaTable.board, winnerSeat, seat, payout, draw: winnerSeat === null });
-  });
-  mancalaResetTable();
-}
-
-// ---- Single-player: play the Abbot (a greedy Kalah AI) ----
-// Solo games are per-socket and independent of the shared 2-player table, so
-// practising against the Abbot never occupies the wager table for others.
-const soloGames = new Map(); // socketId -> { board, turn (0=you,1=Abbot), active }
-const SOLO_NAMES = ['You', 'The Abbot'];
-
-function soloEmit(socket, g, extra = {}) {
-  socket.emit('mancala_state', {
-    solo: true, board: g.board, turn: g.turn, active: g.active,
-    seat: 0, names: SOLO_NAMES, wager: 0, ...extra,
-  });
-}
-
-// Greedy heuristic for seat 1: prefer an extra turn, then seeds banked, then a
-// capture; light random tie-break so the Abbot isn't perfectly predictable.
-function mancalaAiPick(board) {
-  const pits = [7, 8, 9, 10, 11, 12].filter((p) => board[p] > 0);
-  if (!pits.length) return null;
-  let best = pits[0], bestScore = -Infinity;
-  for (const p of pits) {
-    const b = board.slice();
-    const before = b[13];
-    const { extraTurn } = mancalaApplyMove(b, 1, p);
-    let score = (b[13] - before) * 2 + (extraTurn ? 6 : 0) + Math.random();
-    if (score > bestScore) { bestScore = score; best = p; }
-  }
-  return best;
-}
-
-function soloSettle(socket, g) {
-  g.active = false;
-  const [s0, s1] = [g.board[6], g.board[13]];
-  const winnerSeat = s0 === s1 ? null : s0 > s1 ? 0 : 1;
-  socket.emit('mancala_end', { solo: true, board: g.board, winnerSeat, seat: 0, payout: 0, draw: winnerSeat === null });
-  soloGames.delete(socket.id);
-}
-
-// The Abbot takes one move; if it earns an extra turn, it keeps going (with a
-// short delay so the player can watch each move land).
-// Three times slower than it was. The client sows each stone over 570ms now,
-// so at 650ms the Abbot's reply landed while his previous move was still
-// visibly in the air: the board jumped and you never saw what he had done.
-const ABBOT_THINK = 1950;
-
-function soloAiStep(socket) {
-  const g = soloGames.get(socket.id);
-  if (!g || !g.active || g.turn !== 1) return;
-  const pit = mancalaAiPick(g.board);
-  if (pit == null) return soloSettle(socket, g);
-  const { extraTurn, gameOver } = mancalaApplyMove(g.board, 1, pit);
-  if (gameOver) return soloSettle(socket, g);
-  g.turn = extraTurn ? 1 : 0;
-  soloEmit(socket, g);
-  if (g.turn === 1) setTimeout(() => soloAiStep(socket), ABBOT_THINK);
-}
-
-function mancalaLeave(socket) {
-  soloGames.delete(socket.id);
-  const seat = mancalaTable.seats.indexOf(socket.id);
-  if (seat === -1) return;
-  if (mancalaTable.active) {
-    // Forfeit mid-match: both stakes are returned rather than adjudicating a
-    // winner. (Nothing to undo while escrow is unimplemented.)
-    const otherSeat = 1 - seat;
-    if (mancalaTable.seats[otherSeat]) io.to(mancalaTable.seats[otherSeat]).emit('mancala_end', { forfeited: true, seat: otherSeat });
-  } else if (mancalaTable.seats[1 - seat]) {
-    io.to(mancalaTable.seats[1 - seat]).emit('mancala_state', { waiting: true, seat: 1 - seat });
-  }
-  mancalaResetTable();
-}
+// Removed rather than left dark. It was the only thing in the abbey that
+// staked anything, and a half-wired wager table is worse than none.
 
 io.on('connection', (socket) => {
   socket.on('join', (data) => {
@@ -1004,66 +838,9 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('mancala_sit', () => {
-    const p = online.get(socket.id);
-    if (!p || mancalaTable.seats.includes(socket.id)) return;
-    const seat = mancalaTable.seats.findIndex((s) => s === null);
-    if (seat === -1) { socket.emit('mancala_full'); return; }
 
-    mancalaTable.seats[seat] = socket.id;
-    mancalaTable.wallets[seat] = String(p.tokenId || '').toLowerCase();
-    mancalaTable.names[seat] = `${p.prefix} ${p.name}`;
 
-    if (mancalaTable.seats[0] && mancalaTable.seats[1]) {
-      // No Devotion check and no Devotion stake: the wager is in crypto, and
-      // there is nothing to escrow against yet.
-      mancalaTable.board = mancalaNewBoard();
-      mancalaTable.turn = 0;
-      mancalaTable.active = true;
-    }
-    mancalaBroadcast();
-  });
 
-  socket.on('mancala_solo_start', () => {
-    const p = online.get(socket.id);
-    if (!p) return;
-    // step off the shared wager table if seated there (but not mid-match)
-    const seat = mancalaTable.seats.indexOf(socket.id);
-    if (seat !== -1) { if (mancalaTable.active) return; mancalaLeave(socket); }
-    soloGames.set(socket.id, { board: mancalaNewBoard(), turn: 0, active: true });
-    soloEmit(socket, soloGames.get(socket.id));
-  });
-
-  socket.on('mancala_move', (data) => {
-    const pit = Number(data && data.pit);
-
-    // solo game (vs the Abbot) takes priority if this socket has one
-    const g = soloGames.get(socket.id);
-    if (g) {
-      if (!g.active || g.turn !== 0) return;
-      if (!mancalaOwnPits(0).includes(pit) || !g.board[pit]) return;
-      const { extraTurn, gameOver } = mancalaApplyMove(g.board, 0, pit);
-      if (gameOver) return soloSettle(socket, g);
-      g.turn = extraTurn ? 0 : 1;
-      soloEmit(socket, g);
-      if (g.turn === 1) setTimeout(() => soloAiStep(socket), ABBOT_THINK);
-      return;
-    }
-
-    const seat = mancalaTable.seats.indexOf(socket.id);
-    if (seat === -1 || !mancalaTable.active || mancalaTable.turn !== seat) return;
-    if (!mancalaOwnPits(seat).includes(pit) || !mancalaTable.board[pit]) return;
-
-    const { extraTurn, gameOver } = mancalaApplyMove(mancalaTable.board, seat, pit);
-    if (gameOver) {
-      mancalaSettle();
-    } else {
-      mancalaTable.turn = extraTurn ? seat : 1 - seat;
-      mancalaBroadcast();
-    }
-  });
-
-  socket.on('mancala_leave', () => mancalaLeave(socket));
 
   socket.on('disconnect', () => {
     const p = online.get(socket.id);
@@ -1072,7 +849,6 @@ io.on('connection', (socket) => {
       socket.broadcast.emit('peer_left', { net: p.netId });
       online.delete(socket.id);
     }
-    mancalaLeave(socket);
   });
 });
 

@@ -15,7 +15,7 @@ import { SkullShrine } from '../skullrite.js';
 import { FireVigil } from '../vigil.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
-  ALCOVES, ROOMS, BEDS, SPAWN_BEDS, SKULL_ROOM, MANCALA_SEAT, SKULL_ALTAR, NAVE, TRANSEPT, NAVE_CX,
+  ALCOVES, ROOMS, BEDS, SPAWN_BEDS, SKULL_ROOM, SKULL_ALTAR, NAVE, TRANSEPT, NAVE_CX,
   EXIT_ROW, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW, SKULL_SHRINE,
 } from '../abbeyMap.js';
 import {
@@ -63,7 +63,6 @@ const STATIONS = [
   // The skull chamber's daily rite is worshipping the shrine, not chanting at
   // the wall. It is deliberately NOT a station: a station opens a box and runs
   // a rite, and the shrine takes over the whole scene instead. See _shrineAction().
-  { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(MANCALA_SEAT.col), y: px(MANCALA_SEAT.row), r: 13 },
   // The day ends where it began: at a bed, in the cell you woke in or any
   // other. There is no gate any more — walking out of the front door is not a
   // thing a cultist does, and "go and lie down" is a better last instruction
@@ -89,14 +88,13 @@ const CHANT_PAIR = ['Sanguis aeternus', 'Vita aeterna'];
 function boxOpts() { return {}; }
 
 export class CourtyardScene {
-  constructor({ player, onPlayerUpdate, onToast, socket, onSaveExit, onChatOpen, onMancala, onFinalCommunion, crowd }) {
+  constructor({ player, onPlayerUpdate, onToast, socket, onSaveExit, onChatOpen, onFinalCommunion, crowd }) {
     this.player = player;
     this.crowd = this._spawnCrowd(crowd || 0); // demo NPC cultists wandering the sanctuary
     this.onPlayerUpdate = onPlayerUpdate || (() => {});
     this.onToast = onToast || (() => {});
     this.onSaveExit = onSaveExit || (() => {});
     this.onChatOpen = onChatOpen || (() => {});
-    this.onMancala = onMancala || (() => {});
     this.onFinalCommunion = onFinalCommunion || (() => {});
     this.socket = socket || null;
 
@@ -288,10 +286,6 @@ export class CourtyardScene {
     };
     this._onChatMsg = (p) => this.showChat(p.net, p.text);
 
-    this._onMancalaState = (state) => this.onMancala({ type: 'state', ...state });
-    this._onMancalaEnd = (state) => this.onMancala({ type: 'end', ...state });
-    this._onMancalaError = (data) => this.onToast(data.message);
-    this._onMancalaFull = () => this.onToast('The table is full — wait for a seat.');
 
     s.on('welcome', this._onWelcome);
     s.on('peers', this._onPeers);
@@ -299,10 +293,6 @@ export class CourtyardScene {
     s.on('peer_left', this._onPeerLeft);
     s.on('emoji_show', this._onEmoji);
     s.on('chat_msg', this._onChatMsg);
-    s.on('mancala_state', this._onMancalaState);
-    s.on('mancala_end', this._onMancalaEnd);
-    s.on('mancala_error', this._onMancalaError);
-    s.on('mancala_full', this._onMancalaFull);
   }
 
   _unbindSocket() {
@@ -314,10 +304,6 @@ export class CourtyardScene {
     s.off('peer_left', this._onPeerLeft);
     s.off('emoji_show', this._onEmoji);
     s.off('chat_msg', this._onChatMsg);
-    s.off('mancala_state', this._onMancalaState);
-    s.off('mancala_end', this._onMancalaEnd);
-    s.off('mancala_error', this._onMancalaError);
-    s.off('mancala_full', this._onMancalaFull);
   }
 
   _sendEmoji(emoji) {
@@ -325,17 +311,8 @@ export class CourtyardScene {
     if (this.socket) this.socket.emit('emoji', { emoji });
   }
 
-  sendMancalaMove(pit) {
-    if (this.socket) this.socket.emit('mancala_move', { pit });
-  }
 
-  startMancalaSolo() {
-    if (this.socket) this.socket.emit('mancala_solo_start');
-  }
 
-  leaveMancala() {
-    if (this.socket) this.socket.emit('mancala_leave');
-  }
 
   _emitJoin() {
     if (!this.socket) return;
@@ -886,7 +863,6 @@ export class CourtyardScene {
     if (s.kind === 'guru') this._handleGuru();
     else if (s.kind === 'confession') this._handleConfession();
     else if (s.kind === 'cathedral') this._handleCathedral(s.roomId);
-    else if (s.kind === 'mancala') this._handleMancala();
     else if (s.kind === 'bed') this._handleSaveExit();
   }
 
@@ -916,9 +892,6 @@ export class CourtyardScene {
     input.consumeBPress();
   }
 
-  _handleMancala() {
-    if (this.socket) this.socket.emit('mancala_sit');
-  }
 
   update(dt, input) {
     // The scourge is a cutscene: it takes movement, both buttons and the
@@ -1705,16 +1678,6 @@ export class CourtyardScene {
         }
         break;
       }
-      case 'mancala-table':
-        this._dropShadow(ctx, x, y + 4, 9.5, 3.2);
-        block(ctx, x - 9, y - 3, 18, 7, WOOD);
-        ctx.fillStyle = WOOD.o;                    // pits
-        for (let i = -6; i <= 6; i += 3) {
-          ctx.beginPath(); ctx.arc(x + i, y, 1.6, 0, Math.PI * 2); ctx.fill();
-        }
-        ctx.fillStyle = GOLD.d;                    // seeds catching the light
-        for (let i = -6; i <= 6; i += 3) ctx.fillRect(x + i - 0.6, y - 0.6, 1.2, 1.2);
-        break;
       case 'candle': {
         // a black votive candle with a small warm flame + floor light pool
         const flick = 0.7 + Math.sin(this.t * 11 + p.col * 2.3 + p.row) * 0.2;

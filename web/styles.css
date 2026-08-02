@@ -238,7 +238,7 @@ body.powered .mute-toggle {
 .btn-b { left: 52.6%; top: 79.9%; width: 15.34%; height: 9.88%; }
 
 /* ===== Shared overlay title/input/button styles (used by chat,
-   Mancala, Final Communion) ===== */
+   Final Communion) ===== */
 .naming-title {
   margin: 0;
   color: #e9c468;
@@ -414,8 +414,6 @@ body.powered .mute-toggle {
   box-shadow: 0 0 6px rgba(69, 240, 138, 0.7);
 }
 
-/* mancala action row */
-.mancala-actions { display: flex; gap: 8px; justify-content: center; }
 
 /* ===== Toast ===== */
 .toast {
@@ -440,40 +438,6 @@ body.powered .mute-toggle {
 }
 
 
-/* ===== Mancala ===== */
-.mancala-overlay[hidden] { display: none; }
-.mancala-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 7;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: clamp(4px, 1.6cqw, 8px);
-  background: rgba(5, 3, 1, 0.92);
-  border: none;
-  padding: 1.5% 1.5% 2.5%;
-  text-align: center;
-}
-.mancala-status {
-  /* The canvas paints the rest of the overlay opaque, so this strip is the one
-     place the HUD behind can still show through. It gets its own ground. */
-  margin: 0;
-  align-self: stretch;
-  background: #050301;
-  padding: 2px 0 3px;
-  color: #c9a35f;
-  font-size: clamp(5.5px, 1.6cqw, 8px);
-  min-height: 2.4em;
-}
-.mancala-canvas {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  display: block;
-  image-rendering: pixelated;
-  touch-action: manipulation;
-}
 
 /* ===== Final Communion cinematic ===== */
 .communion-overlay[hidden] { display: none; }
