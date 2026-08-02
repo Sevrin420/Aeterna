@@ -2,7 +2,11 @@
 
 CREATE TABLE IF NOT EXISTS players (
   id            TEXT PRIMARY KEY,
-  wallet        TEXT NOT NULL UNIQUE,
+  -- NOT unique on its own. A wallet may hold several Bloodlines and plays one
+  -- at a time, so it gets one row per Bloodline; uniqueness is the PAIR, held
+  -- by idx_players_wallet_token below. A column-level UNIQUE here would let a
+  -- holder bind their first Bloodline and then silently fail on the second.
+  wallet        TEXT NOT NULL,
   token_id      INTEGER UNIQUE,
   name          TEXT NOT NULL,
   prefix        TEXT NOT NULL DEFAULT 'Brother',  -- Brother | Sister | Deacon | Bishop | Cardinal

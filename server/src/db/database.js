@@ -44,6 +44,48 @@ for (const ddl of [
   }
 }
 
+// Drop the legacy column-level UNIQUE on players.wallet.
+//
+// The composite index below is what makes "one row per (wallet, Bloodline)"
+// true, but it was never sufficient on its own: every database built from the
+// old schema.sql carries `wallet TEXT NOT NULL UNIQUE` *inside the table*, and
+// that constraint outranks any index we add beside it. A holder would bind
+// their first Bloodline and the second would fail on a UNIQUE violation — the
+// exact case the composite index was added to support.
+//
+// SQLite cannot drop a column constraint in place, so the table is rebuilt: the
+// old CREATE TABLE is read back out of sqlite_master, the UNIQUE is struck from
+// the wallet column, and the rows are copied across. A checkpointed file copy
+// is taken first, because this is the one migration that could lose Devotion.
+const playersDDL = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='players'").get();
+if (playersDDL && /\bwallet\b[^,]*\bUNIQUE\b/i.test(playersDDL.sql)) {
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    fs.copyFileSync(dbPath, `${dbPath}.pre-wallet-unique-rebuild`);
+  } catch (e) {
+    console.warn('pre-rebuild copy failed:', e.message);
+  }
+  const cols = db.prepare('PRAGMA table_info(players)').all().map((c) => `"${c.name}"`).join(', ');
+  const rebuiltDDL = playersDDL.sql
+    .replace(/CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?["'`[]?players["'`\]]?/i, 'CREATE TABLE players_rebuild')
+    .replace(/(\bwallet\b[^,]*?)\s+UNIQUE/i, '$1');
+  try {
+    db.transaction(() => {
+      db.exec(rebuiltDDL);
+      db.exec(`INSERT INTO players_rebuild (${cols}) SELECT ${cols} FROM players`);
+      db.exec('DROP TABLE players');
+      db.exec('ALTER TABLE players_rebuild RENAME TO players');
+    })();
+    // DROP TABLE took the old table's indexes with it.
+    db.exec('CREATE INDEX IF NOT EXISTS idx_players_devotion ON players(devotion DESC)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_players_wallet ON players(wallet)');
+    console.log('players.wallet UNIQUE dropped; a wallet may now hold several Bloodlines');
+  } catch (e) {
+    console.error('players rebuild failed, leaving the table as it was:', e.message);
+    try { db.exec('DROP TABLE IF EXISTS players_rebuild'); } catch { /* nothing to clean */ }
+  }
+}
+
 // One player row per (wallet, Bloodline). The old unique index was on wallet
 // alone, which would have collapsed a holder's several Bloodlines into one
 // pile of Devotion the moment they switched between them.

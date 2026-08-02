@@ -3,6 +3,20 @@
 // in localStorage and use it exactly where the server expects a `wallet`.
 
 const WALLET_KEY = 'aeterna_wallet_id';
+const TOKEN_KEY = 'aeterna_token_id';
+
+// The Bloodline currently being played. Progress is keyed to the token, so
+// every call that reads or writes Devotion has to say which one — a holder of
+// several would otherwise pour all of them into whichever row came back first.
+export function getTokenId() {
+  const v = Number(localStorage.getItem(TOKEN_KEY));
+  return Number.isInteger(v) && v > 0 ? v : null;
+}
+
+export function setTokenId(id) {
+  if (id == null) localStorage.removeItem(TOKEN_KEY);
+  else localStorage.setItem(TOKEN_KEY, String(id));
+}
 
 // crypto.randomUUID() only exists in a secure context (HTTPS or localhost).
 // This game is currently served over plain HTTP, where that function is
@@ -51,7 +65,13 @@ export const api = {
     return req('/register', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), name, sex, xHandle }) });
   },
   me() {
-    return req('/me', { headers: { 'x-wallet': getWalletId() } });
+    const t = getTokenId();
+    return req('/me', { headers: { 'x-wallet': getWalletId(), ...(t ? { 'x-token': String(t) } : {}) } });
+  },
+  // Bind this player to one Bloodline. The server checks on-chain that
+  // `address` really holds `tokenId` before it will write the row.
+  bind(tokenId, address) {
+    return req('/bind', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), tokenId, address }) });
   },
   duty(type) {
     return req(`/duty/${type}`, { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });

@@ -3,9 +3,10 @@
 // The game is meant to be opened inside a crypto wallet's in-app browser
 // (MetaMask, Coinbase Wallet, Trust, Rabby, etc.), which injects an EIP-1193
 // provider at window.ethereum. connectWallet() does a real account request;
-// fetchCultists() is where the on-chain ownership check will live once the
-// Cultist NFT contract exists — until then it returns none, so every player
-// falls through into the game as a wandering spirit (per the design).
+// fetchBloodlines() reads the deployed collection for what that wallet holds.
+// A wallet holding nothing still falls through into the game as a wandering
+// spirit (per the design) — but a wallet whose chain read FAILS does not, since
+// "the RPC is down" and "you own nothing" must never look the same.
 
 // ── DEMO / TEST MODE ────────────────────────────────────────────────────────
 // Add ?demo (or ?mock) to the URL to test the full connect -> choose-Cultist ->
@@ -117,26 +118,150 @@ export function shortAddr(a) {
   return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '';
 }
 
-// Return the Cultist NFTs owned by `address` as [{ id, name, image }].
-//
-// ── WIRE-IN POINT ──────────────────────────────────────────────────────────
-// When the Cultist collection is deployed, resolve ownership here. Two easy
-// options:
-//   1. An indexer (Alchemy/Moralis/Reservoir) NFT-by-owner endpoint, filtered
-//      to the Cultist contract address, then map each token to {id,name,image}.
-//   2. Read the contract directly: balanceOf(address) + tokenOfOwnerByIndex,
-//      then tokenURI -> metadata.
-// Set CULTIST_CONTRACT and implement, keeping the empty-array fallback so a
-// wallet with no Cultists still returns [] (the caller lets them in as a
-// spirit).
-export const CULTIST_CONTRACT = null; // e.g. '0x...'
-export async function fetchCultists(/* address */) {
+// ── THE CHAIN ───────────────────────────────────────────────────────────────
+// There is no build step here, so there is no ethers to import. The contract
+// surface the game actually touches is five calls wide, and every argument is
+// either an address or a uint256 — so the encoding is done by hand rather than
+// pulling a library over a CDN on the critical path of the title screen.
+
+// Whichever provider the current connection is riding on. The injected one when
+// the game is open inside a wallet's browser, the WalletConnect session
+// otherwise — reads and writes must both go through the SAME one, or a mint
+// gets signed by a wallet that never agreed to the read.
+function activeProvider() {
+  if (typeof window !== 'undefined' && window.ethereum) return window.ethereum;
+  if (_wc) return _wc;
+  return null;
+}
+
+const SEL = {
+  bloodlinesOf: '0x979ec4c9',
+  cultistsOf: '0x5c9f881c',
+  pricePerCultist: '0x9cb324c4',
+  mintOpen: '0x24bbd049',
+  mint: '0xa0712d68',
+  ownerOf: '0x6352211e',
+};
+
+const padAddr = (a) => a.toLowerCase().replace(/^0x/, '').padStart(64, '0');
+const padUint = (n) => BigInt(n).toString(16).padStart(64, '0');
+const hexToBig = (h) => BigInt(h && h !== '0x' ? h : '0x0');
+
+// Split a 32-byte-word return blob into words.
+function words(hex) {
+  const b = (hex || '').replace(/^0x/, '');
+  const out = [];
+  for (let i = 0; i + 64 <= b.length; i += 64) out.push(b.slice(i, i + 64));
+  return out;
+}
+
+async function ethCall(data) {
+  const p = activeProvider();
+  if (!p) throw new Error('NO_WALLET');
+  if (!BLOODLINE_ADDRESS) throw new Error('NO_CONTRACT');
+  return p.request({
+    method: 'eth_call',
+    params: [{ to: BLOODLINE_ADDRESS, data }, 'latest'],
+  });
+}
+
+// uint256[] comes back as [offset][length][...items]. The offset is always 0x20
+// for a lone dynamic return, but it is read rather than assumed.
+function decodeUintArray(hex) {
+  const w = words(hex);
+  if (!w.length) return [];
+  const off = Number(BigInt('0x' + w[0])) / 32;
+  const len = Number(BigInt('0x' + (w[off] || '0')));
+  return w.slice(off + 1, off + 1 + len).map((x) => BigInt('0x' + x));
+}
+
+export async function fetchPricePerCultist() {
+  return hexToBig(await ethCall(SEL.pricePerCultist));
+}
+
+export async function fetchMintOpen() {
+  return hexToBig(await ethCall(SEL.mintOpen)) === 1n;
+}
+
+// Every Bloodline `address` holds, with the Cultists each one carries.
+// Returns [{ id, cultists, name }] — ONE ENTRY PER BLOODLINE, not per Cultist.
+// A wallet may hold several; the game makes you play one at a time, so the
+// caller picks from this list and binds that token.
+export async function fetchBloodlines(address) {
   if (MOCK_CULTISTS > 0) {
-    return Array.from({ length: MOCK_CULTISTS }, (_, i) => ({
+    return Array.from({ length: Math.min(3, MOCK_CULTISTS) }, (_, i) => ({
       id: i + 1,
+      cultists: Math.max(1, Math.floor(MOCK_CULTISTS / Math.min(3, MOCK_CULTISTS))),
       name: DEMO_NAMES[i % DEMO_NAMES.length],
     }));
   }
-  if (!CULTIST_CONTRACT) return [];
-  return [];
+  if (!BLOODLINE_ADDRESS || !address) return [];
+  let ids;
+  try {
+    ids = decodeUintArray(await ethCall(SEL.bloodlinesOf + padAddr(address)));
+  } catch {
+    // A dead RPC must not read as "you own nothing" — that would quietly demote
+    // a holder to a ghost and start them a second pile of Devotion.
+    throw new Error('CHAIN_UNREACHABLE');
+  }
+  const out = [];
+  for (const id of ids) {
+    let cultists = 0;
+    try { cultists = Number(hexToBig(await ethCall(SEL.cultistsOf + padUint(id)))); } catch { /* leave 0 */ }
+    out.push({ id: Number(id), cultists, name: `Bloodline #${id}` });
+  }
+  return out;
+}
+
+// Kept for the callers that only want a head count. The total Cultists across
+// every Bloodline held — which is NOT the same as the number of Bloodlines.
+export async function fetchCultists(address) {
+  const lines = await fetchBloodlines(address);
+  return lines;
+}
+
+export function totalCultists(bloodlines) {
+  return (bloodlines || []).reduce((n, b) => n + (b.cultists || 0), 0);
+}
+
+// Wait for a submitted transaction to be mined. Polls the same provider that
+// signed it. Resolves with the receipt, or null if it never appears in time —
+// the caller must treat null as "unknown", not as "failed", because the
+// transaction may still be sitting in the mempool.
+export async function waitForTx(hash, { tries = 60, everyMs = 2000 } = {}) {
+  const p = activeProvider();
+  if (!p) return null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await p.request({ method: 'eth_getTransactionReceipt', params: [hash] });
+      if (r) return r;
+    } catch { /* keep waiting */ }
+    await new Promise((res) => setTimeout(res, everyMs));
+  }
+  return null;
+}
+
+// Mint one Bloodline holding `cultists` Cultists. Exact payment only — the
+// contract reverts on an over- or under-payment rather than keeping the
+// difference, so the value is computed from the chain's own price, never from a
+// number hardcoded here.
+export async function mintBloodline(address, cultists) {
+  const p = activeProvider();
+  if (!p) throw new Error('NO_WALLET');
+  if (!BLOODLINE_ADDRESS) throw new Error('NO_CONTRACT');
+  const n = Math.floor(Number(cultists));
+  if (!Number.isFinite(n) || n < 1 || n > 20) throw new Error('BAD_CULTISTS');
+  if (!(await fetchMintOpen())) throw new Error('MINT_CLOSED');
+
+  const price = await fetchPricePerCultist();
+  const value = price * BigInt(n);
+  return p.request({
+    method: 'eth_sendTransaction',
+    params: [{
+      from: address,
+      to: BLOODLINE_ADDRESS,
+      data: SEL.mint + padUint(n),
+      value: '0x' + value.toString(16),
+    }],
+  });
 }

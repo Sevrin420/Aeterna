@@ -4,10 +4,13 @@ import { MenuScene } from './scenes/menu.js';
 import { DialogueBox } from './dialogue.js';
 import { LORE } from './lore.js';
 import { CourtyardScene } from './scenes/courtyard.js';
-import { api } from './api.js';
+import { api, setTokenId, getTokenId } from './api.js';
 import { MancalaBoard } from './mancala.js';
 import { sfx, AUDIO_MASTER } from './sfx.js';
-import { connectWallet, fetchCultists, shortAddr, hasInjectedWallet, hasWalletConnect } from './wallet.js';
+import {
+  connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen,
+  fetchPricePerCultist, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
+} from './wallet.js';
 
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');
@@ -488,6 +491,11 @@ let chosenCultist = null;
 // What the title menu shows: the bound address and how many Cultists it holds.
 let connectedAddr = null;
 let heldCultists = 0;
+// Every Bloodline the connected wallet holds, and the one being played. A
+// wallet may hold several; the game makes you play one at a time, so the
+// Devotion that follows belongs to `boundToken`, not to the address.
+let heldBloodlines = [];
+let boundToken = getTokenId();
 
 // Save & Exit from the game returns to the entry lobby (not power off). Devotion
 // was already saved by the scene before this runs.
@@ -529,7 +537,7 @@ function enterEntrance(player) {
     sex: (player && player.sex) || 'male',
     onConnect: () => menuConnect(menu),
     onPlay: () => proceedIntoGame(),
-    onMint: () => box.show(LORE.mint),
+    onMint: () => { box.show(LORE.mint, { onClose: () => openMintPicker(menu) }); },
     onDocs: () => box.show(LORE.doctrine),
   });
   // The box owns input and the screen while it is up, exactly as in the abbey.
@@ -558,18 +566,30 @@ async function menuConnect(menu) {
   try {
     const addr = await connectWallet();
     connectedAddr = addr;
-    const cultists = await fetchCultists(addr);
-    heldCultists = cultists.length;
-    menu.setWallet(shortAddr(addr), cultists.length, addr);
+    menu.status = 'READING THE CHAIN…';
+    heldBloodlines = await fetchBloodlines(addr);
+    heldCultists = totalCultists(heldBloodlines);
+    menu.setWallet(shortAddr(addr), heldCultists, addr);
     menu.status = null;
-    menu.sel = 1;                       // move them on to PLAY
-    showToast(`Bound ${shortAddr(addr)} — ${cultists.length} Cultist${cultists.length === 1 ? '' : 's'}.`);
+
+    if (!heldBloodlines.length) {
+      // No Bloodline: they walk in as a spirit, exactly as before.
+      menu.sel = 2;                     // point them at MINT
+      showToast(`${shortAddr(addr)} holds no Bloodline. Enter as a spirit, or MINT.`);
+    } else if (heldBloodlines.length === 1) {
+      await bindBloodline(heldBloodlines[0], menu);
+    } else {
+      // Several. They have to choose which one this day's Devotion belongs to.
+      openBloodlinePicker(menu);
+    }
   } catch (e) {
     const why = {
       NO_WALLET: hasWalletConnect() ? 'NO WALLET FOUND' : 'WALLETCONNECT NOT CONFIGURED',
       WC_NOT_CONFIGURED: 'WALLETCONNECT NOT CONFIGURED',
       WC_LOAD_FAILED: 'COULD NOT REACH WALLETCONNECT',
       NO_ACCOUNT: 'NO ACCOUNT RETURNED',
+      NO_CONTRACT: 'COLLECTION NOT CONFIGURED',
+      CHAIN_UNREACHABLE: 'COULD NOT REACH THE CHAIN',
     }[e && e.message] || 'CONNECTION REFUSED';
     menu.status = why;
     sfx.error();
@@ -578,24 +598,151 @@ async function menuConnect(menu) {
   }
 }
 
-function openWalletFlow() {
-  walletOverlay.hidden = false;
-  cultistGrid.hidden = true;
-  cultistGrid.innerHTML = '';
-  walletEnterBtn.hidden = true;
-  walletConnectBtn.hidden = false;
-  chosenCultist = null;
-  walletTitle.textContent = 'Enter the Sanctum';
-  if (hasInjectedWallet()) {
-    walletConnectBtn.textContent = 'Connect Wallet';
-    walletMsg.innerHTML = 'Connect your wallet to choose your Cultist.';
-  } else {
-    // no injected provider (e.g. a normal desktop browser) — let them in
-    walletConnectBtn.textContent = 'Connect Wallet';
-    walletMsg.innerHTML = 'Open <span class="addr">membersonly.cc</span> inside your wallet’s browser to connect — or enter as a spirit.';
-    walletEnterBtn.hidden = false;
+// Tell the server which Bloodline this player is. Everything that touches
+// Devotion afterwards is keyed to it.
+async function bindBloodline(bl, menu) {
+  if (isDemoMode()) {
+    boundToken = bl.id;
+    chosenCultist = bl;
+    if (menu) { menu.sel = 1; menu.setWallet(shortAddr(connectedAddr), bl.cultists, connectedAddr); }
+    showToast(`Playing Bloodline #${bl.id} — ${bl.cultists} Cultists. (demo)`);
+    return;
+  }
+  try {
+    if (menu) menu.status = 'BINDING BLOODLINE…';
+    const row = await api.bind(bl.id, connectedAddr);
+    boundToken = bl.id;
+    setTokenId(bl.id);
+    entrancePlayer = row;
+    chosenCultist = bl;
+    heldCultists = bl.cultists;
+    if (menu) {
+      menu.setWallet(shortAddr(connectedAddr), bl.cultists, connectedAddr);
+      menu.status = null;
+      menu.sel = 1;                     // move them on to PLAY
+    }
+    showToast(`Playing Bloodline #${bl.id} — ${bl.cultists} Cultists, ${row.devotion || 0} Devotion.`);
+  } catch (e) {
+    if (menu) menu.status = 'BIND REFUSED';
+    showToast(e.message || 'Could not bind that Bloodline.');
+    sfx.error();
   }
 }
+
+// The picker, for a wallet holding more than one. Reuses the entrance overlay
+// the Cultist chooser already lived in.
+function openBloodlinePicker(menu) {
+  walletOverlay.hidden = false;
+  walletConnectBtn.hidden = true;
+  walletEnterBtn.hidden = true;
+  cultistGrid.hidden = false;
+  cultistGrid.innerHTML = '';
+  walletTitle.textContent = 'Choose your Bloodline';
+  walletMsg.innerHTML = `<span class="addr">${shortAddr(connectedAddr)}</span> holds ${heldBloodlines.length} Bloodlines. `
+    + 'You play one at a time — its Devotion is its own.';
+  heldBloodlines.forEach((bl) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'cultist-card';
+    card.textContent = `#${bl.id} — ${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}`;
+    if (bl.id === boundToken) card.classList.add('sel');
+    card.addEventListener('click', async () => {
+      walletOverlay.hidden = true;
+      await bindBloodline(bl, menu);
+    });
+    cultistGrid.appendChild(card);
+  });
+}
+
+// The mint rite. The Doctrine is read first (the dialogue box above), then this
+// asks the one question the contract actually takes: how many Cultists.
+//
+// The count is fixed at mint and there is deliberately no function anywhere in
+// the contract that raises it, so this is the only moment it is ever chosen.
+// Price comes from the chain rather than a constant here — the contract demands
+// exact payment and reverts on anything else, so a stale number in the client
+// would be a guaranteed failed transaction.
+async function openMintPicker(menu) {
+  if (!connectedAddr) {
+    showToast('Connect a wallet first.');
+    if (menu) menu.sel = 0;
+    return;
+  }
+  walletOverlay.hidden = false;
+  walletConnectBtn.hidden = true;
+  walletEnterBtn.hidden = true;
+  cultistGrid.hidden = true;
+  cultistGrid.innerHTML = '';
+  walletTitle.textContent = 'Raise a Bloodline';
+  walletMsg.textContent = 'Consulting the chain…';
+
+  let price;
+  try {
+    if (!(await fetchMintOpen())) {
+      walletMsg.textContent = 'The mint is not open yet. Leave by the Back door.';
+      return;
+    }
+    price = await fetchPricePerCultist();
+  } catch {
+    walletMsg.textContent = 'Could not reach the chain. Try again shortly.';
+    return;
+  }
+
+  const avax = (wei) => {
+    const s = (wei * 100000n / 10n ** 18n).toString().padStart(3, '0');
+    return `${s.slice(0, -2)}.${s.slice(-2)}`;
+  };
+  walletMsg.innerHTML = `How many Cultists shall this Bloodline hold? The count is fixed forever `
+    + `at the moment it is raised. <span class="addr">${avax(price)} AVAX</span> each.`;
+  cultistGrid.hidden = false;
+
+  for (let n = 1; n <= 20; n++) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'cultist-card';
+    card.textContent = `${n} — ${avax(price * BigInt(n))} AVAX`;
+    card.addEventListener('click', async () => {
+      [...cultistGrid.children].forEach((el) => { el.disabled = true; });
+      walletMsg.textContent = `Confirm ${n} Cultist${n === 1 ? '' : 's'} in your wallet…`;
+      try {
+        const hash = await mintBloodline(connectedAddr, n);
+        walletMsg.innerHTML = `Sent. Waiting for the chain to seal it…<br><span class="addr">${String(hash).slice(0, 18)}…</span>`;
+        const receipt = await waitForTx(hash);
+        if (receipt && receipt.status === '0x0') throw new Error('The transaction was reverted.');
+        walletOverlay.hidden = true;
+        if (!receipt) {
+          showToast('Mint sent but not yet confirmed. Reconnect in a moment to see it.');
+          return;
+        }
+        // Re-read holdings and bind the new Bloodline.
+        heldBloodlines = await fetchBloodlines(connectedAddr);
+        heldCultists = totalCultists(heldBloodlines);
+        const fresh = heldBloodlines[heldBloodlines.length - 1];
+        showToast(`The Bloodline is raised — ${n} Cultist${n === 1 ? '' : 's'}.`);
+        if (fresh) await bindBloodline(fresh, menu);
+      } catch (e) {
+        const why = {
+          MINT_CLOSED: 'The mint is not open yet.',
+          BAD_CULTISTS: 'A Bloodline holds between 1 and 20 Cultists.',
+          NO_WALLET: 'No wallet connected.',
+          NO_CONTRACT: 'The collection is not configured.',
+        }[e && e.message] || (e && e.message) || 'The rite failed.';
+        walletMsg.textContent = why;
+        [...cultistGrid.children].forEach((el) => { el.disabled = false; });
+        sfx.error();
+      }
+    });
+    cultistGrid.appendChild(card);
+  }
+}
+
+// The entrance overlay used to run a whole second wallet flow of its own —
+// openWalletFlow() + its own Connect handler + a Cultist chooser — but nothing
+// has called it since the title menu took over connecting. It is gone rather
+// than left sitting there: it counted a wallet's holdings the old way (one
+// Cultist per token) and would have quietly disagreed with the menu about how
+// many Cultists somebody had. The overlay itself is still used, by the
+// Bloodline picker and the mint rite above.
 
 function proceedIntoGame() {
   walletOverlay.hidden = true;
@@ -605,57 +752,6 @@ function proceedIntoGame() {
     enterCourtyard(entrancePlayer);
     if (chosen) showToast(`You enter as ${chosen.name}.`);
   });
-}
-
-walletConnectBtn.addEventListener('click', async () => {
-  walletConnectBtn.disabled = true;
-  walletMsg.textContent = 'Requesting wallet…';
-  try {
-    const addr = await connectWallet();
-    walletMsg.innerHTML = `Connected <span class="addr">${shortAddr(addr)}</span>. Seeking your Cultists…`;
-    connectedAddr = addr;
-    const cultists = await fetchCultists(addr);
-    heldCultists = cultists.length;
-    if (scene && scene.setWallet) scene.setWallet(shortAddr(addr), cultists.length);
-    if (!cultists.length) {
-      walletMsg.innerHTML = `Connected <span class="addr">${shortAddr(addr)}</span>. No Cultist NFTs found in this wallet.`;
-      walletConnectBtn.hidden = true;
-      walletEnterBtn.hidden = false;
-    } else {
-      renderCultistChoices(cultists);
-    }
-  } catch (err) {
-    const m = err && err.message === 'NO_WALLET'
-      ? 'No wallet found. Open membersonly.cc in your wallet’s browser — or enter as a spirit.'
-      : 'Wallet not connected. You can still enter as a spirit.';
-    walletMsg.textContent = m;
-    walletEnterBtn.hidden = false;
-  } finally {
-    walletConnectBtn.disabled = false;
-  }
-});
-
-function renderCultistChoices(cultists) {
-  walletTitle.textContent = 'Choose your Cultist';
-  walletConnectBtn.hidden = true;
-  cultistGrid.hidden = false;
-  cultistGrid.innerHTML = '';
-  cultists.forEach((c) => {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'cultist-card';
-    card.textContent = c.name || `#${c.id}`;
-    card.addEventListener('click', () => {
-      chosenCultist = c;
-      [...cultistGrid.children].forEach((el) => el.classList.remove('sel'));
-      card.classList.add('sel');
-      walletEnterBtn.hidden = false;
-      walletEnterBtn.textContent = 'Enter the Sanctum';
-    });
-    cultistGrid.appendChild(card);
-  });
-  // (the chosen Cultist's NFT will drive the player's on-chain name/face once
-  // the collection is live; for now selecting it just carries the name in.)
 }
 
 walletEnterBtn.addEventListener('click', proceedIntoGame);

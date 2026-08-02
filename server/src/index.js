@@ -113,6 +113,118 @@ fastify.get('/nft/:tokenId/image.svg', async (req, reply) => {
 </svg>`;
 });
 
+// ========== BIND A BLOODLINE ==========
+// Ties a player row to one Bloodline. The unit of progress is the TOKEN, not
+// the wallet: a holder of several gets a row (and a pile of Devotion) each, and
+// plays one at a time.
+//
+// Ownership is checked against the chain, not taken from the request. Without
+// that check the cultists field is simply whatever the client claims, and since
+// cultists is the end-of-season payout multiplier, anyone could name someone
+// else's 20-Cultist Bloodline and be paid on it. The read FAILS CLOSED: if the
+// RPC cannot be reached the bind is refused rather than trusted.
+//
+// NOTE this is ownership, not authentication. There is still no signature
+// check anywhere in this API (see server/README.md), so a caller can claim to
+// be any address — what this stops is claiming a token that address does not
+// hold. Signature auth is the remaining hole and it is not closed here.
+const AVAX_RPC = process.env.AVAX_RPC || 'https://api.avax.network/ext/bc/C/rpc';
+// The deployed collection on Avalanche C-Chain. Defaulted rather than required
+// because it is public — the same address is a meta tag in web/index.html — and
+// the deploy rsync deliberately excludes .env, so a required secret here would
+// mean /bind silently 503s on every server that was updated without someone
+// remembering to hand-edit a file on the box.
+const BLOODLINE_ADDRESS = process.env.BLOODLINE_ADDRESS
+  || '0xC5D08383B1e56297Adbfa4f15E87588996f4C343';
+
+async function chainCall(data) {
+  const res = await fetch(AVAX_RPC, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: BLOODLINE_ADDRESS, data }, 'latest'] }),
+    signal: AbortSignal.timeout(8000),
+  });
+  const body = await res.json();
+  if (body.error) throw new Error(body.error.message || 'eth_call failed');
+  return body.result;
+}
+
+const padUint256 = (n) => BigInt(n).toString(16).padStart(64, '0');
+
+// ownerOf(uint256) and cultistsOf(uint256)
+async function readTokenFromChain(tokenId) {
+  const owner = await chainCall('0x6352211e' + padUint256(tokenId));
+  const cultists = await chainCall('0x5c9f881c' + padUint256(tokenId));
+  return {
+    owner: '0x' + String(owner).replace(/^0x/, '').slice(-40).toLowerCase(),
+    cultists: Number(BigInt(cultists || '0x0')),
+  };
+}
+
+fastify.post('/bind', async (req, reply) => {
+  const { wallet, tokenId, address } = req.body || {};
+  const tid = Number(tokenId);
+  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+  if (!Number.isInteger(tid) || tid < 1) return reply.code(400).send({ error: 'bad token' });
+  if (!BLOODLINE_ADDRESS) return reply.code(503).send({ error: 'Collection not configured on the server' });
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) return reply.code(400).send({ error: 'bad address' });
+
+  let onChain;
+  try {
+    onChain = await readTokenFromChain(tid);
+  } catch (e) {
+    req.log.error({ err: e }, 'bind: chain read failed');
+    return reply.code(503).send({ error: 'Could not reach the chain to verify that Bloodline' });
+  }
+  if (onChain.owner !== String(address).toLowerCase()) {
+    return reply.code(403).send({ error: 'That Bloodline is not held by this wallet' });
+  }
+
+  const w = String(wallet).toLowerCase();
+
+  // Already bound? Refresh the cached Cultist count and hand the row back.
+  const bound = db.prepare('SELECT * FROM players WHERE wallet = ? AND token_id = ?').get(w, tid);
+  if (bound) {
+    if (bound.cultists !== onChain.cultists) {
+      db.prepare('UPDATE players SET cultists = ? WHERE id = ?').run(onChain.cultists, bound.id);
+    }
+    return ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE id = ?').get(bound.id));
+  }
+
+  // The token can only belong to one row, ever.
+  const taken = db.prepare('SELECT * FROM players WHERE token_id = ?').get(tid);
+  if (taken) return reply.code(409).send({ error: 'That Bloodline is already bound to another player' });
+
+  // A wallet's first-ever row may exist with no token (it registered as a
+  // ghost). Adopt it rather than stranding the Devotion it already earned.
+  const ghost = db.prepare('SELECT * FROM players WHERE wallet = ? AND token_id IS NULL').get(w);
+  if (ghost) {
+    db.prepare('UPDATE players SET token_id = ?, cultists = ? WHERE id = ?').run(tid, onChain.cultists, ghost.id);
+    return ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE id = ?').get(ghost.id));
+  }
+
+  // Otherwise this is a second (or third) Bloodline for a wallet that already
+  // plays one: a new row, its own Devotion, carrying the name across.
+  const sibling = db.prepare('SELECT * FROM players WHERE wallet = ? ORDER BY created_at LIMIT 1').get(w);
+  const player = {
+    id: randomUUID(),
+    wallet: w,
+    token_id: tid,
+    cultists: onChain.cultists,
+    name: sibling ? sibling.name : `Bloodline ${tid}`,
+    prefix: sibling ? sibling.prefix : 'Brother',
+    sex: sibling ? sibling.sex : 'male',
+    x_handle: sibling ? sibling.x_handle : null,
+    created_at: new Date().toISOString(),
+    flags_date: todayStr(),
+  };
+  db.prepare(`
+    INSERT INTO players (id, wallet, token_id, cultists, name, prefix, sex, x_handle, created_at, flags_date)
+    VALUES (@id, @wallet, @token_id, @cultists, @name, @prefix, @sex, @x_handle, @created_at, @flags_date)
+  `).run(player);
+  return db.prepare('SELECT * FROM players WHERE id = ?').get(player.id);
+});
+
 // ========== REGISTER (dev/testnet stand-in for wallet-signature auth) ==========
 // No real wallet is connected yet (see server/README.md "still needed"). The
 // client generates a local pseudo-id and this upserts a Cultist row for it so
@@ -122,7 +234,7 @@ fastify.post('/register', async (req, reply) => {
   if (!wallet || !name) return reply.code(400).send({ error: 'Missing wallet or name' });
 
   const w = String(wallet).toLowerCase();
-  const existing = db.prepare('SELECT * FROM players WHERE wallet = ?').get(w);
+  const existing = db.prepare('SELECT * FROM players WHERE wallet = ? ORDER BY created_at LIMIT 1').get(w);
   if (existing) return ensureFreshDay(db, existing);
 
   const player = {
@@ -149,7 +261,14 @@ fastify.get('/me', async (req, reply) => {
   const wallet = req.headers['x-wallet'];
   if (!wallet) return reply.code(401).send({ error: 'No wallet' });
 
-  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
+  // Which Bloodline is being played. A wallet may have a row per token now, so
+  // asking for "the" player by wallet alone is only meaningful for a ghost —
+  // without the header the oldest row is returned, which keeps every existing
+  // single-Bloodline and unbound caller behaving exactly as before.
+  const tid = Number(req.headers['x-token']);
+  const player = Number.isInteger(tid) && tid > 0
+    ? db.prepare('SELECT * FROM players WHERE wallet = ? AND token_id = ?').get(wallet.toLowerCase(), tid)
+    : db.prepare('SELECT * FROM players WHERE wallet = ? ORDER BY created_at LIMIT 1').get(wallet.toLowerCase());
   if (!player) return reply.code(404).send({ error: 'Player not found' });
 
   const fresh = ensureFreshDay(db, player);
