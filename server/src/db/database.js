@@ -91,6 +91,18 @@ if (playersDDL && /\bwallet\b[^,]*\bUNIQUE\b/i.test(playersDDL.sql)) {
 // pile of Devotion the moment they switched between them.
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_players_wallet_token ON players(wallet, token_id)'); } catch { /* older sqlite, or rows already conflict */ }
 
+// An X handle identifies a person, so it may be claimed once across the whole
+// abbey — otherwise anyone could type someone else's handle onto their own
+// Bloodline and collect that person's referrals. Guarded rather than put in
+// schema.sql, which is exec'd as one block: on a database that already holds
+// duplicate handles this index fails, and there it must be a logged warning
+// rather than a server that will not boot.
+try {
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_players_x_handle ON players(x_handle) WHERE x_handle IS NOT NULL');
+} catch (e) {
+  console.warn('x_handle uniqueness NOT enforced — duplicates already exist:', e.message);
+}
+
 // ---- BACKUPS ---------------------------------------------------------------
 // Devotion is the only thing the abbey counts and it exists in exactly one
 // file. sqlite's online backup API copies a consistent snapshot while the

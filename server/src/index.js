@@ -8,7 +8,7 @@ import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
 import db from './db/database.js';
 import {
-  DUTY_DEVOTION, DUTIES, DUTY_NAMES, X_DEVOTION, X_KINDS,
+  DUTY_DEVOTION, DUTIES, DUTY_NAMES, X_DEVOTION, X_KINDS, REFERRAL_DEVOTION,
   todayStr, streakMultiplier, confessionCost, ensureFreshDay, pendingConfession, getSeasonInfo,
 } from './lib/gameLogic.js';
 
@@ -72,6 +72,9 @@ fastify.get('/nft/:tokenId', async (req, reply) => {
       { trait_type: 'Streak', value: streak },
       { trait_type: 'Payout Multiplier', value: `${cultists}x` },
       { trait_type: 'Awakened', value: row ? 'Yes' : 'Not yet' },
+      // Only present once its holder has bound one — an absent trait reads
+      // better on a marketplace than an empty one.
+      ...(row && row.x_handle ? [{ trait_type: 'X', value: `@${row.x_handle}` }] : []),
     ],
   };
 });
@@ -85,7 +88,10 @@ fastify.get('/nft/:tokenId/image.svg', async (req, reply) => {
     ? db.prepare('SELECT * FROM players WHERE token_id = ?').get(tokenId) : null;
   const cultists = row ? row.cultists || 0 : 0;
   const devotion = row ? row.devotion || 0 : 0;
-  const esc = (v) => String(v).replace(/[<>&]/g, '');
+  const esc = (v) => String(v).replace(/[<>&"']/g, '');
+  // Validated on the way in, escaped again on the way out: this string is
+  // served to marketplaces, and a stored handle predates the current rule.
+  const handle = row && row.x_handle ? `@${esc(row.x_handle)}` : '';
 
   reply.header('Content-Type', 'image/svg+xml');
   reply.header('Cache-Control', 'public, max-age=60');
@@ -100,6 +106,8 @@ fastify.get('/nft/:tokenId/image.svg', async (req, reply) => {
         fill="#e85a4a" text-anchor="middle">VITA AETERNA</text>
   <text x="300" y="132" font-family="Courier New,monospace" font-size="17"
         fill="#c9a35f" text-anchor="middle">BLOODLINE #${esc(tokenId)}</text>
+  <text x="300" y="160" font-family="Courier New,monospace" font-size="15"
+        fill="#8a8069" text-anchor="middle">${handle}</text>
   <text x="300" y="300" font-family="Courier New,monospace" font-size="128" font-weight="bold"
         fill="#f2d264" text-anchor="middle">${esc(cultists)}</text>
   <text x="300" y="340" font-family="Courier New,monospace" font-size="19"
@@ -112,6 +120,23 @@ fastify.get('/nft/:tokenId/image.svg', async (req, reply) => {
         fill="#6b5227" text-anchor="middle">${esc(cultists)}x PAYOUT MULTIPLIER</text>
 </svg>`;
 });
+
+// Which player row an action belongs to.
+//
+// Progress is keyed to the BLOODLINE, so every act has to say which one. A
+// wallet with several rows would otherwise pour every duty, confession and
+// claim into whichever row SQLite happened to hand back first — which is
+// exactly what "play one at a time" is supposed to prevent. Without a tokenId
+// it falls back to the oldest row, so a ghost who has never bound anything
+// still works, and so does every caller written before this existed.
+function playerFor(wallet, tokenId) {
+  const w = String(wallet).toLowerCase();
+  const tid = Number(tokenId);
+  if (Number.isInteger(tid) && tid > 0) {
+    return db.prepare('SELECT * FROM players WHERE wallet = ? AND token_id = ?').get(w, tid);
+  }
+  return db.prepare('SELECT * FROM players WHERE wallet = ? ORDER BY created_at LIMIT 1').get(w);
+}
 
 // ========== BIND A BLOODLINE ==========
 // Ties a player row to one Bloodline. The unit of progress is the TOKEN, not
@@ -292,20 +317,26 @@ fastify.get('/me', async (req, reply) => {
 
   const fresh = ensureFreshDay(db, player);
   const pending = pendingConfession(db, fresh.id);
+  // Whether this wallet has already been brought in by someone. The client
+  // uses it to know not to ask again; it is keyed to the wallet because that
+  // is what the referrals table is unique on.
+  const referral = db.prepare('SELECT referrer_handle FROM referrals WHERE referee_wallet = ?')
+    .get(String(wallet).toLowerCase());
   return {
     ...fresh,
     multiplier: streakMultiplier(fresh.streak, fresh.level),
     needsConfession: !!pending,
     confessionCost: pending ? confessionCost(fresh.confession_count) : null,
+    referred: referral ? referral.referrer_handle : null,
   };
 });
 
 // Manual Save → later calls Cloudflare Worker for signature
 fastify.post('/save', async (req, reply) => {
-  const { wallet } = req.body || {};
+  const { wallet, tokenId } = req.body || {};
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
 
-  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
+  const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
 
   // TODO: Call Cloudflare Worker
@@ -333,10 +364,10 @@ fastify.post('/save', async (req, reply) => {
 // for — it records the confession and forgives the break, but does not yet
 // verify an on-chain ETH payment for `cost` using txHash.
 fastify.post('/confession', async (req, reply) => {
-  const { wallet, txHash } = req.body || {};
+  const { wallet, tokenId, txHash } = req.body || {};
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
 
-  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
+  const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
 
   const fresh = ensureFreshDay(db, player);
@@ -380,11 +411,11 @@ fastify.post('/confession', async (req, reply) => {
 // three, and the day rolls at 00:00 UTC (todayStr is an ISO date).
 fastify.post('/duty/:type', async (req, reply) => {
   const { type } = req.params;
-  const { wallet } = req.body || {};
+  const { wallet, tokenId } = req.body || {};
   if (!DUTIES.includes(type)) return reply.code(400).send({ error: 'Invalid duty' });
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
 
-  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
+  const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
 
   const fresh = ensureFreshDay(db, player);
@@ -446,13 +477,112 @@ async function verifyXInteraction(handle, kind, postId) {
   return { ok: false, reason: 'not_implemented' };
 }
 
+// ========== X HANDLE ==========
+// Binds an X handle to a Bloodline. It shows on the token's card, and it is
+// the name other players type to credit a referral, so it has to be unique
+// across the abbey — see the guarded index in database.js.
+fastify.post('/x/handle', async (req, reply) => {
+  const { wallet, tokenId, xHandle } = req.body || {};
+  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+
+  const player = playerFor(wallet, tokenId);
+  if (!player) return reply.code(404).send({ error: 'Player not found' });
+
+  const handle = String(xHandle || '').trim().replace(/^@/, '');
+  if (!handle) {
+    db.prepare('UPDATE players SET x_handle = NULL WHERE id = ?').run(player.id);
+    return { success: true, xHandle: null };
+  }
+  // X's own rule: 1-15 of [A-Za-z0-9_]. Anything else is a typo or an attempt
+  // to smuggle markup onto a card that is served to marketplaces.
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) {
+    return reply.code(400).send({ error: 'An X handle is 1-15 letters, numbers or underscores' });
+  }
+
+  const taken = db.prepare('SELECT id FROM players WHERE x_handle = ? COLLATE NOCASE AND id != ?').get(handle, player.id);
+  if (taken) return reply.code(409).send({ error: 'That X handle is already bound to another Bloodline' });
+
+  try {
+    db.prepare('UPDATE players SET x_handle = ? WHERE id = ?').run(handle, player.id);
+  } catch {
+    return reply.code(409).send({ error: 'That X handle is already bound to another Bloodline' });
+  }
+  return { success: true, xHandle: handle, tokenId: player.token_id };
+});
+
+// ========== REFERRALS ==========
+// A player names the X handle of whoever brought them in. Both sides are paid
+// REFERRAL_DEVOTION, once.
+//
+// Three things are refused, and each of them is a way to print Devotion rather
+// than earn it. Naming yourself is obvious. Naming another Bloodline of your
+// OWN wallet is the one that matters here: a wallet may mint any number of
+// Bloodlines, so without this check a single person could raise two and refer
+// one to the other all day. And a mutual pair — you refer me, I refer you — is
+// refused too, because it pays both sides twice for one introduction.
+//
+// The remaining hole is two genuinely separate wallets cross-referring, which
+// costs a mint each and is not solvable here; it needs the signature auth the
+// API still lacks.
+fastify.post('/referral', async (req, reply) => {
+  const { wallet, tokenId, xHandle } = req.body || {};
+  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+
+  const referee = playerFor(wallet, tokenId);
+  if (!referee) return reply.code(404).send({ error: 'Player not found' });
+
+  const handle = String(xHandle || '').trim().replace(/^@/, '');
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) {
+    return reply.code(400).send({ error: 'An X handle is 1-15 letters, numbers or underscores' });
+  }
+
+  const w = String(wallet).toLowerCase();
+  const already = db.prepare('SELECT * FROM referrals WHERE referee_wallet = ?').get(w);
+  if (already) {
+    return reply.code(409).send({ error: `You were already brought in by @${already.referrer_handle}` });
+  }
+
+  const referrer = db.prepare('SELECT * FROM players WHERE x_handle = ? COLLATE NOCASE').get(handle);
+  if (!referrer) return reply.code(404).send({ error: 'No Cultist here goes by that handle' });
+  if (referrer.wallet === w) {
+    return reply.code(400).send({ error: 'You cannot bring yourself into the abbey' });
+  }
+  const mutual = db.prepare('SELECT 1 FROM referrals WHERE referee_wallet = ? AND referrer_wallet = ?').get(referrer.wallet, w);
+  if (mutual) return reply.code(409).send({ error: 'You already brought them in' });
+
+  const amount = REFERRAL_DEVOTION;
+  const now = new Date().toISOString();
+  try {
+    db.transaction(() => {
+      db.prepare(`INSERT INTO referrals
+        (referee_wallet, referee_player_id, referrer_wallet, referrer_player_id, referrer_handle, devotion_each, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(w, referee.id, referrer.wallet, referrer.id, referrer.x_handle, amount, now);
+      db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(amount, referee.id);
+      db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(amount, referrer.id);
+    })();
+  } catch (e) {
+    // The UNIQUE on referee_wallet is the real guard against two requests
+    // racing; losing that race is "already referred", not a server fault.
+    return reply.code(409).send({ error: 'You have already been brought in' });
+  }
+
+  const fresh = db.prepare('SELECT * FROM players WHERE id = ?').get(referee.id);
+  return {
+    success: true,
+    referrer: referrer.x_handle,
+    devotionGained: amount,
+    devotion: fresh.devotion,
+  };
+});
+
 fastify.post('/x/claim', async (req, reply) => {
-  const { wallet, kind, postId } = req.body || {};
+  const { wallet, tokenId, kind, postId } = req.body || {};
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
   if (!X_KINDS.includes(kind)) return reply.code(400).send({ error: 'Invalid interaction' });
   if (!postId) return reply.code(400).send({ error: 'Missing postId' });
 
-  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
+  const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (!player.x_handle) return reply.code(400).send({ error: 'No X handle bound to this Cultist' });
 
@@ -500,10 +630,10 @@ fastify.get('/cathedral', async () => {
 
 fastify.post('/cathedral/:id/claim', async (req, reply) => {
   const { id } = req.params;
-  const { wallet } = req.body || {};
+  const { wallet, tokenId } = req.body || {};
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
 
-  const player = db.prepare('SELECT * FROM players WHERE wallet = ?').get(wallet.toLowerCase());
+  const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
 
   const room = db.prepare('SELECT * FROM cathedral_rooms WHERE id = ?').get(id);

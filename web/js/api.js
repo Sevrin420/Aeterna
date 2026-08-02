@@ -60,6 +60,14 @@ async function req(path, opts = {}) {
   return body;
 }
 
+// The identity every call carries: which wallet, and which Bloodline is being
+// played. Devotion is keyed to the token, so leaving it off means the server
+// falls back to the oldest row and the day's work lands on the wrong Bloodline.
+function who(extra = {}) {
+  const t = getTokenId();
+  return JSON.stringify({ wallet: getWalletId(), ...(t ? { tokenId: t } : {}), ...extra });
+}
+
 export const api = {
   register(name, sex, xHandle) {
     return req('/register', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), name, sex, xHandle }) });
@@ -74,18 +82,27 @@ export const api = {
     return req('/bind', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), tokenId, address }) });
   },
   duty(type) {
-    return req(`/duty/${type}`, { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
+    return req(`/duty/${type}`, { method: 'POST', body: who() });
   },
   confession() {
-    return req('/confession', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
+    return req('/confession', { method: 'POST', body: who() });
   },
   // Engagement on X. Refuses with 503 until X verification is configured on
   // the server — see verifyXInteraction() there.
   xClaim(kind, postId) {
-    return req('/x/claim', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), kind, postId }) });
+    return req('/x/claim', { method: 'POST', body: who({ kind, postId }) });
   },
   save() {
-    return req('/save', { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
+    return req('/save', { method: 'POST', body: who() });
+  },
+  // Bind an X handle to the Bloodline being played. It shows on the token's
+  // card and is the name others type to credit a referral. Pass '' to clear it.
+  setXHandle(xHandle) {
+    return req('/x/handle', { method: 'POST', body: who({ xHandle }) });
+  },
+  // Name whoever brought you in. Both sides are paid, once.
+  referral(xHandle) {
+    return req('/referral', { method: 'POST', body: who({ xHandle }) });
   },
   leaderboard() {
     return req('/leaderboard');
@@ -97,6 +114,6 @@ export const api = {
     return req('/cathedral');
   },
   cathedralClaim(roomId) {
-    return req(`/cathedral/${roomId}/claim`, { method: 'POST', body: JSON.stringify({ wallet: getWalletId() }) });
+    return req(`/cathedral/${roomId}/claim`, { method: 'POST', body: who() });
   },
 };

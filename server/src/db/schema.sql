@@ -109,3 +109,22 @@ CREATE TABLE IF NOT EXISTS x_interactions (
 );
 CREATE INDEX IF NOT EXISTS idx_x_player ON x_interactions(player_id);
 
+-- Referrals. One row per person brought in, and the UNIQUE is on the referee's
+-- WALLET rather than their player id on purpose: a wallet can mint any number
+-- of Bloodlines, so keying this to the row would let one person be "referred"
+-- once per Bloodline they raise and pay their friend every time.
+CREATE TABLE IF NOT EXISTS referrals (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  referee_wallet    TEXT NOT NULL UNIQUE,
+  referee_player_id TEXT NOT NULL,
+  referrer_wallet   TEXT NOT NULL,
+  referrer_player_id TEXT NOT NULL,
+  referrer_handle   TEXT NOT NULL,
+  devotion_each     INTEGER NOT NULL,
+  created_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_wallet);
+-- (the UNIQUE index on players.x_handle is created in database.js, guarded:
+--  this file is exec'd as one block on every boot, so an index that fails on a
+--  database with existing duplicate handles would crash the server outright.)
+

@@ -78,6 +78,12 @@
           <p class="naming-title" id="walletTitle">Enter the Sanctum</p>
           <p class="wallet-msg" id="walletMsg">Connect your wallet to choose your Cultist.</p>
           <div class="cultist-grid" id="cultistGrid" hidden></div>
+          <!-- Used by the X-handle and referral rites. One input serves both:
+               they are asked one after the other and never at the same time. -->
+          <input class="naming-input" id="walletInput" type="text" maxlength="16"
+                 autocomplete="off" autocapitalize="none" spellcheck="false" hidden />
+          <button type="button" class="naming-submit" id="walletSubmit" hidden>Confirm</button>
+          <button type="button" class="naming-submit" id="walletSkip" hidden>Not now</button>
           <button type="button" class="naming-submit" id="walletConnect">Connect Wallet</button>
           <button type="button" class="naming-submit" id="walletEnter" hidden>Enter as a Spirit</button>
           <button type="button" class="wallet-back" id="walletBack">Back</button>

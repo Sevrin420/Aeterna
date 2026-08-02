@@ -479,6 +479,9 @@ const cultistGrid = document.getElementById('cultistGrid');
 const walletConnectBtn = document.getElementById('walletConnect');
 const walletEnterBtn = document.getElementById('walletEnter');
 const walletBackBtn = document.getElementById('walletBack');
+const walletInput = document.getElementById('walletInput');
+const walletSubmitBtn = document.getElementById('walletSubmit');
+const walletSkipBtn = document.getElementById('walletSkip');
 
 // The Doctrine and the mint rite are read in the in-canvas dialogue box now,
 // so the only DOM overlay the entrance still raises is the wallet flow.
@@ -496,6 +499,10 @@ let heldCultists = 0;
 // Devotion that follows belongs to `boundToken`, not to the address.
 let heldBloodlines = [];
 let boundToken = getTokenId();
+// Mirrors REFERRAL_DEVOTION in server/src/lib/gameLogic.js. Shown to the
+// player before they answer; the server is what actually pays, so if the two
+// ever drift the server wins and this is only a wrong promise on screen.
+const REFERRAL_DEVOTION = 10;
 
 // Save & Exit from the game returns to the entry lobby (not power off). Devotion
 // was already saved by the scene before this runs.
@@ -613,15 +620,21 @@ async function bindBloodline(bl, menu) {
     const row = await api.bind(bl.id, connectedAddr);
     boundToken = bl.id;
     setTokenId(bl.id);
-    entrancePlayer = row;
     chosenCultist = bl;
     heldCultists = bl.cultists;
+    // Re-read through /me: bind returns the raw row, but the entrance needs the
+    // derived fields too (multiplier, whether a confession is owed, and whether
+    // this wallet has already been brought in by someone).
+    let full = row;
+    try { full = await api.me(); } catch { /* the raw row is enough to play */ }
+    entrancePlayer = full;
     if (menu) {
       menu.setWallet(shortAddr(connectedAddr), bl.cultists, connectedAddr);
       menu.status = null;
       menu.sel = 1;                     // move them on to PLAY
     }
-    showToast(`Playing Bloodline #${bl.id} — ${bl.cultists} Cultists, ${row.devotion || 0} Devotion.`);
+    showToast(`Playing Bloodline #${bl.id} — ${bl.cultists} Cultists, ${full.devotion || 0} Devotion.`);
+    await offerXHandleAndReferral(full);
   } catch (e) {
     if (menu) menu.status = 'BIND REFUSED';
     showToast(e.message || 'Could not bind that Bloodline.');
@@ -652,6 +665,98 @@ function openBloodlinePicker(menu) {
     });
     cultistGrid.appendChild(card);
   });
+}
+
+// ---- Asking for a single line of text in the entrance overlay ----------------
+// Both the X handle and the referral are one short answer with a way out, so
+// they share this. Resolves with the trimmed string, or null if skipped.
+function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = 'Not now' }) {
+  return new Promise((resolve) => {
+    walletOverlay.hidden = false;
+    cultistGrid.hidden = true;
+    cultistGrid.innerHTML = '';
+    walletConnectBtn.hidden = true;
+    walletEnterBtn.hidden = true;
+    walletTitle.textContent = title;
+    walletMsg.innerHTML = message;
+    walletInput.value = '';
+    walletInput.placeholder = placeholder || '';
+    walletInput.hidden = false;
+    walletSubmitBtn.hidden = false;
+    walletSkipBtn.hidden = false;
+    walletSubmitBtn.textContent = confirm;
+    walletSkipBtn.textContent = skip;
+    try { walletInput.focus(); } catch { /* not focusable on some mobile shells */ }
+
+    const done = (value) => {
+      walletInput.hidden = true;
+      walletSubmitBtn.hidden = true;
+      walletSkipBtn.hidden = true;
+      walletSubmitBtn.removeEventListener('click', onOk);
+      walletSkipBtn.removeEventListener('click', onSkip);
+      walletInput.removeEventListener('keydown', onKey);
+      resolve(value);
+    };
+    const onOk = () => { const v = walletInput.value.trim(); done(v || null); };
+    const onSkip = () => done(null);
+    const onKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); onOk(); } };
+    walletSubmitBtn.addEventListener('click', onOk);
+    walletSkipBtn.addEventListener('click', onSkip);
+    walletInput.addEventListener('keydown', onKey);
+  });
+}
+
+// After a bind: offer to put an X handle on the Bloodline, then to name whoever
+// brought them in. Both are optional and each is asked ONCE — a player who
+// skips is not nagged on every connect, and a player who already has a handle
+// or has already been referred is never asked at all.
+const _askedThisSession = new Set();
+
+async function offerXHandleAndReferral(player) {
+  if (isDemoMode() || !player) return;
+  const key = String(player.token_id || player.id);
+
+  if (!player.x_handle && !_askedThisSession.has(`x:${key}`)) {
+    _askedThisSession.add(`x:${key}`);
+    const handle = await askOverlay({
+      title: 'Mark the Bloodline',
+      message: 'Your X handle is carved on the Bloodline’s card, and is the name '
+        + 'others speak to credit you for bringing them in.',
+      placeholder: '@yourhandle',
+      confirm: 'Carve it',
+    });
+    if (handle) {
+      try {
+        const r = await api.setXHandle(handle);
+        showToast(`The Bloodline is marked @${r.xHandle}.`);
+        player.x_handle = r.xHandle;
+      } catch (e) {
+        showToast(e.message || 'That handle could not be carved.');
+        sfx.error();
+      }
+    }
+  }
+
+  if (!player.referred && !_askedThisSession.has(`ref:${key}`)) {
+    _askedThisSession.add(`ref:${key}`);
+    const who = await askOverlay({
+      title: 'Who brought you here?',
+      message: `Name the X handle of the Cultist who brought you in. You are both `
+        + `granted ${REFERRAL_DEVOTION} Devotion — once, and only once.`,
+      placeholder: '@theirhandle',
+      confirm: 'Speak the name',
+    });
+    if (who) {
+      try {
+        const r = await api.referral(who);
+        showToast(`@${r.referrer} brought you in. ${r.devotionGained} Devotion to you both.`);
+      } catch (e) {
+        showToast(e.message || 'That name is not known here.');
+        sfx.error();
+      }
+    }
+  }
+  walletOverlay.hidden = true;
 }
 
 // The mint rite. The Doctrine is read first (the dialogue box above), then this

@@ -23,6 +23,9 @@ export const DUTY_DEVOTION = 10;
 // credited exactly once — the ledger is keyed on (player, kind, post), so
 // unliking and liking again does not pay twice.
 export const X_DEVOTION = { like: 2, comment: 3, repost: 5 };
+// Paid to BOTH sides of a referral, once. Deliberately the same as a duty:
+// bringing someone into the abbey is worth a day's work, not a fortune.
+export const REFERRAL_DEVOTION = 10;
 export const X_KINDS = Object.keys(X_DEVOTION);
 
 export function todayStr(d = new Date()) {
