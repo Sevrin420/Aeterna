@@ -588,7 +588,7 @@ async function menuConnect(menu) {
     menu.status = 'SWITCHING TO AVALANCHE…';
     await ensureChain();
     menu.status = 'READING THE CHAIN…';
-    heldBloodlines = await fetchBloodlines(addr);
+    heldBloodlines = await withNames(await fetchBloodlines(addr));
     heldCultists = totalCultists(heldBloodlines);
     menu.setWallet(shortAddr(addr), heldCultists, addr);
     menu.status = null;
@@ -619,6 +619,26 @@ async function menuConnect(menu) {
   } finally {
     menu.busy = false;
   }
+}
+
+// The chain knows which Bloodlines a wallet holds and how many Cultists each
+// carries; it does not know what its holder called them. This fills that in, so
+// the picker offers "House Vane" rather than "Bloodline #1".
+//
+// A failure here is cosmetic and must not block play: the chain-derived label
+// stays, and the player picks by number as before.
+async function withNames(list) {
+  if (!list.length || isDemoMode()) return list;
+  try {
+    const rows = await api.bloodlines(list.map((b) => b.id));
+    const byId = new Map(rows.map((r) => [r.token_id, r]));
+    for (const b of list) {
+      const r = byId.get(b.id);
+      if (r && r.bloodline_name) b.name = r.bloodline_name;
+      if (r && typeof r.devotion === 'number') b.devotion = r.devotion;
+    }
+  } catch { /* names are a nicety; the numbers still work */ }
+  return list;
 }
 
 // Tell the server which Bloodline this player is. Everything that touches
@@ -679,12 +699,15 @@ function openBloodlinePicker(menu) {
   cultistGrid.innerHTML = '';
   walletTitle.textContent = 'Choose your Bloodline';
   walletMsg.innerHTML = `<span class="addr">${shortAddr(connectedAddr)}</span> holds ${heldBloodlines.length} Bloodlines. `
-    + 'You play one at a time — its Devotion is its own.';
+    + 'Choose the one to take up — you play one at a time, and its Devotion is its own.';
   heldBloodlines.forEach((bl) => {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'cultist-card';
-    card.textContent = `${bl.name} — ${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}`;
+    const named = bl.name && bl.name !== `Bloodline #${bl.id}`;
+    card.textContent = named
+      ? `${bl.name}  ·  #${bl.id}  ·  ${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}`
+      : `Bloodline #${bl.id}  ·  ${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}`;
     if (bl.id === boundToken) card.classList.add('sel');
     card.addEventListener('click', async () => {
       walletOverlay.hidden = true;
@@ -890,7 +913,7 @@ async function openMintPicker(menu) {
         showToast('Mint sent but not yet confirmed. Reconnect in a moment to see it.');
         return;
       }
-      heldBloodlines = await fetchBloodlines(connectedAddr);
+      heldBloodlines = await withNames(await fetchBloodlines(connectedAddr));
       heldCultists = totalCultists(heldBloodlines);
       const fresh = heldBloodlines[heldBloodlines.length - 1];
       showToast(`The Bloodline is raised — ${n} Cultist${n === 1 ? '' : 's'}.`);

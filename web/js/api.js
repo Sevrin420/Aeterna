@@ -109,6 +109,13 @@ export const api = {
   referral(xHandle) {
     return req('/referral', { method: 'POST', body: who({ xHandle }) });
   },
+  // Names (and current standing) for Bloodlines the caller already knows the
+  // ids of, so the picker can list them by name instead of by token number.
+  bloodlines(tokenIds) {
+    const ids = (tokenIds || []).filter((n) => Number.isInteger(n) && n > 0);
+    if (!ids.length) return Promise.resolve([]);
+    return req(`/bloodlines?tokens=${ids.join(',')}`);
+  },
   season() {
     return req('/season');
   },

@@ -680,6 +680,28 @@ fastify.post('/x/claim', async (req, reply) => {
 // out entirely rather than left dark; it is a dozen lines to restore from git
 // when it is wanted.
 
+// The names of specific Bloodlines, so the picker can offer them by name
+// instead of by token number. The caller must already know the ids it is
+// asking about — they come from bloodlinesOf() on the chain — so this returns
+// what it is given and nothing else. That is deliberately NOT a ranking: no
+// ordering, no top-N, no way to enumerate. Every field here is already public
+// per-token at /nft/:id.
+fastify.get('/bloodlines', async (req, reply) => {
+  const raw = String((req.query && req.query.tokens) || '').trim();
+  if (!raw) return [];
+  const ids = raw.split(',')
+    .map((t) => Number(t.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0)
+    .slice(0, 50);                      // a wallet with more than 50 can page
+  if (!ids.length) return [];
+  const holes = ids.map(() => '?').join(',');
+  const rows = db.prepare(
+    `SELECT token_id, bloodline_name, cultists, devotion, streak FROM players WHERE token_id IN (${holes})`
+  ).all(...ids);
+  reply.header('Cache-Control', 'no-store');
+  return rows;
+});
+
 // ========== SEASON (GDD section 2: 56 active days / 14 day break) ==========
 fastify.get('/season', async () => getSeasonInfo());
 
