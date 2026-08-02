@@ -22,7 +22,32 @@ export const DUTY_DEVOTION = 10;
 // Devotion for engagement on X. These are per interaction, and each one is
 // credited exactly once — the ledger is keyed on (player, kind, post), so
 // unliking and liking again does not pay twice.
-export const X_DEVOTION = { like: 2, comment: 3, repost: 5 };
+// Engagement on X pays for ONE act: commenting the phrase. Likes and reposts
+// no longer pay anything — they are free to manufacture and were worth 2 and 5
+// against a comment's 3, which paid most for what costs least.
+//
+// A flat 10 puts a comment level with a day's duty. It is claimable once per
+// post per player, so the ceiling is the number of posts the abbey makes.
+export const X_COMMENT_DEVOTION = 10;
+export const X_DEVOTION = { comment: X_COMMENT_DEVOTION };
+
+// What has to be in the comment, word for word in meaning if not in spacing.
+export const X_PHRASE = 'Sanguis Aeternus, Vita Aeterna';
+
+// Matching is deliberately forgiving about the things a phone does to a person
+// typing a Latin motto -- case, curly apostrophes, doubled spaces, a trailing
+// full stop, a comma they dropped -- and strict about the words themselves and
+// their order. Someone who typed the motto should be paid; someone who typed
+// half of it should not.
+export function matchesPhrase(text) {
+  const norm = (v) => String(v || '')
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201c\u201d]/g, "'")
+    .replace(/[^a-z ]+/g, ' ')      // drop punctuation, keep word boundaries
+    .replace(/\s+/g, ' ')
+    .trim();
+  return norm(text).includes(norm(X_PHRASE));
+}
 // Paid to BOTH sides of a referral, once. Deliberately the same as a duty:
 // bringing someone into the abbey is worth a day's work, not a fortune.
 export const REFERRAL_DEVOTION = 10;

@@ -9,6 +9,7 @@ import { Server } from 'socket.io';
 import db from './db/database.js';
 import {
   DUTY_DEVOTION, DUTIES, DUTY_NAMES, X_DEVOTION, X_KINDS, REFERRAL_DEVOTION,
+  X_COMMENT_DEVOTION, X_PHRASE, matchesPhrase,
   todayStr, streakMultiplier, confessionCost, ensureFreshDay, pendingConfession, getSeasonInfo,
 } from './lib/gameLogic.js';
 
@@ -529,9 +530,15 @@ fastify.post('/duty/:type', async (req, reply) => {
 // the lookup below against the X API v2 (liking_users / retweeted_by for a
 // post, or a search for replies by the author). The ledger, the amounts and
 // the double-claim guard are already done.
+// Only one interaction pays now: a comment carrying X_PHRASE. Verification has
+// to read the reply's TEXT, not merely that a reply exists, or the phrase rule
+// is decoration. Until that is wired, this refuses and the endpoint refuses
+// with it -- scripts/x-scan.js is the working path, and it does the same
+// checks against the same ledger.
 async function verifyXInteraction(handle, kind, postId) {
+  if (kind !== 'comment') return { ok: false, reason: 'only_comments_pay' };
   if (!process.env.X_BEARER_TOKEN) return { ok: false, reason: 'not_configured' };
-  // TODO: call the X API here and confirm `handle` performed `kind` on `postId`.
+  // TODO: fetch the reply by `handle` on `postId` and test matchesPhrase(text).
   return { ok: false, reason: 'not_implemented' };
 }
 
@@ -659,7 +666,7 @@ fastify.post('/x/claim', async (req, reply) => {
     return reply.code(503).send({ error: 'X verification unavailable', reason: check.reason });
   }
 
-  const amount = X_DEVOTION[kind];
+  const amount = X_COMMENT_DEVOTION;
   const now = new Date().toISOString();
   const tx = db.transaction(() => {
     db.prepare(`
