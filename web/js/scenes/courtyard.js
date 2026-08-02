@@ -536,6 +536,12 @@ export class CourtyardScene {
     if (this._exiting) return;
     const pcol = Math.floor(this.pc.x / TILE), prow = Math.floor(this.pc.y / TILE);
     if (prow !== EXIT_ROW || !EXIT_COLS.includes(pcol)) return;
+    // A ghost does not leave. The threshold is the one thing in the abbey that
+    // acts on being WALKED over rather than pressed, so it was the single gap
+    // left in "can touch nothing" — and it is closed now. There is a way out
+    // and it is the power switch, which is the right way for someone who has
+    // not bound anything to end a visit.
+    if (this.player.ghost) { this._ghostHint(); return; }
     this._exiting = true;
     this._handleSaveExit();
   }
