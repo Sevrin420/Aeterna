@@ -1,5 +1,5 @@
 // The unhallowed church — a death-cult sanctuary laid out as an INVERTED CROSS
-// (a long north nave with a low transept and a short foot below it), surrounded
+// (a long north nave with a low transept and a short foot below it), sealed and surrounded
 // by pitch-black void. Down the nave are six pointed alcoves (three per side),
 // each a fire-shrine. Two staircases descend: the WEST stair to a warren of six
 // private rooms with doors; the EAST stair to a chamber walled with skulls.
@@ -51,12 +51,12 @@ export const NAVE = { x0: 51, y0: 8, x1: 68, y1: 57 };      // long stem, was 70
 export const TRANSEPT = { x0: 36, y0: 36, x1: 82, y1: 48 };  // crossbar, was 66 wide
 export const NAVE_CX = 59;                                   // nave centre column
 
-// The way out. These tiles are cut clean through the south wall as walkable
-// threshold cells ('x'), so stepping into the gap returns you to the entry
-// lobby — the gap reads as an opening, so it has to behave like one. The
-// 'gate' station's A-press still works for anyone who stops short of it.
-export const EXIT_ROW = NAVE.y1 + 1;              // the south wall course
-export const EXIT_COLS = [NAVE_CX - 1, NAVE_CX, NAVE_CX + 1];
+// The south wall course. There is no longer a way through it: the abbey is
+// sealed and every part of the game happens inside it. The row is still named
+// because half the church's props are placed off it — pews, grotesques, the
+// spawn that used to be here — and pinning them to a bare number instead would
+// mean the next resize strands them.
+export const EXIT_ROW = NAVE.y1 + 1;
 
 // Six fire alcoves down the nave, three per side. The niche used to be a plain
 // 4x4 box with a pointed-arch prop drawn inside it; the point is now the SHAPE
@@ -367,9 +367,6 @@ function buildGrid() {
   wrapWalls(grid, STAR_CELLS);
   // re-open the cell mouths the wall rings may have sealed
   for (const rm of ROOMS) grid[rm.mouth.row][rm.mouth.col] = 'c';
-  // cut the exit threshold through the south wall
-  for (const c of EXIT_COLS) grid[EXIT_ROW][c] = 'x';
-
   return grid.map((row) => row.join(''));
 }
 
@@ -395,8 +392,6 @@ for (let c = CONFESSIONAL.x0; c <= CONFESSIONAL.x1; c++) {
 // so moving the crossbar can never leave a staircase standing in a wall.
 prop('stair-down', TRANSEPT.x0 + 2, TRANSEPT.y0 + 6, false, { dest: { col: WEST_CORRIDOR.x0 + 2, row: 106 } });  // WEST -> warren
 prop('stair-down', TRANSEPT.x1 - 2, TRANSEPT.y0 + 6, false, { dest: { col: SKULL_STAIR.col, row: SKULL_STAIR.row } });  // EAST -> the star
-// the way out, at the foot of the cross
-prop('door', NAVE_CX, EXIT_ROW + 1, false);
 
 // --- SIX FIRE ALCOVES ---
 // Just the brazier (the interactive fire-shrine) and its fuel. The niche used

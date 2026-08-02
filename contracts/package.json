@@ -1,0 +1,21 @@
+{
+  "name": "aeterna-contracts",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:fuji": "hardhat run scripts/deploy.js --network fuji",
+    "deploy:avalanche": "hardhat run scripts/deploy.js --network avalanche",
+    "open:fuji": "hardhat run scripts/openMint.js --network fuji",
+    "open:avalanche": "hardhat run scripts/openMint.js --network avalanche"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.10"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2",
+    "dotenv": "^16.4.5"
+  }
+}

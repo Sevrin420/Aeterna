@@ -16,7 +16,7 @@ import { FireVigil } from '../vigil.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, ROOMS, BEDS, SPAWN_BEDS, SKULL_ROOM, MANCALA_SEAT, SKULL_ALTAR, NAVE, TRANSEPT, NAVE_CX,
-  EXIT_ROW, EXIT_COLS, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW, SKULL_SHRINE,
+  EXIT_ROW, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW, SKULL_SHRINE,
 } from '../abbeyMap.js';
 import {
   FLOOR, WALL, EARTH, VOID, BLOOD, GOLD, WOOD, IRON, BONE, CLOTH, SOUL, MOSS,
@@ -178,7 +178,6 @@ export class CourtyardScene {
       bob: 0,
     };
     this._stairLock = false; // true while standing on the stair we just used
-    this._exiting = false;   // latched once the exit threshold fires, so it runs once
     this.cam = { x: 0, y: 0 };
     this.footDust = []; // { x, y, t } fading dust puffs left by the player's steps
     this._dustTimer = 0;
@@ -532,20 +531,6 @@ export class CourtyardScene {
   // Walking into the gap at the foot of the cross leaves the abbey. The gap is
   // drawn as a hole in the wall, so it has to behave like one rather than
   // needing an A press at a station a few tiles short of it.
-  _checkExit() {
-    if (this._exiting) return;
-    const pcol = Math.floor(this.pc.x / TILE), prow = Math.floor(this.pc.y / TILE);
-    if (prow !== EXIT_ROW || !EXIT_COLS.includes(pcol)) return;
-    // A ghost does not leave. The threshold is the one thing in the abbey that
-    // acts on being WALKED over rather than pressed, so it was the single gap
-    // left in "can touch nothing" — and it is closed now. There is a way out
-    // and it is the power switch, which is the right way for someone who has
-    // not bound anything to end a visit.
-    if (this.player.ghost) { this._ghostHint(); return; }
-    this._exiting = true;
-    this._handleSaveExit();
-  }
-
   _checkStairs() {
     const pcol = Math.floor(this.pc.x / TILE), prow = Math.floor(this.pc.y / TILE);
     const onStair = STAIRS.find((s) => s.col === pcol && s.row === prow);
@@ -873,7 +858,6 @@ export class CourtyardScene {
     } catch (e) {
       sfx.error();
       this.onToast(e.message);
-      this._exiting = false;   // save failed — don't trap the player on the threshold
     }
   }
 
@@ -977,7 +961,6 @@ export class CourtyardScene {
       }
     }
     this._checkStairs();
-    this._checkExit();
     this.fire.update(dt);
     this.sticks.update(dt);
     this.shrine.update(dt);
@@ -1716,33 +1699,6 @@ export class CourtyardScene {
           const a = 0.28 + i * 0.11;
           ctx.fillStyle = `rgba(107,84,136,${a})`;
           ctx.fillRect(x - 6 + i, y + 4 - i * 2.4, 12 - i * 2, 1.4);
-        }
-        break;
-      }
-      case 'door': {
-        // The way out. Not an arch and not a door — just a stretch of wall that
-        // isn't there: a flat black gap exactly the depth of the masonry course,
-        // with the two cut wall ends picked out in gold so it reads as an exit
-        // rather than as a hole someone forgot to fill in.
-        // Width comes from the tiles actually carved out of the wall, so the
-        // gilded ends land on the masonry rather than floating inside the gap.
-        const gw = EXIT_COLS.length * TILE;
-        const wallTop = EXIT_ROW * TILE, wallBot = wallTop + TILE;
-        ctx.fillStyle = VOID;
-        ctx.fillRect(x - gw / 2, wallTop, gw, wallBot - wallTop);
-        // threshold: the floor darkens as it runs into the opening
-        const g = ctx.createLinearGradient(0, wallTop - 7, 0, wallTop);
-        g.addColorStop(0, 'rgba(8,6,17,0)');
-        g.addColorStop(1, 'rgba(8,6,17,0.9)');
-        ctx.fillStyle = g;
-        ctx.fillRect(x - gw / 2, wallTop - 7, gw, 7);
-        // the cut ends of the wall, gilded
-        for (const ex of [x - gw / 2 - 3, x + gw / 2]) {
-          const h = wallBot - wallTop;
-          ctx.fillStyle = GOLD.o; ctx.fillRect(ex, wallTop, 3, h);
-          ctx.fillStyle = GOLD.d; ctx.fillRect(ex, wallTop + 1, 3, h - 2);
-          ctx.fillStyle = GOLD.b; ctx.fillRect(ex, wallTop + 1, 3, 2);
-          ctx.fillStyle = GOLD.h; ctx.fillRect(ex, wallTop + 1, 1.3, 1);
         }
         break;
       }
