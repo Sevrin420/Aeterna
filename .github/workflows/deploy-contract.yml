@@ -1,0 +1,126 @@
+# Deploy the Aeterna Bloodline collection to Avalanche.
+#
+# Manual only. A contract deploy must never ride along on a push — this fires
+# when you go to the Actions tab and press Run, and not otherwise.
+#
+# The tests are a hard gate. If they fail the job stops and no transaction is
+# ever signed, which matters here because price, supply and both payout
+# addresses are immutable once the contract is out.
+name: Deploy Bloodline contract
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Which chain'
+        required: true
+        default: fuji
+        type: choice
+        options: [fuji, avalanche]
+      action:
+        description: 'deploy = new contract | open-mint = start selling on the one already deployed'
+        required: true
+        default: deploy
+        type: choice
+        options: [deploy, open-mint]
+      confirm:
+        description: 'For avalanche (mainnet) ONLY: type DEPLOY to confirm. Ignored on fuji.'
+        required: false
+        default: ''
+      max_supply:
+        description: 'Hard cap on Bloodlines. IMMUTABLE — cannot be raised later.'
+        required: true
+        default: '3333'
+      base_uri:
+        description: 'Where the server serves metadata. Must end in a slash.'
+        required: true
+        default: 'https://membersonly.cc/nft/'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.network }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse an unconfirmed mainnet run
+        if: inputs.network == 'avalanche' && inputs.confirm != 'DEPLOY'
+        run: |
+          echo "::error::Mainnet run without confirmation. Re-run and type DEPLOY in the confirm box."
+          exit 1
+
+      - name: Check the secrets are present
+        env:
+          KEY: ${{ secrets.DEPLOYER_KEY }}
+          TEAM: ${{ secrets.TEAM_ADDRESS }}
+          TREASURY: ${{ secrets.TREASURY_ADDRESS }}
+        run: |
+          for v in KEY TEAM TREASURY; do
+            if [ -z "${!v}" ]; then echo "::error::Missing repository secret for $v"; exit 1; fi
+          done
+          echo "team     ${TEAM}"
+          echo "treasury ${TREASURY}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+
+      - name: Install
+        working-directory: contracts
+        run: npm install --no-audit --no-fund
+
+      # The gate. Nothing below this runs if a single assertion fails.
+      - name: Test
+        working-directory: contracts
+        run: npx hardhat test
+
+      - name: Write .env
+        working-directory: contracts
+        env:
+          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+          TEAM_ADDRESS: ${{ secrets.TEAM_ADDRESS }}
+          TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
+          SNOWTRACE_KEY: ${{ secrets.SNOWTRACE_KEY }}
+        run: |
+          {
+            echo "DEPLOYER_KEY=${DEPLOYER_KEY}"
+            echo "TEAM_ADDRESS=${TEAM_ADDRESS}"
+            echo "TREASURY_ADDRESS=${TREASURY_ADDRESS}"
+            echo "SNOWTRACE_KEY=${SNOWTRACE_KEY}"
+            echo "PRICE_PER_CULTIST_WEI=10000000000000000"
+            echo "MAX_SUPPLY=${{ inputs.max_supply }}"
+            echo "BASE_URI=${{ inputs.base_uri }}"
+          } > .env
+
+      - name: Deploy
+        if: inputs.action == 'deploy'
+        working-directory: contracts
+        run: npx hardhat run scripts/deploy.js --network ${{ inputs.network }}
+
+      - name: Open the mint
+        if: inputs.action == 'open-mint'
+        working-directory: contracts
+        run: |
+          mkdir -p deployments
+          if [ ! -f "deployments/${{ inputs.network }}.json" ]; then
+            echo "::error::No deployments/${{ inputs.network }}.json in the repo. Commit the file the deploy step produced, then re-run."
+            exit 1
+          fi
+          npx hardhat run scripts/openMint.js --network ${{ inputs.network }}
+
+      # The deploy records the address in deployments/<network>.json. Keep it:
+      # openMint and every later script read it, and it is the only durable
+      # record of what was deployed with which arguments.
+      - name: Keep the deployment record
+        if: inputs.action == 'deploy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-${{ inputs.network }}
+          path: contracts/deployments/${{ inputs.network }}.json
+
+      - name: Shred the key
+        if: always()
+        working-directory: contracts
+        run: rm -f .env

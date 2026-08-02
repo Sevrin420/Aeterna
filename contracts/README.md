@@ -54,3 +54,41 @@ treasury.
 - `MAX_SUPPLY` decided — it cannot be raised later.
 - This contract has **not been audited**. It is small and uses OpenZeppelin
   ERC721Enumerable + Ownable unmodified, but that is not the same thing.
+
+## Deploying from GitHub (no local setup)
+
+Actions tab → **Deploy Bloodline contract** → Run workflow.
+
+### One-time: add three repository secrets
+
+Settings → Secrets and variables → Actions → **New repository secret**:
+
+| Secret | What it is |
+|---|---|
+| `DEPLOYER_KEY` | Private key of the deploying wallet, `0x`-prefixed. Needs a little AVAX for gas — that is all it ever needs. It does **not** receive mint money. |
+| `TEAM_ADDRESS` | Gets 10% of mint. **Immutable once deployed.** |
+| `TREASURY_ADDRESS` | Gets 90% of mint. **Immutable once deployed.** |
+| `SNOWTRACE_KEY` | Optional, for contract verification. |
+
+### About the deploying wallet
+
+Make a **fresh wallet** for this and put only gas money in it. Its key ends up
+in a CI secret, and a key in CI is a key on someone else's computer. It owns
+the collection afterwards — it can open/close the mint and repoint metadata —
+but it cannot touch a coin of the mint proceeds: those go straight to the two
+addresses above, and there is no setter for either.
+
+Gas on Avalanche for this deploy is cents. ~0.5 AVAX is plenty.
+
+Never paste the key into an issue, a PR, a chat, or this repo.
+
+### Then
+
+1. Run with network **fuji**, action **deploy**. Watch the tests pass, then the
+   address print.
+2. Commit the printed `deployments/fuji.json` (download it from the run's
+   artifacts) so `open-mint` can find it.
+3. Run again with action **open-mint**. Mint one Bloodline from a wallet.
+4. Happy? Same three steps with network **avalanche**, typing `DEPLOY` in the
+   confirm box.
+5. Paste the two printed meta tags into `web/index.html`.
