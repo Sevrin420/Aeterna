@@ -66,16 +66,24 @@ export class Input {
       const nx = (cx - r.left) / r.width - 0.5;
       const ny = (cy - r.top) / r.height - 0.5;
       clear();
-      if (Math.abs(nx) < 0.08 && Math.abs(ny) < 0.08) return; // dead zone at centre
+      if (Math.abs(nx) < 0.08 && Math.abs(ny) < 0.08) { this._dpadDir = null; return; } // dead zone
       const d = Math.abs(nx) > Math.abs(ny) ? (nx < 0 ? 'left' : 'right') : (ny < 0 ? 'up' : 'down');
-      if (!this.dirs[d]) (this._dirQueue || (this._dirQueue = [])).push(d);
+      // Enqueue on a CHANGE of direction only. this.dirs was just cleared two
+      // lines up, so testing it here would be true on every single pointermove
+      // — holding the pad for a second piled up dozens of queued steps that
+      // then drained after release and walked the menu selection away on its
+      // own. _dpadDir survives the clear, so it can tell held from changed.
+      if (this._dpadDir !== d) {
+        (this._dirQueue || (this._dirQueue = [])).push(d);
+        this._dpadDir = d;
+      }
       this.dirs[d] = true;
     };
     // No click sound here by design (blips were removed from the on-screen
     // controls). State (pressed + direction) is set directly with no audio
     // call in the way, so nothing decorative can ever block real input.
     const down = (cx, cy) => { el._pressed = true; el.classList.add('is-down'); from(cx, cy); };
-    const up = () => { el._pressed = false; el.classList.remove('is-down'); clear(); };
+    const up = () => { el._pressed = false; el.classList.remove('is-down'); this._dpadDir = null; clear(); };
 
     if (HAS_TOUCH) {
       el.addEventListener('touchstart', (e) => { e.preventDefault(); const t = e.changedTouches[0]; down(t.clientX, t.clientY); }, { passive: false });
@@ -128,26 +136,20 @@ export class Input {
   }
 
   // Call once per frame after update() has consumed the "just pressed" edge.
-  // Edge-triggered direction, for menus.
+  // Edge-triggered direction, for menus. One press, one step — nothing repeats.
   //
   // It cannot just read this.dirs: that map is POLLED, and a tap shorter than a
   // frame is set and cleared between two updates, so a quick press registers as
   // nothing at all. The walking code never noticed because it only cares
-  // whether a direction is held right now. So keydown latches into a queue that
-  // survives until something consumes it, and a genuine HOLD still repeats
-  // after a beat rather than shooting the selection across the grid.
-  consumeDir(now = performance.now()) {
-    if (this._dirQueue && this._dirQueue.length) {
-      const q = this._dirQueue.shift();
-      this._dirHeld = q;
-      this._dirAt = now;
-      return q;
-    }
-    const d = this.dirs.up ? 'up' : this.dirs.down ? 'down'
-      : this.dirs.left ? 'left' : this.dirs.right ? 'right' : null;
-    if (!d) { this._dirHeld = null; return null; }
-    if (this._dirHeld !== d) { this._dirHeld = d; this._dirAt = now; return d; }
-    if (now - this._dirAt > 340) { this._dirAt = now - 200; return d; }
+  // whether a direction is held right now. So keydown and each d-pad direction
+  // CHANGE latch into a queue that survives until something consumes it.
+  //
+  // There is deliberately no auto-repeat. On a menu two cells wide, holding a
+  // direction just flips the selection back and forth between the same pair —
+  // repeat is a feature for long lists and an active nuisance for a grid of
+  // four.
+  consumeDir() {
+    if (this._dirQueue && this._dirQueue.length) return this._dirQueue.shift();
     return null;
   }
 

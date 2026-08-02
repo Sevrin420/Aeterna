@@ -35,7 +35,7 @@ const BUTTONS = [
   { id: 'mint', label: 'MINT' },
   { id: 'docs', label: 'DOCS' },
 ];
-const BTN_W = 80, BTN_H = 22, BTN_GAP_X = 6, BTN_GAP_Y = 6;
+const BTN_W = 64, BTN_H = 18, BTN_GAP_X = 6, BTN_GAP_Y = 6;   // 20% smaller
 
 export class MenuScene {
   constructor({ wallet = null, cultists = 0, seed = 'menu', sex = 'male',
@@ -162,9 +162,6 @@ export class MenuScene {
     ctx.fillText(cxt, cx + 25, cy - CULT_H * 0.42 + 1);
     ctx.fillStyle = this.cultists > 0 ? GOLD.h : 'rgba(190,170,150,0.45)';
     ctx.fillText(cxt, cx + 24, cy - CULT_H * 0.42);
-    ctx.font = '8px "Courier New", monospace';
-    ctx.fillStyle = 'rgba(200,175,140,0.6)';
-    ctx.fillText(this.cultists === 1 ? 'CULTIST' : 'CULTISTS', cx + 24, cy - CULT_H * 0.42 + 10);
 
     // --- the buttons ---
     for (let i = 0; i < BUTTONS.length; i++) this._button(ctx, i);
@@ -193,20 +190,20 @@ export class MenuScene {
     }
 
     ctx.textAlign = 'center';
-    ctx.font = 'bold 11px "Courier New", monospace';
+    ctx.font = 'bold 9px "Courier New", monospace';
     ctx.fillStyle = 'rgba(8,4,10,0.85)';
-    ctx.fillText(b.label, r.x + r.w / 2 + 1, r.y + r.h / 2 + 5);
+    ctx.fillText(b.label, r.x + r.w / 2 + 1, r.y + r.h / 2 + 4.5);
     ctx.fillStyle = dim ? 'rgba(190,175,145,0.45)' : on ? GOLD.h : BONE.b;
-    ctx.fillText(b.label, r.x + r.w / 2, r.y + r.h / 2 + 4);
+    ctx.fillText(b.label, r.x + r.w / 2, r.y + r.h / 2 + 3.5);
 
     // a bound wallet gets a tick rather than a dead button
     if (dim) {
       ctx.strokeStyle = GOLD.b;
       ctx.lineWidth = 1.4;
       ctx.beginPath();
-      ctx.moveTo(r.x + 7, r.y + r.h / 2);
-      ctx.lineTo(r.x + 10, r.y + r.h / 2 + 3.5);
-      ctx.lineTo(r.x + 15, r.y + r.h / 2 - 4);
+      ctx.moveTo(r.x + 5, r.y + r.h / 2);
+      ctx.lineTo(r.x + 7.5, r.y + r.h / 2 + 3);
+      ctx.lineTo(r.x + 12, r.y + r.h / 2 - 3.5);
       ctx.stroke();
     }
   }
