@@ -9,7 +9,7 @@ const KEY = process.env.DEPLOYER_KEY ? [process.env.DEPLOYER_KEY] : [];
 module.exports = {
   solidity: {
     version: '0.8.24',
-    settings: { optimizer: { enabled: true, runs: 200 } },
+    settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: 'cancun' },
   },
   networks: {
     // Avalanche C-Chain.
