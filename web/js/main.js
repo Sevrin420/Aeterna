@@ -1,6 +1,8 @@
 import { Input, makeLoop } from './engine.js';
 import { BootScene } from './scenes/boot.js';
-import { EntranceScene } from './scenes/entrance.js';
+import { MenuScene } from './scenes/menu.js';
+import { DialogueBox } from './dialogue.js';
+import { LORE } from './lore.js';
 import { CourtyardScene } from './scenes/courtyard.js';
 import { api } from './api.js';
 import { MancalaBoard } from './mancala.js';
@@ -479,43 +481,67 @@ function entranceOverlaysOpen() {
 
 let entrancePlayer = null;
 let chosenCultist = null;
+// What the title menu shows: the bound address and how many Cultists it holds.
+let connectedAddr = null;
+let heldCultists = 0;
 
 // Save & Exit from the game returns to the entry lobby (not power off). Devotion
 // was already saved by the scene before this runs.
 // Leaving the abbey means walking out of its SOUTH door, so the player comes
 // back into the courtyard at its north end — under the arch they went in by.
 // Arriving fresh (or after a reload) starts them in the middle of the yard.
+// Ending the day drops you back to the title menu, which is the only screen
+// outside the abbey now that the entrance courtyard is gone.
 function returnToEntrance() {
   if (scene && scene.exit) scene.exit();
   if (socket) { socket.disconnect(); socket = null; }
   hud.hidden = true;
-  revealTransition(() => enterEntrance(entrancePlayer, 'north'));
+  revealTransition(() => enterEntrance(entrancePlayer));
 }
 
-function enterEntrance(player, spawn = 'centre') {
+function enterEntrance(player) {
   entrancePlayer = player;
-  // Entry-lobby music: the title hymn plays here (the in-game hymn is paused).
+  // Title-menu music: the lobby hymn plays here (the in-game hymn is paused).
   if (_gameBgm) try { _gameBgm.pause(); } catch {}
   if (!_bgm) {
     _bgm = new Audio('assets/hymn.mp3');
     _bgm.loop = true;
     _bgm.volume = 0.55 * AUDIO_MASTER;
     _bgm.muted = sfx.isMuted();
-    tryPlay(_bgm, 'hymn@lobby');
+    tryPlay(_bgm, 'hymn@menu');
   } else {
     _bgm.muted = sfx.isMuted();
-    if (_bgm.paused) tryPlay(_bgm, 'hymn@lobby');
+    if (_bgm.paused) tryPlay(_bgm, 'hymn@menu');
   }
   _want = _bgm;
-  scene = new EntranceScene({
-    player,
-    spawn,
-    onWallet: openWalletFlow,
-    isBusy: entranceOverlaysOpen,
+
+  // Docs and Mint are read in the abbey's own box, drawn over the menu. They
+  // used to be two signposts in a courtyard you had to walk across to find.
+  const box = new DialogueBox();
+  const menu = new MenuScene({
+    wallet: connectedAddr ? shortAddr(connectedAddr) : null,
+    cultists: heldCultists,
+    seed: (player && player.wallet) || 'menu',
+    sex: (player && player.sex) || 'male',
+    onConnect: openWalletFlow,
+    onPlay: () => proceedIntoGame(),
+    onMint: () => box.show(LORE.mint),
+    onDocs: () => box.show(LORE.doctrine),
   });
+  // The box owns input and the screen while it is up, exactly as in the abbey.
+  const baseUpdate = menu.update.bind(menu);
+  const baseRender = menu.render.bind(menu);
+  menu.update = (dt, input) => {
+    if (box.active) { box.update(dt, input); return; }
+    baseUpdate(dt, input);
+  };
+  menu.render = (ctx) => { baseRender(ctx); box.render(ctx); };
+  menu.box = box;
+
+  scene = menu;
   scene.enter();
   hint.textContent = '';
-  window.__aeterna = { scene, player };
+  window.__aeterna = { scene, player, menu };
 }
 
 function openWalletFlow() {
@@ -553,7 +579,10 @@ walletConnectBtn.addEventListener('click', async () => {
   try {
     const addr = await connectWallet();
     walletMsg.innerHTML = `Connected <span class="addr">${shortAddr(addr)}</span>. Seeking your Cultists…`;
+    connectedAddr = addr;
     const cultists = await fetchCultists(addr);
+    heldCultists = cultists.length;
+    if (scene && scene.setWallet) scene.setWallet(shortAddr(addr), cultists.length);
     if (!cultists.length) {
       walletMsg.innerHTML = `Connected <span class="addr">${shortAddr(addr)}</span>. No Cultist NFTs found in this wallet.`;
       walletConnectBtn.hidden = true;

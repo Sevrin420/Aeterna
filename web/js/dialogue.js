@@ -51,6 +51,33 @@ const CPS = 14;                  // characters per second — a third of the old
 // A single frame square. The bevel is drawn rather than blitted so the frame
 // can be any size without a spritesheet, and so every tile is guaranteed to
 // agree with the palette if the ramp is ever retuned.
+// The box's own frame and ground, exported so anything else that has to read
+// as part of the same object — the title menu, for one — is literally the same
+// surface rather than a lookalike built twice.
+export function drawPanel(ctx, x, y, w, h) {
+  const ix = x + TILE, iy = y + TILE;
+  const iw = w - TILE * 2, ih = h - TILE * 2;
+  const g = ctx.createLinearGradient(0, iy, 0, iy + ih);
+  g.addColorStop(0, '#4a1119');
+  g.addColorStop(1, '#2c0a10');
+  ctx.fillStyle = g;
+  ctx.fillRect(ix, iy, iw, ih);
+  ctx.fillStyle = 'rgba(198,43,48,0.22)';
+  ctx.fillRect(ix, iy, iw, 1);
+  ctx.fillStyle = 'rgba(20,6,10,0.5)';
+  ctx.fillRect(ix, iy + ih - 1, iw, 1);
+  const cols = Math.round(w / TILE), rows = Math.round(h / TILE);
+  for (let c = 0; c < cols; c++) {
+    bevelTile(ctx, x + c * TILE, y);
+    bevelTile(ctx, x + c * TILE, y + (rows - 1) * TILE);
+  }
+  for (let r = 1; r < rows - 1; r++) {
+    bevelTile(ctx, x, y + r * TILE);
+    bevelTile(ctx, x + (cols - 1) * TILE, y + r * TILE);
+  }
+}
+export const PANEL_TILE = TILE;
+
 function bevelTile(ctx, x, y) {
   ctx.fillStyle = IRON.o;
   ctx.fillRect(x, y, TILE, TILE);

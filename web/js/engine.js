@@ -33,7 +33,12 @@ export class Input {
 
     window.addEventListener('keydown', (e) => {
       if (isTyping(e)) return;
-      if (keyMap[e.code]) { this.dirs[keyMap[e.code]] = true; e.preventDefault(); }
+      if (keyMap[e.code]) {
+        const d = keyMap[e.code];
+        if (!this.dirs[d]) (this._dirQueue || (this._dirQueue = [])).push(d);
+        this.dirs[d] = true;
+        e.preventDefault();
+      }
       if (e.code === 'Enter' || e.code === 'KeyZ' || e.code === 'Space') { this._setA(true); e.preventDefault(); }
       if (e.code === 'KeyX' || e.code === 'ShiftLeft') { this._setB(true); e.preventDefault(); }
     });
@@ -62,8 +67,9 @@ export class Input {
       const ny = (cy - r.top) / r.height - 0.5;
       clear();
       if (Math.abs(nx) < 0.08 && Math.abs(ny) < 0.08) return; // dead zone at centre
-      if (Math.abs(nx) > Math.abs(ny)) this.dirs[nx < 0 ? 'left' : 'right'] = true;
-      else this.dirs[ny < 0 ? 'up' : 'down'] = true;
+      const d = Math.abs(nx) > Math.abs(ny) ? (nx < 0 ? 'left' : 'right') : (ny < 0 ? 'up' : 'down');
+      if (!this.dirs[d]) (this._dirQueue || (this._dirQueue = [])).push(d);
+      this.dirs[d] = true;
     };
     // No click sound here by design (blips were removed from the on-screen
     // controls). State (pressed + direction) is set directly with no audio
@@ -122,6 +128,29 @@ export class Input {
   }
 
   // Call once per frame after update() has consumed the "just pressed" edge.
+  // Edge-triggered direction, for menus.
+  //
+  // It cannot just read this.dirs: that map is POLLED, and a tap shorter than a
+  // frame is set and cleared between two updates, so a quick press registers as
+  // nothing at all. The walking code never noticed because it only cares
+  // whether a direction is held right now. So keydown latches into a queue that
+  // survives until something consumes it, and a genuine HOLD still repeats
+  // after a beat rather than shooting the selection across the grid.
+  consumeDir(now = performance.now()) {
+    if (this._dirQueue && this._dirQueue.length) {
+      const q = this._dirQueue.shift();
+      this._dirHeld = q;
+      this._dirAt = now;
+      return q;
+    }
+    const d = this.dirs.up ? 'up' : this.dirs.down ? 'down'
+      : this.dirs.left ? 'left' : this.dirs.right ? 'right' : null;
+    if (!d) { this._dirHeld = null; return null; }
+    if (this._dirHeld !== d) { this._dirHeld = d; this._dirAt = now; return d; }
+    if (now - this._dirAt > 340) { this._dirAt = now - 200; return d; }
+    return null;
+  }
+
   consumeAPress() {
     const v = this._aJustPressed;
     this._aJustPressed = false;
