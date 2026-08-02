@@ -47,6 +47,7 @@ export class MenuScene {
     this.t = 0;
     this.sel = wallet ? 1 : 0;                   // land on PLAY if already bound
     this.busy = false;
+    this.status = null;     // a line under the title while connecting, or why it failed
   }
 
   // Called when the wallet connects or the holdings come back, so the panel
@@ -87,6 +88,7 @@ export class MenuScene {
 
   _fire() {
     if (this.busy) return;
+    this.status = null;
     const b = BUTTONS[this.sel];
     sfx.bootConfirm();
     this.on[b.id]();
@@ -125,8 +127,16 @@ export class MenuScene {
     y += 15;
     ctx.font = '9px "Courier New", monospace';
     const on = !!this.wallet;
-    ctx.fillStyle = on ? GOLD.b : 'rgba(190,150,150,0.55)';
-    ctx.fillText(on ? `BOUND  ${this.wallet}` : 'NO WALLET BOUND', W / 2, y);
+    // While a connection is in flight — or after one has failed — the wallet
+    // line says so instead of flatly reporting "no wallet bound", which is true
+    // but useless when the player has just pressed the button.
+    if (this.status) {
+      ctx.fillStyle = this.busy ? GOLD.b : BLOOD.l;
+      ctx.fillText(this.status, W / 2, y);
+    } else {
+      ctx.fillStyle = on ? GOLD.b : 'rgba(190,150,150,0.55)';
+      ctx.fillText(on ? `BOUND  ${this.wallet}` : 'NO WALLET BOUND', W / 2, y);
+    }
 
     // --- the Cultist, turning ---
     // Held for over a second a side rather than spun: at four facings a fast

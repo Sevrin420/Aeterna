@@ -29,17 +29,84 @@ export function hasInjectedWallet() {
   return MOCK_WALLET || (typeof window !== 'undefined' && !!window.ethereum);
 }
 
+// ── WALLETCONNECT ───────────────────────────────────────────────────────────
+// The game is played in an ordinary browser as often as inside a wallet's own,
+// and an ordinary browser has no window.ethereum to ask. WalletConnect is the
+// bridge: it puts up a QR code on desktop and deep-links straight into the
+// wallet app on a phone.
+//
+// Two things this needs that are NOT code:
+//
+//   1. A PROJECT ID from cloud.reown.com (free). It is public — it identifies
+//      the dapp to the relay, it is not a secret — so it lives in a meta tag in
+//      index.html rather than in a build. With no project id set, the whole
+//      path stays shut and connectWallet() falls back to whatever is injected.
+//   2. Network access to a CDN at runtime, because there is no build step here
+//      to bundle the library into. The import is lazy, so a player who never
+//      presses Connect never fetches it, and a failure to fetch surfaces as a
+//      plain error rather than a dead button.
+const _meta = (n) => (typeof document !== 'undefined'
+  ? (document.querySelector(`meta[name="${n}"]`) || {}).content || '' : '');
+export const WC_PROJECT_ID = _meta('wc-project-id');
+const WC_CHAIN = Number(_meta('wc-chain-id')) || 1;          // Ethereum mainnet
+const WC_SRC = 'https://esm.sh/@walletconnect/ethereum-provider@2.17.2';
+
+export function hasWalletConnect() { return !!WC_PROJECT_ID; }
+
+let _wc = null;
+async function initWalletConnect() {
+  if (_wc) return _wc;
+  if (!WC_PROJECT_ID) throw new Error('WC_NOT_CONFIGURED');
+  let mod;
+  try {
+    mod = await import(/* @vite-ignore */ WC_SRC);
+  } catch {
+    throw new Error('WC_LOAD_FAILED');
+  }
+  const EthereumProvider = mod.EthereumProvider || mod.default;
+  _wc = await EthereumProvider.init({
+    projectId: WC_PROJECT_ID,
+    chains: [WC_CHAIN],
+    showQrModal: true,
+    metadata: {
+      name: 'Vita Aeterna',
+      description: 'A death-cult abbey.',
+      url: typeof location !== 'undefined' ? location.origin : 'https://membersonly.cc',
+      icons: [`${typeof location !== 'undefined' ? location.origin : ''}/assets/icon.png`],
+    },
+  });
+  return _wc;
+}
+
+// Opens the WalletConnect modal (or the wallet app, on a phone) and returns the
+// address that came back.
+export async function connectWalletConnect() {
+  const wc = await initWalletConnect();
+  await wc.connect();
+  const accounts = wc.accounts || [];
+  if (!accounts.length) throw new Error('NO_ACCOUNT');
+  return accounts[0];
+}
+
+export async function disconnectWallet() {
+  try { if (_wc) await _wc.disconnect(); } catch { /* already gone */ }
+  _wc = null;
+}
+
 // Prompt the wallet to connect and return the selected address. Uses the real
 // injected provider when present; falls back to a demo address only when a
 // demo/mock URL param is set. Throws 'NO_WALLET' if neither applies.
 export async function connectWallet() {
+  if (MOCK_WALLET) return DEMO_ADDR;
+  // Inside a wallet's own browser, ask it directly — putting a WalletConnect QR
+  // in front of someone who is already standing in MetaMask is nonsense.
   const eth = typeof window !== 'undefined' ? window.ethereum : null;
   if (eth) {
     const accounts = await eth.request({ method: 'eth_requestAccounts' });
     if (!accounts || !accounts.length) throw new Error('NO_ACCOUNT');
     return accounts[0];
   }
-  if (MOCK_WALLET) return DEMO_ADDR; // no real wallet, but demo mode is on
+  if (WC_PROJECT_ID) return connectWalletConnect();
   throw new Error('NO_WALLET');
 }
 

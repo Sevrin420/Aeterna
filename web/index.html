@@ -3,6 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <!-- WalletConnect. The project id is PUBLIC — it identifies the dapp to the
+       relay and is not a secret — so it lives here rather than in a build.
+       Get one free at https://cloud.reown.com and paste it into content="".
+       Left empty, the WalletConnect path stays shut and Connect falls back to
+       whatever provider the browser injects. -->
+  <meta name="wc-project-id" content="" />
+  <meta name="wc-chain-id" content="1" />
   <title>Aeterna — Vita Aeterna</title>
   <link rel="icon" href="data:," />
   <link rel="preconnect" href="https://fonts.googleapis.com" />

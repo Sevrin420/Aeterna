@@ -7,7 +7,7 @@ import { CourtyardScene } from './scenes/courtyard.js';
 import { api } from './api.js';
 import { MancalaBoard } from './mancala.js';
 import { sfx, AUDIO_MASTER } from './sfx.js';
-import { connectWallet, fetchCultists, shortAddr, hasInjectedWallet } from './wallet.js';
+import { connectWallet, fetchCultists, shortAddr, hasInjectedWallet, hasWalletConnect } from './wallet.js';
 
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');
@@ -523,7 +523,7 @@ function enterEntrance(player) {
     cultists: heldCultists,
     seed: (player && player.wallet) || 'menu',
     sex: (player && player.sex) || 'male',
-    onConnect: openWalletFlow,
+    onConnect: () => menuConnect(menu),
     onPlay: () => proceedIntoGame(),
     onMint: () => box.show(LORE.mint),
     onDocs: () => box.show(LORE.doctrine),
@@ -542,6 +542,36 @@ function enterEntrance(player) {
   scene.enter();
   hint.textContent = '';
   window.__aeterna = { scene, player, menu };
+}
+
+// The menu's Connect button. It does the connection itself and writes the
+// result straight back into the panel — the old HTML overlay is still there for
+// the Cultist picker, but binding a wallet no longer needs a detour through it.
+async function menuConnect(menu) {
+  if (menu.busy) return;
+  menu.busy = true;
+  menu.status = 'OPENING WALLET…';
+  try {
+    const addr = await connectWallet();
+    connectedAddr = addr;
+    const cultists = await fetchCultists(addr);
+    heldCultists = cultists.length;
+    menu.setWallet(shortAddr(addr), cultists.length, addr);
+    menu.status = null;
+    menu.sel = 1;                       // move them on to PLAY
+    showToast(`Bound ${shortAddr(addr)} — ${cultists.length} Cultist${cultists.length === 1 ? '' : 's'}.`);
+  } catch (e) {
+    const why = {
+      NO_WALLET: hasWalletConnect() ? 'NO WALLET FOUND' : 'WALLETCONNECT NOT CONFIGURED',
+      WC_NOT_CONFIGURED: 'WALLETCONNECT NOT CONFIGURED',
+      WC_LOAD_FAILED: 'COULD NOT REACH WALLETCONNECT',
+      NO_ACCOUNT: 'NO ACCOUNT RETURNED',
+    }[e && e.message] || 'CONNECTION REFUSED';
+    menu.status = why;
+    sfx.error();
+  } finally {
+    menu.busy = false;
+  }
 }
 
 function openWalletFlow() {
