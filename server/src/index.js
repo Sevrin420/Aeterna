@@ -58,9 +58,13 @@ fastify.get('/nft/:tokenId', async (req, reply) => {
   const devotion = row ? row.devotion || 0 : 0;
   const streak = row ? row.streak || 0 : 0;
 
+  // The holder's own name for the line leads, with the token number kept
+  // alongside it so a card is still identifiable when two lines share a name.
+  const given = row && row.bloodline_name ? row.bloodline_name : null;
+
   reply.header('Cache-Control', 'public, max-age=60');
   return {
-    name: `Aeterna Bloodline #${tokenId}`,
+    name: given ? `${given} — Bloodline #${tokenId}` : `Aeterna Bloodline #${tokenId}`,
     description: 'A bloodline of the abbey of Vita Aeterna. It holds a fixed '
       + 'number of Cultists, set the day it was raised and never added to. Its '
       + 'Devotion is earned, and rises for as long as the line is kept.',
@@ -74,6 +78,7 @@ fastify.get('/nft/:tokenId', async (req, reply) => {
       { trait_type: 'Awakened', value: row ? 'Yes' : 'Not yet' },
       // Only present once its holder has bound one — an absent trait reads
       // better on a marketplace than an empty one.
+      ...(given ? [{ trait_type: 'Name', value: given }] : []),
       ...(row && row.x_handle ? [{ trait_type: 'X', value: `@${row.x_handle}` }] : []),
     ],
   };
@@ -92,6 +97,7 @@ fastify.get('/nft/:tokenId/image.svg', async (req, reply) => {
   // Validated on the way in, escaped again on the way out: this string is
   // served to marketplaces, and a stored handle predates the current rule.
   const handle = row && row.x_handle ? `@${esc(row.x_handle)}` : '';
+  const given = row && row.bloodline_name ? esc(row.bloodline_name) : '';
 
   reply.header('Content-Type', 'image/svg+xml');
   reply.header('Cache-Control', 'public, max-age=60');
@@ -105,8 +111,10 @@ fastify.get('/nft/:tokenId/image.svg', async (req, reply) => {
   <text x="300" y="96" font-family="Courier New,monospace" font-size="30" font-weight="bold"
         fill="#e85a4a" text-anchor="middle">VITA AETERNA</text>
   <text x="300" y="132" font-family="Courier New,monospace" font-size="17"
-        fill="#c9a35f" text-anchor="middle">BLOODLINE #${esc(tokenId)}</text>
-  <text x="300" y="160" font-family="Courier New,monospace" font-size="15"
+        fill="#c9a35f" text-anchor="middle">${given || `BLOODLINE #${esc(tokenId)}`}</text>
+  ${given ? `<text x="300" y="152" font-family="Courier New,monospace" font-size="12"
+        fill="#6b5227" text-anchor="middle">BLOODLINE #${esc(tokenId)}</text>` : ''}
+  <text x="300" y="${given ? 174 : 160}" font-family="Courier New,monospace" font-size="15"
         fill="#8a8069" text-anchor="middle">${handle}</text>
   <text x="300" y="300" font-family="Courier New,monospace" font-size="128" font-weight="bold"
         fill="#f2d264" text-anchor="middle">${esc(cultists)}</text>
@@ -215,13 +223,32 @@ async function readTokenFromChain(tokenId) {
   };
 }
 
+// A Bloodline is named once, when it is raised. The name is what the abbey
+// calls it afterwards — it is the line's name, not the monk's, which is why it
+// does not overwrite `name`: the person keeping the line is not the line.
+// 1-24 characters of letters, digits, spaces and the punctuation a house name
+// actually uses. Anything else is a typo or an attempt to put markup somewhere
+// that ends up on a card served to marketplaces.
+const BLOODLINE_NAME_RE = /^[A-Za-z0-9 '’\-.]{1,24}$/;
+function cleanBloodlineName(v) {
+  const t = String(v ?? '').trim().replace(/\s+/g, ' ');
+  return t && BLOODLINE_NAME_RE.test(t) ? t : null;
+}
+
 fastify.post('/bind', async (req, reply) => {
-  const { wallet, tokenId, address } = req.body || {};
+  const { wallet, tokenId, address, bloodlineName } = req.body || {};
   const tid = Number(tokenId);
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
   if (!Number.isInteger(tid) || tid < 1) return reply.code(400).send({ error: 'bad token' });
   if (!BLOODLINE_ADDRESS) return reply.code(503).send({ error: 'Collection not configured on the server' });
   if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) return reply.code(400).send({ error: 'bad address' });
+  // Only refuse a name that was actually offered; binding without one is fine
+  // and falls back to the token number below.
+  const wantsName = bloodlineName != null && String(bloodlineName).trim() !== '';
+  const cleanName = wantsName ? cleanBloodlineName(bloodlineName) : null;
+  if (wantsName && !cleanName) {
+    return reply.code(400).send({ error: 'A Bloodline name is 1-24 letters, digits, spaces, apostrophes or hyphens' });
+  }
 
   let onChain;
   try {
@@ -245,6 +272,11 @@ fastify.post('/bind', async (req, reply) => {
     if (bound.cultists !== onChain.cultists) {
       db.prepare('UPDATE players SET cultists = ? WHERE id = ?').run(onChain.cultists, bound.id);
     }
+    // Named once, at creation. A Bloodline bound before this existed has no
+    // name yet, so it may still take one; one that already has a name keeps it.
+    if (cleanName && !bound.bloodline_name) {
+      db.prepare('UPDATE players SET bloodline_name = ? WHERE id = ?').run(cleanName, bound.id);
+    }
     return ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE id = ?').get(bound.id));
   }
 
@@ -261,11 +293,11 @@ fastify.post('/bind', async (req, reply) => {
   const ghost = db.prepare('SELECT * FROM players WHERE wallet = ? AND token_id IS NULL').get(w);
   if (ghost) {
     db.prepare(`UPDATE players SET
-        token_id = ?, cultists = ?,
+        token_id = ?, cultists = ?, bloodline_name = ?,
         devotion = 0, streak = 0, level = 1, last_duty_date = NULL, confession_count = 0,
         flags_date = ?, pray_today = 0, garden_today = 0, candles_today = 0,
         scourge_today = 0, gifts_given_today = 0, gifts_received_today = 0
-      WHERE id = ?`).run(tid, onChain.cultists, todayStr(), ghost.id);
+      WHERE id = ?`).run(tid, onChain.cultists, cleanName || `Bloodline #${tid}`, todayStr(), ghost.id);
     return ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE id = ?').get(ghost.id));
   }
 
@@ -277,6 +309,7 @@ fastify.post('/bind', async (req, reply) => {
     wallet: w,
     token_id: tid,
     cultists: onChain.cultists,
+    bloodline_name: cleanName || `Bloodline #${tid}`,
     name: sibling ? sibling.name : `Bloodline ${tid}`,
     prefix: sibling ? sibling.prefix : 'Brother',
     sex: sibling ? sibling.sex : 'male',
@@ -285,8 +318,8 @@ fastify.post('/bind', async (req, reply) => {
     flags_date: todayStr(),
   };
   db.prepare(`
-    INSERT INTO players (id, wallet, token_id, cultists, name, prefix, sex, x_handle, created_at, flags_date)
-    VALUES (@id, @wallet, @token_id, @cultists, @name, @prefix, @sex, @x_handle, @created_at, @flags_date)
+    INSERT INTO players (id, wallet, token_id, cultists, bloodline_name, name, prefix, sex, x_handle, created_at, flags_date)
+    VALUES (@id, @wallet, @token_id, @cultists, @bloodline_name, @name, @prefix, @sex, @x_handle, @created_at, @flags_date)
   `).run(player);
   return db.prepare('SELECT * FROM players WHERE id = ?').get(player.id);
 });

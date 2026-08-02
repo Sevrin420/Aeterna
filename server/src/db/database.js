@@ -36,6 +36,10 @@ for (const ddl of [
   // for the life of the token, so it is safe to cache: it is the end-of-season
   // payout multiplier and nothing in play ever changes it.
   'ALTER TABLE players ADD COLUMN cultists INTEGER DEFAULT 0',
+  // What the holder called this Bloodline when they raised it. Separate from
+  // `name`, which is the monk's own given name and is auto-generated: a
+  // Bloodline is the line, not the person currently keeping it.
+  'ALTER TABLE players ADD COLUMN bloodline_name TEXT',
 ]) {
   try {
     db.exec(ddl);

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS players (
   prefix        TEXT NOT NULL DEFAULT 'Brother',  -- Brother | Sister | Deacon | Bishop | Cardinal
   sex           TEXT NOT NULL,                    -- male | female
   x_handle      TEXT,
+  bloodline_name TEXT,                            -- what the holder named this Bloodline
   level         INTEGER NOT NULL DEFAULT 1,
   devotion      INTEGER NOT NULL DEFAULT 0,
   streak        INTEGER NOT NULL DEFAULT 0,

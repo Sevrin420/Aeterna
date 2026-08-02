@@ -78,8 +78,13 @@ export const api = {
   },
   // Bind this player to one Bloodline. The server checks on-chain that
   // `address` really holds `tokenId` before it will write the row.
-  bind(tokenId, address) {
-    return req('/bind', { method: 'POST', body: JSON.stringify({ wallet: getWalletId(), tokenId, address }) });
+  // `bloodlineName` is only meaningful the first time a token is bound — a
+  // Bloodline is named when it is raised and keeps that name afterwards.
+  bind(tokenId, address, bloodlineName) {
+    return req('/bind', {
+      method: 'POST',
+      body: JSON.stringify({ wallet: getWalletId(), tokenId, address, bloodlineName }),
+    });
   },
   duty(type) {
     return req(`/duty/${type}`, { method: 'POST', body: who() });

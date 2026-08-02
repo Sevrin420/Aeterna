@@ -623,17 +623,17 @@ async function menuConnect(menu) {
 
 // Tell the server which Bloodline this player is. Everything that touches
 // Devotion afterwards is keyed to it.
-async function bindBloodline(bl, menu) {
+async function bindBloodline(bl, menu, bloodlineName) {
   if (isDemoMode()) {
     boundToken = bl.id;
     chosenCultist = bl;
     if (menu) { menu.sel = 1; menu.setWallet(shortAddr(connectedAddr), bl.cultists, connectedAddr); }
-    showToast(`Playing Bloodline #${bl.id} — ${bl.cultists} Cultists. (demo)`);
+    showToast(`${bloodlineName || bl.name} walks — Bloodline #${bl.id}, ${bl.cultists} Cultists. (demo)`);
     return;
   }
   try {
     if (menu) menu.status = 'BINDING BLOODLINE…';
-    const row = await api.bind(bl.id, connectedAddr);
+    const row = await api.bind(bl.id, connectedAddr, bloodlineName);
     boundToken = bl.id;
     setTokenId(bl.id);
     chosenCultist = bl;
@@ -649,7 +649,10 @@ async function bindBloodline(bl, menu) {
       menu.status = null;
       menu.sel = 1;                     // move them on to PLAY
     }
-    showToast(`Playing Bloodline #${bl.id} — ${bl.cultists} Cultists, ${full.devotion || 0} Devotion.`);
+    // The line's own name is what the abbey calls it. The token number is kept
+    // in the toast so a holder of several can still tell two alike names apart.
+    const called = full.bloodline_name || row.bloodline_name || `Bloodline #${bl.id}`;
+    showToast(`${called} walks — Bloodline #${bl.id}, ${bl.cultists} Cultists, ${full.devotion || 0} Devotion.`);
     await offerXHandleAndReferral(full);
   } catch (e) {
     // A failed bind leaves a paid-for Bloodline that the game cannot see, so
@@ -681,7 +684,7 @@ function openBloodlinePicker(menu) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'cultist-card';
-    card.textContent = `#${bl.id} — ${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}`;
+    card.textContent = `${bl.name} — ${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}`;
     if (bl.id === boundToken) card.classList.add('sel');
     card.addEventListener('click', async () => {
       walletOverlay.hidden = true;
@@ -891,7 +894,19 @@ async function openMintPicker(menu) {
       heldCultists = totalCultists(heldBloodlines);
       const fresh = heldBloodlines[heldBloodlines.length - 1];
       showToast(`The Bloodline is raised — ${n} Cultist${n === 1 ? '' : 's'}.`);
-      if (fresh) await bindBloodline(fresh, menu);
+      // Named here, at the moment it is raised, and never again.
+      let given = null;
+      if (fresh) {
+        given = await askOverlay({
+          title: 'Name the Bloodline',
+          message: 'What shall this line be called? The abbey will use this name '
+            + 'every time you take it up, and it is carved on its card.',
+          placeholder: 'House Vane',
+          confirm: 'Name it',
+          skip: 'Leave it unnamed',
+        });
+      }
+      if (fresh) await bindBloodline(fresh, menu, given);
     } catch (e) {
       const why = {
         MINT_CLOSED: 'The mint is not open yet.',
