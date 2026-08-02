@@ -15,9 +15,9 @@
 //   a large rotating Cultist turning through all four facings, x N beside it
 //   a 2x2 grid of buttons    Wallet Connect / Play / Mint / Docs
 
-import { drawPanel, PANEL_TILE } from '../dialogue.js';
+import { drawPanel, PANEL_TILE, THEMES } from '../dialogue.js';
 import { drawCharacter, getCultistSprite } from '../spritesheet.js';
-import { BLOOD, GOLD, BONE, IRON, VOID, SHADOW, block } from '../palette.js';
+import { GOLD, BONE, VOID, SHADOW, block } from '../palette.js';
 import { sfx } from '../sfx.js';
 
 const W = 208, H = 208;
@@ -106,7 +106,11 @@ export class MenuScene {
   render(ctx) {
     ctx.fillStyle = VOID;
     ctx.fillRect(0, 0, W, H);
-    drawPanel(ctx, BOX_X, BOX_Y, BOX_W, BOX_H);
+    // Malachite here, not the abbey's crimson: this screen is looked at while
+    // the console itself is still the object in the player's hands, and its
+    // olive-lime buttons fight a red panel. Inside the abbey the crimson stays.
+    const TH = THEMES.malachite;
+    drawPanel(ctx, BOX_X, BOX_Y, BOX_W, BOX_H, TH);
 
     const inX = BOX_X + PANEL_TILE + 7;
     const inW = BOX_W - (PANEL_TILE + 7) * 2;
@@ -116,11 +120,11 @@ export class MenuScene {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.font = 'bold 13px "Courier New", monospace';
-    ctx.fillStyle = 'rgba(20,6,10,0.8)';
+    ctx.fillStyle = 'rgba(6,14,4,0.8)';
     ctx.fillText('VITA AETERNA', W / 2 + 1, y + 1);
-    ctx.fillStyle = BLOOD.l;
+    ctx.fillStyle = TH.title.l;
     ctx.fillText('VITA AETERNA', W / 2, y);
-    ctx.fillStyle = 'rgba(232,90,74,0.30)';
+    ctx.fillStyle = TH.rule;
     ctx.fillRect(inX, y + 4, inW, 1);
 
     // --- the wallet line ---
@@ -131,10 +135,10 @@ export class MenuScene {
     // line says so instead of flatly reporting "no wallet bound", which is true
     // but useless when the player has just pressed the button.
     if (this.status) {
-      ctx.fillStyle = this.busy ? GOLD.b : BLOOD.l;
+      ctx.fillStyle = this.busy ? GOLD.b : '#e8b04a';
       ctx.fillText(this.status, W / 2, y);
     } else {
-      ctx.fillStyle = on ? GOLD.b : 'rgba(190,150,150,0.55)';
+      ctx.fillStyle = on ? GOLD.b : 'rgba(170,185,150,0.55)';
       ctx.fillText(on ? `BOUND  ${this.wallet}` : 'NO WALLET BOUND', W / 2, y);
     }
 
@@ -149,8 +153,8 @@ export class MenuScene {
     ctx.save();                                   // a lit disc for it to stand on
     ctx.globalCompositeOperation = 'lighter';
     const g = ctx.createRadialGradient(cx, cy - CULT_H * 0.4, 2, cx, cy - CULT_H * 0.4, 46);
-    g.addColorStop(0, 'rgba(198,43,48,0.20)');
-    g.addColorStop(1, 'rgba(198,43,48,0)');
+    g.addColorStop(0, `rgba(${TH.glow},0.20)`);
+    g.addColorStop(1, `rgba(${TH.glow},0)`);
     ctx.fillStyle = g;
     ctx.fillRect(cx - 48, cy - CULT_H - 10, 96, CULT_H + 40);
     ctx.restore();
@@ -168,17 +172,17 @@ export class MenuScene {
     ctx.textAlign = 'left';
     ctx.font = 'bold 17px "Courier New", monospace';
     const cxt = `×${this.cultists}`;
-    ctx.fillStyle = 'rgba(20,6,10,0.85)';
+    ctx.fillStyle = 'rgba(6,14,4,0.85)';
     ctx.fillText(cxt, cx + 25, cy - CULT_H * 0.42 + 1);
-    ctx.fillStyle = this.cultists > 0 ? GOLD.h : 'rgba(190,170,150,0.45)';
+    ctx.fillStyle = this.cultists > 0 ? GOLD.h : 'rgba(175,185,155,0.45)';
     ctx.fillText(cxt, cx + 24, cy - CULT_H * 0.42);
 
     // --- the buttons ---
     for (let i = 0; i < BUTTONS.length; i++) this._button(ctx, i);
   }
 
-  // A button is the same beveled block as everything else in the abbey, in IRON
-  // when idle and GOLD when it is the one A will press. The selected one also
+  // A button is the same beveled block as everything else in the abbey, in the
+  // panel's own frame ramp when idle and GOLD when it is the one A will press. The selected one also
   // carries the gold mark the world uses for "something can be done here", so
   // the menu teaches that symbol before the player ever meets it on a floor.
   _button(ctx, i) {
@@ -187,9 +191,9 @@ export class MenuScene {
     const on = this.sel === i;
     const dim = b.id === 'wallet' && !!this.wallet;
 
-    ctx.fillStyle = 'rgba(10,4,8,0.5)';
+    ctx.fillStyle = 'rgba(4,10,3,0.5)';
     ctx.fillRect(r.x + 1, r.y + 2, r.w, r.h);
-    block(ctx, r.x, r.y, r.w, r.h, IRON);
+    block(ctx, r.x, r.y, r.w, r.h, THEMES.malachite.frame);
     if (on) {
       const pulse = 0.55 + Math.sin(this.t * 4) * 0.2;
       ctx.strokeStyle = `rgba(242,210,100,${pulse})`;
@@ -201,9 +205,9 @@ export class MenuScene {
 
     ctx.textAlign = 'center';
     ctx.font = 'bold 9px "Courier New", monospace';
-    ctx.fillStyle = 'rgba(8,4,10,0.85)';
+    ctx.fillStyle = 'rgba(4,10,3,0.85)';
     ctx.fillText(b.label, r.x + r.w / 2 + 1, r.y + r.h / 2 + 4.5);
-    ctx.fillStyle = dim ? 'rgba(190,175,145,0.45)' : on ? GOLD.h : BONE.b;
+    ctx.fillStyle = dim ? 'rgba(175,185,155,0.45)' : on ? GOLD.h : BONE.b;
     ctx.fillText(b.label, r.x + r.w / 2, r.y + r.h / 2 + 3.5);
 
     // a bound wallet gets a tick rather than a dead button

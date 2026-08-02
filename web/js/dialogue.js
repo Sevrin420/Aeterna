@@ -23,8 +23,35 @@
 //   · Text is GOLD — one saturated accent against the desaturated frame,
 //     which keeps the crimson/gold pair the abbey already lives by.
 
-import { IRON, BLOOD, GOLD, BONE, shade } from './palette.js';
+import { IRON, BLOOD, GOLD, BONE, shade, ramp } from './palette.js';
 import { sfx } from './sfx.js';
+
+// ---------------------------------------------------------------------------
+// Panel themes.
+//
+// The console the game is played on has olive-lime buttons moulded into it, and
+// the abbey's crimson sits nearly opposite them on the wheel at the same
+// saturation, so neither recedes and the two fight. The palette file predicted
+// this: it allows exactly ONE saturated accent pair, and the console art is a
+// second one that arrived after it was written.
+//
+// The fix is scoped, not global. The screens the player meets while still
+// holding the console as an object -- the title menu and the two things it
+// opens, the mint rite and the Doctrine -- take a malachite ground that agrees
+// with the buttons. Inside the abbey nothing changes: down there the console
+// has stopped being furniture and the crimson is the whole point.
+const MALACHITE_FRAME = ramp('#0a1206', '#1a2a12', '#2b4020', '#3f5c2f', '#5d7f47');
+
+export const THEMES = {
+  crimson: {
+    top: '#4a1119', bottom: '#2c0a10', lip: 'rgba(198,43,48,0.22)',
+    frame: IRON, title: BLOOD, rule: 'rgba(232,90,74,0.32)', glow: '198,43,48',
+  },
+  malachite: {
+    top: '#1d3310', bottom: '#0d1907', lip: 'rgba(120,200,60,0.18)',
+    frame: MALACHITE_FRAME, title: GOLD, rule: 'rgba(216,168,50,0.30)', glow: '120,200,60',
+  },
+};
 
 const W = 208, H = 208;          // logical console screen
 const TILE = 8;                  // one border square
@@ -55,43 +82,43 @@ const CHOICE_H = 24;             // the room a Yes/No row takes at the foot of t
 // The box's own frame and ground, exported so anything else that has to read
 // as part of the same object — the title menu, for one — is literally the same
 // surface rather than a lookalike built twice.
-export function drawPanel(ctx, x, y, w, h) {
+export function drawPanel(ctx, x, y, w, h, theme = THEMES.crimson) {
   const ix = x + TILE, iy = y + TILE;
   const iw = w - TILE * 2, ih = h - TILE * 2;
   const g = ctx.createLinearGradient(0, iy, 0, iy + ih);
-  g.addColorStop(0, '#4a1119');
-  g.addColorStop(1, '#2c0a10');
+  g.addColorStop(0, theme.top);
+  g.addColorStop(1, theme.bottom);
   ctx.fillStyle = g;
   ctx.fillRect(ix, iy, iw, ih);
-  ctx.fillStyle = 'rgba(198,43,48,0.22)';
+  ctx.fillStyle = theme.lip;
   ctx.fillRect(ix, iy, iw, 1);
   ctx.fillStyle = 'rgba(20,6,10,0.5)';
   ctx.fillRect(ix, iy + ih - 1, iw, 1);
   const cols = Math.round(w / TILE), rows = Math.round(h / TILE);
   for (let c = 0; c < cols; c++) {
-    bevelTile(ctx, x + c * TILE, y);
-    bevelTile(ctx, x + c * TILE, y + (rows - 1) * TILE);
+    bevelTile(ctx, x + c * TILE, y, theme.frame);
+    bevelTile(ctx, x + c * TILE, y + (rows - 1) * TILE, theme.frame);
   }
   for (let r = 1; r < rows - 1; r++) {
-    bevelTile(ctx, x, y + r * TILE);
-    bevelTile(ctx, x + (cols - 1) * TILE, y + r * TILE);
+    bevelTile(ctx, x, y + r * TILE, theme.frame);
+    bevelTile(ctx, x + (cols - 1) * TILE, y + r * TILE, theme.frame);
   }
 }
 export const PANEL_TILE = TILE;
 
-function bevelTile(ctx, x, y) {
-  ctx.fillStyle = IRON.o;
+function bevelTile(ctx, x, y, frame = IRON) {
+  ctx.fillStyle = frame.o;
   ctx.fillRect(x, y, TILE, TILE);
-  ctx.fillStyle = IRON.b;
+  ctx.fillStyle = frame.b;
   ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2);
   // lit top and left
-  ctx.fillStyle = IRON.l;
+  ctx.fillStyle = frame.l;
   ctx.fillRect(x + 1, y + 1, TILE - 2, 1);
   ctx.fillRect(x + 1, y + 1, 1, TILE - 2);
-  ctx.fillStyle = IRON.h;
+  ctx.fillStyle = frame.h;
   ctx.fillRect(x + 1, y + 1, 2, 1);
   // shadowed bottom and right
-  ctx.fillStyle = IRON.d;
+  ctx.fillStyle = frame.d;
   ctx.fillRect(x + 1, y + TILE - 2, TILE - 2, 1);
   ctx.fillRect(x + TILE - 2, y + 1, 1, TILE - 2);
 }
@@ -197,6 +224,7 @@ export class DialogueBox {
 
   get active() { return this.open; }
 
+
   // `pages` is a string, or an array of strings, or an array of
   // { speaker, text }. Anything longer than the box is split across pages
   // automatically, so callers never have to think about layout.
@@ -210,7 +238,8 @@ export class DialogueBox {
   // be the same button as the way out of everything else — and the last label
   // is the refusal by convention here ("Yes / No").
   show(pages, { speaker = null, onClose = null, hold = 0, cps = CPS,
-    choices = null, onChoice = null } = {}) {
+    choices = null, onChoice = null, theme = THEMES.crimson } = {}) {
+    this.theme = theme;
     const raw = Array.isArray(pages) ? pages : [pages];
     this.choices = Array.isArray(choices) && choices.length ? choices : null;
     this.onChoice = onChoice || null;
@@ -254,6 +283,7 @@ export class DialogueBox {
   close() {
     this.choices = null;
     this.onChoice = null;
+    this.theme = THEMES.crimson;   // the next box is an abbey box unless it says otherwise
     this.open = false;
     this.pages = [];
     this.hold = 0;
@@ -363,29 +393,13 @@ export class DialogueBox {
     ctx.fillStyle = 'rgba(8,6,17,0.55)';
     ctx.fillRect(0, 0, W, H);
 
-    // --- interior: muted blood, lit at the top lip ---
-    const ix = BOX_X + TILE, iy = BOX_Y + TILE;
-    const iw = BOX_W - TILE * 2, ih = BOX_H - TILE * 2;
-    const g = ctx.createLinearGradient(0, iy, 0, iy + ih);
-    g.addColorStop(0, '#4a1119');
-    g.addColorStop(1, '#2c0a10');
-    ctx.fillStyle = g;
-    ctx.fillRect(ix, iy, iw, ih);
-    ctx.fillStyle = 'rgba(198,43,48,0.22)';
-    ctx.fillRect(ix, iy, iw, 1);
-    ctx.fillStyle = 'rgba(20,6,10,0.5)';
-    ctx.fillRect(ix, iy + ih - 1, iw, 1);
-
-    // --- frame: a ring of beveled squares ---
-    const cols = BOX_W / TILE, rows = BOX_H / TILE;
-    for (let c = 0; c < cols; c++) {
-      bevelTile(ctx, BOX_X + c * TILE, BOX_Y);
-      bevelTile(ctx, BOX_X + c * TILE, BOX_Y + (rows - 1) * TILE);
-    }
-    for (let r = 1; r < rows - 1; r++) {
-      bevelTile(ctx, BOX_X, BOX_Y + r * TILE);
-      bevelTile(ctx, BOX_X + (cols - 1) * TILE, BOX_Y + r * TILE);
-    }
+    // --- ground and frame ---
+    // The box built its own panel inline, byte for byte the same as drawPanel
+    // but with its own hardcoded reds — which is why theming drawPanel alone
+    // left every dialogue box crimson. It uses the shared one now, so a theme
+    // reaches the box and the menu through exactly one piece of code.
+    const theme = this.theme || THEMES.crimson;
+    drawPanel(ctx, BOX_X, BOX_Y, BOX_W, BOX_H, theme);
 
     // --- text ---
     const pg = this.pages[this.page];
@@ -396,9 +410,10 @@ export class DialogueBox {
 
     let y = IN_Y + 6;
     if (pg.speaker) {
-      ctx.fillStyle = BLOOD.l;
+      const th = this.theme || THEMES.crimson;
+      ctx.fillStyle = th.title.l;
       ctx.fillText(pg.speaker.toUpperCase(), IN_X, y);
-      ctx.fillStyle = 'rgba(232,90,74,0.32)';
+      ctx.fillStyle = th.rule;
       ctx.fillRect(IN_X, y + 3, IN_W, 1);
       y += SPEAKER_H;
     }

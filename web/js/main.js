@@ -1,7 +1,7 @@
 import { Input, makeLoop } from './engine.js';
 import { BootScene } from './scenes/boot.js';
 import { MenuScene } from './scenes/menu.js';
-import { DialogueBox } from './dialogue.js';
+import { DialogueBox, THEMES } from './dialogue.js';
 import { LORE } from './lore.js';
 import { CourtyardScene } from './scenes/courtyard.js';
 import { api, setTokenId, getTokenId } from './api.js';
@@ -484,8 +484,10 @@ function enterEntrance(player) {
     sex: (player && player.sex) || 'male',
     onConnect: () => menuConnect(menu),
     onPlay: () => proceedIntoGame(),
-    onMint: () => { box.show(LORE.mint, { onClose: () => openMintPicker(menu) }); },
-    onDocs: () => box.show(LORE.doctrine),
+    // Mint and Docs are opened FROM the menu and are read on the same screen,
+    // so they wear the same malachite. Every box inside the abbey is untouched.
+    onMint: () => { box.show(LORE.mint, { theme: THEMES.malachite, onClose: () => openMintPicker(menu) }); },
+    onDocs: () => box.show(LORE.doctrine, { theme: THEMES.malachite }),
   });
   // The box owns input and the screen while it is up, exactly as in the abbey.
   const baseUpdate = menu.update.bind(menu);
