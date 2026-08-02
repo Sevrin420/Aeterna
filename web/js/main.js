@@ -406,6 +406,10 @@ chatInput.addEventListener('keydown', (e) => {
 const CROWD = parseInt(new URLSearchParams(location.search).get('crowd') || '0', 10) || 0;
 
 function enterCourtyard(player) {
+  // A spirit with no bound Cultist walks the abbey but cannot touch it. The
+  // decision is made HERE, once, on the way in — so nothing downstream has to
+  // re-derive it and the two can never disagree.
+  player.ghost = !connectedAddr || heldCultists < 1;
   updateHud(player);
   // Entering the game: auto-unmute, create fresh game bgm, pause title bgm.
   sfx.setMuted(false);

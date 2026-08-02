@@ -566,6 +566,16 @@ export class CourtyardScene {
     return best;
   }
 
+  // A ghost pressing anything. Rate-limited like the ordinary no-action hint,
+  // and it names the one thing that would change it rather than just refusing.
+  _ghostHint() {
+    const now = performance.now();
+    if (this._lastGhostHint && now - this._lastGhostHint < 2600) return;
+    this._lastGhostHint = now;
+    sfx.error();
+    this.onToast('You have no body here. Bind a Cultist to touch anything.');
+  }
+
   // Feedback for a face-button press that had nothing bound where the player is
   // standing — so a stray A/B tap reads as "nothing here", not "button broken".
   _noActionHint() {
@@ -980,7 +990,9 @@ export class CourtyardScene {
     if (prevStation && this._activeStation !== prevStation) this._lastIntro = null;
 
     if (input.consumeAPress()) {
-      if (this._shrineAction()) {
+      if (this.player.ghost) {
+        this._ghostHint();
+      } else if (this._shrineAction()) {
         // knelt to the shrine
       } else if (this._stickAction()) {
         // took a switch from the bundle
@@ -1005,7 +1017,8 @@ export class CourtyardScene {
       }
     }
     if (input.consumeBPress()) {
-      if (this._dropCarried()) { /* put it down */ }
+      if (this.player.ghost) this._ghostHint();
+      else if (this._dropCarried()) { /* put it down */ }
       else this._noActionHint(dt);
     }
 
@@ -1882,6 +1895,10 @@ export class CourtyardScene {
   // handler read the same answer, so the mark can never promise an action that
   // the button will not perform.
   _hasAction() {
+    // A ghost is shown no invitations. The gold mark means "A does something
+    // here", and for them it never does — leaving it up would be the interface
+    // lying to them once per tile.
+    if (this.player.ghost) return false;
     const p = this.pc;
     if (this.carrying) {
       // A switch has exactly one destination, and it is a man.
@@ -1915,6 +1932,14 @@ export class CourtyardScene {
     // nothing is painted back over it.
     const bare = this.shrine.naked;
     const hop = this._danceHop || 0;
+    // Spectral: half there, and cold. Drawn through a lowered alpha rather than
+    // recoloured, so it is plainly the same Cultist you would be if you bound
+    // one — not a different sprite.
+    const ghost = !!this.player.ghost;
+    if (ghost) {
+      ctx.save();
+      ctx.globalAlpha = 0.42 + Math.sin(this.t * 1.8) * 0.06;
+    }
     this._drawRobedFigure(
       ctx, this.pc.x, this.pc.y, this.pc.dir, this.pc.moving,
       this.pc.moving ? this.pc.bob : this.t,
@@ -1927,6 +1952,19 @@ export class CourtyardScene {
       null, this.localEmoji, null, undefined, this._streakAura(), hop
     );
     if (bare) this._drawBare(ctx, this.pc.x, this.pc.y - hop, this.pc.dir);
+    if (ghost) {
+      ctx.restore();
+      // a cold wash over the shape, so they read as spirit rather than as a
+      // rendering fault
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(this.pc.x, this.pc.y - 6, 1, this.pc.x, this.pc.y - 6, 15);
+      g.addColorStop(0, 'rgba(154,114,220,0.20)');
+      g.addColorStop(1, 'rgba(154,114,220,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(this.pc.x - 16, this.pc.y - 22, 32, 32);
+      ctx.restore();
+    }
 
     if (this.carrying) {
       if (this.carrying.kind === 'stick') this.sticks.drawCarried(ctx, this.pc.x, this.pc.y - 6);
