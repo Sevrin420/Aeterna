@@ -485,9 +485,9 @@ function enterEntrance(player) {
     onConnect: () => menuConnect(menu),
     onPlay: () => proceedIntoGame(),
     // Mint and Docs are opened FROM the menu and are read on the same screen,
-    // so they wear the same malachite. Every box inside the abbey is untouched.
-    onMint: () => { box.show(LORE.mint, { theme: THEMES.malachite, onClose: () => openMintPicker(menu) }); },
-    onDocs: () => box.show(LORE.doctrine, { theme: THEMES.malachite }),
+    // so they wear the same bitumen. Every box inside the abbey is untouched.
+    onMint: () => { box.show(LORE.mint, { theme: THEMES.bitumen, onClose: () => openMintPicker(menu) }); },
+    onDocs: () => box.show(LORE.doctrine, { theme: THEMES.bitumen }),
   });
   // The box owns input and the screen while it is up, exactly as in the abbey.
   const baseUpdate = menu.update.bind(menu);

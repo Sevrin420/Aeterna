@@ -37,19 +37,27 @@ import { sfx } from './sfx.js';
 //
 // The fix is scoped, not global. The screens the player meets while still
 // holding the console as an object -- the title menu and the two things it
-// opens, the mint rite and the Doctrine -- take a malachite ground that agrees
-// with the buttons. Inside the abbey nothing changes: down there the console
-// has stopped being furniture and the crimson is the whole point.
-const MALACHITE_FRAME = ramp('#0a1206', '#1a2a12', '#2b4020', '#3f5c2f', '#5d7f47');
+// opens, the mint rite and the Doctrine -- go near-black, so the moulded green
+// is the only saturated thing in shot and the title's red is a mark rather than
+// a field. Inside the abbey nothing changes: down there the console has stopped
+// being furniture and the crimson ground is the whole point.
+// Near-black, so nothing on the panel competes with the moulded buttons — the
+// green stays the only saturated thing in the player's hands. The frame keeps a
+// faint violet cast rather than going neutral grey, because a black-on-black
+// bevel has no lit edge to read and the frame stops looking carved.
+const BITUMEN_FRAME = ramp('#0a0a0c', '#1c1b20', '#2e2d34', '#454350', '#615e72');
 
 export const THEMES = {
   crimson: {
     top: '#4a1119', bottom: '#2c0a10', lip: 'rgba(198,43,48,0.22)',
     frame: IRON, title: BLOOD, rule: 'rgba(232,90,74,0.32)', glow: '198,43,48',
   },
-  malachite: {
-    top: '#1d3310', bottom: '#0d1907', lip: 'rgba(120,200,60,0.18)',
-    frame: MALACHITE_FRAME, title: GOLD, rule: 'rgba(216,168,50,0.30)', glow: '120,200,60',
+  // The ground goes dark and the TITLE STAYS BLOOD RED. That is the whole
+  // point of this one: the crimson stops being a field the green has to fight
+  // and becomes a single mark on black, which is where it reads hardest.
+  bitumen: {
+    top: '#17161a', bottom: '#0a090c', lip: 'rgba(200,192,164,0.14)',
+    frame: BITUMEN_FRAME, title: BLOOD, rule: 'rgba(232,90,74,0.28)', glow: '198,43,48',
   },
 };
 
