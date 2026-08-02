@@ -144,20 +144,18 @@ export const LORE = {
         + 'in one."\n\n'
         + '"Kneel, or go."',
     },
-    nursery: {
-      speaker: 'The Cradle',
-      text: 'Something is kept here that the order does not name aloud.',
-    },
     mancala: {
       speaker: 'The Mancala Table',
       text: 'Forty-eight stones and two rows of pits, worn smooth by hands that '
         + 'are no longer attached to anyone.\n\n'
         + 'Sit, and cast lots against whoever else is fool enough to sit.',
     },
-    gate: {
-      speaker: 'The Gate',
-      text: 'Leave now and your Devotion is secured.\n\n'
-        + 'The abbey will still be here.',
+    bed: {
+      speaker: 'The Cot',
+      text: 'A plank frame, a straw pallet and a blanket that someone else has '
+        + 'already worn thin.\n\n'
+        + 'Lie down and the day is closed and counted. The abbey will wake you '
+        + 'in one of these, though not necessarily this one.',
     },
   },
 };

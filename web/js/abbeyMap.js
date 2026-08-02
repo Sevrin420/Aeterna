@@ -184,17 +184,34 @@ export const STATUES = [
   { col: 89, row: 123, kind: 'grotesque', face: -1 },
 ];
 
-// WEST warren: a corridor with six doored rooms (three above, three below).
+// WEST warren: a corridor with six open cells (three above, three below).
+//
+// The doors are gone. They were openable props on the one tile joining each
+// cell to the corridor, which meant a player could shut themselves in — and now
+// that these cells are where everyone arrives and where the day is ended, a
+// door is a thing that can be closed on the only way out.
+//
+// Each cell holds a bed. You wake in one at random and you come back to one to
+// end the day, which is what a cell in a religious house is actually for.
 const WEST_CORRIDOR = { x0: 10, y0: 105, x1: 41, y1: 108 };
 const ROOM_COLS = [[12, 19], [23, 30], [34, 41]];
 export const ROOMS = [];
-export const DOORS = [];
 for (const [cx0, cx1] of ROOM_COLS) {
-  const doorCol = Math.round((cx0 + cx1) / 2);
-  ROOMS.push({ x0: cx0, y0: 97, x1: cx1, y1: 103, door: { col: doorCol, row: 104 } }); // top room
-  ROOMS.push({ x0: cx0, y0: 110, x1: cx1, y1: 116, door: { col: doorCol, row: 109 } }); // bottom room
+  ROOMS.push({ x0: cx0, y0: 97, x1: cx1, y1: 103, mouth: { col: Math.round((cx0 + cx1) / 2), row: 104 } });
+  ROOMS.push({ x0: cx0, y0: 110, x1: cx1, y1: 116, mouth: { col: Math.round((cx0 + cx1) / 2), row: 109 } });
 }
-for (const rm of ROOMS) DOORS.push(rm.door);
+
+// One bed per cell, set against the wall furthest from the corridor, and the
+// tile you stand on to use it. The bed itself is solid; you sleep by standing
+// at its side, which is also where a spirit wakes up.
+export const BEDS = ROOMS.map((rm, i) => {
+  const top = i % 2 === 0;                      // the three northern cells
+  const row = top ? rm.y0 + 1 : rm.y1 - 1;
+  return { col: rm.x0 + 2, row, stand: { col: rm.x0 + 4, row } };
+});
+
+// Where a spirit wakes. Beside a bed, one of six, chosen when they enter.
+export const SPAWN_BEDS = BEDS.map((b) => ({ col: b.stand.col, row: b.stand.row }));
 
 // EAST chamber: the shrine's room, cut as a five-pointed star with one point
 // aimed SOUTH. An inverted pentagram is the shape the order would actually
@@ -325,8 +342,8 @@ function buildGrid() {
   // gaming hall + its throat through the transept's SOUTH wall
   fillRect(grid, MANCALA_HALL.x0, MANCALA_HALL.y0, MANCALA_HALL.x1, MANCALA_HALL.y1, '.');
   for (const c of MANCALA_THROAT) grid[TRANSEPT.y1 + 1][c] = '.';
-  // doorway gaps (walkable floor; a door prop sits here and can be closed)
-  for (const d of DOORS) grid[d.row][d.col] = 'c';
+  // the mouth of each cell — walkable, and nothing stands in it any more
+  for (const rm of ROOMS) grid[rm.mouth.row][rm.mouth.col] = 'c';
 
   // walls
   wallRing(grid, NAVE.x0 - 1, NAVE.y0 - 1, NAVE.x1 + 1, NAVE.y1 + 1);
@@ -348,8 +365,8 @@ function buildGrid() {
   // bounding box would seal the room inside a rectangle and leave the five
   // wedges of void between the points unwalled.
   wrapWalls(grid, STAR_CELLS);
-  // re-open the doorways the rings may have sealed
-  for (const d of DOORS) grid[d.row][d.col] = 'c';
+  // re-open the cell mouths the wall rings may have sealed
+  for (const rm of ROOMS) grid[rm.mouth.row][rm.mouth.col] = 'c';
   // cut the exit threshold through the south wall
   for (const c of EXIT_COLS) grid[EXIT_ROW][c] = 'x';
 
@@ -394,10 +411,9 @@ for (const a of ALCOVES) {
   // No arch prop: the niche's own tapered floor plan is the point.
 }
 
-// --- WEST WARREN (six doored rooms; a private meeting place) ---
+// --- WEST WARREN (six open cells, a bed in each) ---
 prop('stair-up', WEST_CORRIDOR.x0 + 2, 106, false, { dest: { col: TRANSEPT.x0 + 2, row: TRANSEPT.y0 + 8 } });
-for (const rm of ROOMS) prop('room-door', rm.door.col, rm.door.row, false);
-prop('nursery', ROOMS[0].x0 + 3, ROOMS[0].y0 + 3, false); // cradle in the first room
+for (const b of BEDS) prop('bed', b.col, b.row);
 
 // --- EAST SKULL CHAMBER (chant to the skulls; also holds the ritual games) ---
 prop('stair-up', SKULL_STAIR.col, SKULL_STAIR.row, false, { dest: { col: TRANSEPT.x1 - 2, row: TRANSEPT.y0 + 8 } });

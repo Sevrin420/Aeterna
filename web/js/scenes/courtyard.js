@@ -15,7 +15,7 @@ import { SkullShrine } from '../skullrite.js';
 import { FireVigil } from '../vigil.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
-  ALCOVES, DOORS, ROOMS, SKULL_ROOM, MANCALA_SEAT, SKULL_ALTAR, NAVE, TRANSEPT, NAVE_CX,
+  ALCOVES, ROOMS, BEDS, SPAWN_BEDS, SKULL_ROOM, MANCALA_SEAT, SKULL_ALTAR, NAVE, TRANSEPT, NAVE_CX,
   EXIT_ROW, EXIT_COLS, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW, SKULL_SHRINE,
 } from '../abbeyMap.js';
 import {
@@ -60,14 +60,18 @@ const STATIONS = [
   // transept and step into the booth's own little room to be heard.
   { id: 'confession', kind: 'confession', label: 'Confess',
     x: px(CONFESSIONAL_BOOTH_COL), y: px(CONFESSIONAL_BOOTH_ROW + 2), r: 13 },
-  // Derived off the threshold rather than pinned to a row number, so shortening
-  // the nave can never leave the gate stranded in the middle of the floor.
-  { id: 'gate', kind: 'gate', label: 'Save & Exit', x: px(NAVE_CX), y: px(EXIT_ROW - 3), r: 14 },
   // The skull chamber's daily rite is worshipping the shrine, not chanting at
   // the wall. It is deliberately NOT a station: a station opens a box and runs
   // a rite, and the shrine takes over the whole scene instead. See _shrineAction().
-  { id: 'nursery', kind: 'nursery', label: 'Approach the Cradle', x: px(ROOMS[0].x0 + 3), y: px(ROOMS[0].y0 + 3), r: 12 },
   { id: 'mancala', kind: 'mancala', label: 'Sit at the Mancala Table', x: px(MANCALA_SEAT.col), y: px(MANCALA_SEAT.row), r: 13 },
+  // The day ends where it began: at a bed, in the cell you woke in or any
+  // other. There is no gate any more — walking out of the front door is not a
+  // thing a cultist does, and "go and lie down" is a better last instruction
+  // than "leave".
+  ...BEDS.map((b, i) => ({
+    id: `bed${i}`, kind: 'bed', label: 'Rest — Save & Exit',
+    x: px(b.stand.col), y: px(b.stand.row), r: 12,
+  })),
   // The braziers are deliberately NOT stations. A station opens a box and runs
   // a rite; a brazier is a container you put things in, and it has to behave
   // differently depending on what you are carrying. See _fireAction().
@@ -135,7 +139,6 @@ export class CourtyardScene {
     });
     // null | { kind: 'wood' | 'torch', alcove: i } | { kind: 'stick' }
     this.carrying = null;
-    this.doors = new Map(DOORS.map((d) => [`${d.col},${d.row}`, false])); // closed
 
     this.shrine = new SkullShrine({
       x: px(SKULL_SHRINE.col), y: px(SKULL_SHRINE.row),
@@ -159,15 +162,15 @@ export class CourtyardScene {
     // walk in, rather than aloft and waiting to be worshipped a second time.
     if (this.player.garden_today) this.shrine.settle();
 
+    // You wake in a cell, and which one is decided when you enter. Six beds,
+    // one spirit — arriving somewhere different each time makes the warren a
+    // place you live in rather than a corridor you pass through, and it spreads
+    // arrivals out instead of stacking everyone on one threshold.
+    const spawn = SPAWN_BEDS[Math.floor(Math.random() * SPAWN_BEDS.length)];
+    this.spawnBed = spawn;
+
     this.pc = {
-      // The abbey's SOUTH entrance — you walked north out of the courtyard to
-      // get here, so you come in at the near end and the nave runs away from
-      // you toward the altar.
-      //
-      // Three tiles north of the gate station, not one: the gate has a 14px
-      // radius, and spawning inside it put a "!" up immediately with one
-      // careless A press between the player and the door back out.
-      x: px(NAVE_CX), y: px(EXIT_ROW - 6),
+      x: px(spawn.col), y: px(spawn.row),
       w: 7, h: 7,
       speed: 60, // +30% walk speed (was 46)
       dir: 'up',
@@ -382,10 +385,13 @@ export class CourtyardScene {
     return list;
   }
 
-  // A tile blocks movement if it's a wall/void OR a currently-closed room door.
+  // A tile blocks movement if it's a wall or void. It used to also check for a
+  // shut cell door; the cells have no doors now, because they are where you
+  // arrive and where you end the day and a door is a thing that can be closed
+  // on the only way out.
   _blocked(col, row) {
     if (isSolid(col, row)) return true;
-    return this.doors.get(`${col},${row}`) === false; // door present & shut
+    return false;
   }
 
   _tryMove(dx, dy) {
@@ -570,29 +576,6 @@ export class CourtyardScene {
     this.onToast('Nothing to do here — stand on a station.');
   }
 
-  _nearestDoor() {
-    let best = null, bestD = Infinity;
-    for (const d of DOORS) {
-      const dist = Math.hypot(this.pc.x - px(d.col), this.pc.y - px(d.row));
-      if (dist < 15 && dist < bestD) { best = d; bestD = dist; }
-    }
-    return best;
-  }
-
-  _toggleDoor(d) {
-    const key = `${d.col},${d.row}`;
-    const open = !this.doors.get(key);
-    this.doors.set(key, open);
-    sfx.click();
-    this.onToast(open ? 'The door creaks open.' : 'You pull the door shut.');
-  }
-
-  // The whole fire rite, driven by what the player is carrying and what is in
-  // reach. Returns true if it consumed the press.
-  //
-  // No branch here tells the player anything about sequence: laying wood on an
-  // empty bowl and touching a burning torch to laid wood are both just things
-  // that happen when you do them.
   _fireAction() {
     const p = this.pc;
 
@@ -693,7 +676,6 @@ export class CourtyardScene {
     if (this.crowd.length) this._updateCrowd(dt);
     this.pc.moving = false;
     this._activeStation = null;
-    this._activeDoor = null;
     this._updateSpeech();
     if (this.localChat) {
       this.localChat.t -= dt;
@@ -749,7 +731,6 @@ export class CourtyardScene {
       this._danceHop = 0;
     }
     this._activeStation = null;
-    this._activeDoor = null;
     this._updateSpeech();
     if (this.localChat) {
       this.localChat.t -= dt;
@@ -905,9 +886,8 @@ export class CourtyardScene {
     if (s.kind === 'guru') this._handleGuru();
     else if (s.kind === 'confession') this._handleConfession();
     else if (s.kind === 'cathedral') this._handleCathedral(s.roomId);
-    else if (s.kind === 'nursery') this._handleNursery();
     else if (s.kind === 'mancala') this._handleMancala();
-    else if (s.kind === 'gate') this._handleSaveExit();
+    else if (s.kind === 'bed') this._handleSaveExit();
   }
 
   _updateScourge(dt, input) {
@@ -929,16 +909,11 @@ export class CourtyardScene {
     this.pc.dir = 'down';
     this.pc.moving = false;
     this._activeStation = null;
-    this._activeDoor = null;
     this._updateCamera();
 
     // Nothing the player can press changes what happens to them now.
     input.consumeAPress();
     input.consumeBPress();
-  }
-
-  _handleNursery() {
-    this.onToast('The Nursery is not yet consecrated. Bloodlines will be recognized in a future season.');
   }
 
   _handleMancala() {
@@ -1003,7 +978,6 @@ export class CourtyardScene {
     this._activeStation = this._nearestStation();
     // stepping off a station re-arms its reading for the next approach
     if (prevStation && this._activeStation !== prevStation) this._lastIntro = null;
-    this._activeDoor = this._nearestDoor();
 
     if (input.consumeAPress()) {
       if (this._shrineAction()) {
@@ -1012,9 +986,7 @@ export class CourtyardScene {
         // took a switch from the bundle
       } else if (this._fireAction()) {
         // handled by the fire rite
-      } else if (this._activeDoor) {
-        this._toggleDoor(this._activeDoor);
-      } else if (this._activeStation) {
+            } else if (this._activeStation) {
         // Every station introduces itself before it acts. The box closes into
         // the rite, so reading is never a detour — it is the way in.
         const st = this._activeStation;
@@ -1532,22 +1504,25 @@ export class CourtyardScene {
         }
         break;
       }
-      case 'room-door': {
-        const open = this.doors.get(`${p.col},${p.row}`);
-        this._dropShadow(ctx, x, y + 3, 5.5, 1.8);
-        if (open) {
-          ctx.fillStyle = WALL.o; ctx.fillRect(x - 6, y - 8, 12, 14);   // dark opening
-          ctx.fillStyle = VOID; ctx.fillRect(x - 5, y - 7, 10, 12);
-          block(ctx, x - 6.5, y - 7, 2.5, 12, WOOD);                    // door on the post
-        } else {
-          block(ctx, x - 5, y - 8, 10, 13, WOOD);                       // timber door
-          ctx.fillStyle = WOOD.o;                                       // plank seams
-          for (let i = 1; i < 3; i++) ctx.fillRect(x - 5 + i * 3.4, y - 8, 1, 13);
-          ctx.fillStyle = IRON.b;                                       // iron straps
-          ctx.fillRect(x - 5, y - 6, 10, 1.6); ctx.fillRect(x - 5, y + 2, 10, 1.6);
-          ctx.fillStyle = IRON.h; ctx.fillRect(x - 5, y - 6, 10, 0.7); ctx.fillRect(x - 5, y + 2, 10, 0.7);
-          ctx.fillStyle = GOLD.d; ctx.fillRect(x + 2, y - 2, 1.8, 1.8); // ring handle
-        }
+      // A cot: plank frame, a straw pallet, and a folded blanket at the foot.
+      // Wood and cloth only — nothing in a cell is gilded.
+      case 'bed': {
+        this._dropShadow(ctx, x, y + 6, 9, 3);
+        block(ctx, x - 8, y - 7, 16, 14, WOOD);          // the frame
+        ctx.fillStyle = WOOD.o;                           // the four posts
+        ctx.fillRect(x - 8, y - 8, 2, 3); ctx.fillRect(x + 6, y - 8, 2, 3);
+        ctx.fillRect(x - 8, y + 5, 2, 3); ctx.fillRect(x + 6, y + 5, 2, 3);
+        ctx.fillStyle = BONE.d;                           // straw pallet
+        ctx.fillRect(x - 6, y - 5, 12, 10);
+        ctx.fillStyle = BONE.b; ctx.fillRect(x - 6, y - 5, 12, 3);
+        ctx.fillStyle = BONE.h; ctx.fillRect(x - 6, y - 5, 5, 1);
+        ctx.fillStyle = CLOTH.b;                          // blanket, folded back
+        ctx.fillRect(x - 6, y + 1, 12, 4);
+        ctx.fillStyle = CLOTH.d; ctx.fillRect(x - 6, y + 4, 12, 1);
+        ctx.fillStyle = CLOTH.l; ctx.fillRect(x - 6, y + 1, 12, 0.9);
+        ctx.fillStyle = BONE.h;                           // a thin pillow
+        ctx.fillRect(x - 5, y - 4.4, 4.5, 2.6);
+        ctx.fillStyle = BONE.d; ctx.fillRect(x - 5, y - 2.2, 4.5, 0.8);
         break;
       }
       case 'bench': {
@@ -1673,16 +1648,6 @@ export class CourtyardScene {
         }
         break;
       }
-      case 'nursery':
-        this._dropShadow(ctx, x, y + 4, 6.5, 2.2);
-        block(ctx, x - 5, y - 4, 10, 8, WOOD);     // cradle
-        ctx.fillStyle = CLOTH.o; ctx.fillRect(x - 4, y - 2, 8, 5);
-        ctx.fillStyle = CLOTH.b; ctx.fillRect(x - 4, y - 2, 8, 4);
-        ctx.fillStyle = MOSS.d;                    // hood
-        ctx.beginPath(); ctx.ellipse(x, y - 4, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = MOSS.l;
-        ctx.beginPath(); ctx.ellipse(x - 1, y - 4.8, 1.6, 1.1, 0, 0, Math.PI * 2); ctx.fill();
-        break;
       case 'mancala-table':
         this._dropShadow(ctx, x, y + 4, 9.5, 3.2);
         block(ctx, x - 9, y - 3, 18, 7, WOOD);
@@ -1935,8 +1900,7 @@ export class CourtyardScene {
     if (this.fire.woodAt(p.x, p.y) >= 0) return true;
     if (this.fire.torchAt(p.x, p.y) >= 0) return true;
     if (this.sticks.at(p.x, p.y) >= 0) return true;
-    return !!(this._activeDoor
-      || this._activeStation);
+    return !!this._activeStation;
   }
 
   _drawLocalPlayer(ctx) {
