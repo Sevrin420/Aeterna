@@ -29,15 +29,16 @@ contract AeternaBloodline is ERC721Enumerable, Ownable {
     /// Most Cultists one Bloodline may hold.
     uint256 public constant MAX_CULTISTS = 20;
 
-    /// Hard cap on Bloodlines. Immutable, set at deploy.
+    /// Hard cap on Bloodlines. Immutable, set at deploy. Set to
+    /// type(uint256).max for an uncapped collection — the cap still exists in
+    /// the code, it is simply set beyond any reachable token id.
     uint256 public immutable maxSupply;
 
-    /// Where mint proceeds go. Both immutable, both set at deploy, and the
-    /// split matches what the doctrine tells players: a tenth to the team, the
-    /// rest to the treasury the season pays out of.
+    /// Where mint proceeds go. Both immutable, both set at deploy: a fifth to
+    /// the team, the rest to the treasury the season pays out of.
     address public immutable team;
     address public immutable treasury;
-    uint256 public constant TEAM_BPS = 1000; // 10.00%
+    uint256 public constant TEAM_BPS = 2000; // 20.00%
 
     /// tokenId => Cultists held. Written once, in mint, and never again.
     mapping(uint256 => uint256) public cultistsOf;

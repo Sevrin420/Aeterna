@@ -33,9 +33,10 @@ async function main() {
   console.log(`balance          ${hre.ethers.formatEther(bal)} AVAX`);
   console.log(`price / cultist  ${hre.ethers.formatEther(price)} AVAX`);
   console.log(`a full Bloodline ${hre.ethers.formatEther(price * 20n)} AVAX  (20 cultists)`);
-  console.log(`max supply       ${maxSupply}`);
-  console.log(`team    (10%)    ${team}`);
-  console.log(`treasury (90%)   ${treasury}`);
+  const UNCAPPED = 2n ** 256n - 1n;
+  console.log(`max supply       ${maxSupply === UNCAPPED ? 'uncapped' : maxSupply}`);
+  console.log(`team    (20%)    ${team}`);
+  console.log(`treasury (80%)   ${treasury}`);
   console.log(`base URI         ${baseURI}`);
 
   if (net === 'avalanche') {

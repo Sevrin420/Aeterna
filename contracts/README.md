@@ -41,7 +41,7 @@ of them, and the tests assert their absence.
 
 The owner key can only: open/close the mint, and point `baseURI` at the server.
 It **cannot touch the money** — `withdraw()` is callable by anyone and can only
-ever push to the two addresses baked in at deploy, split 10% team / 90%
+ever push to the two addresses baked in at deploy, split 20% team / 80%
 treasury, matching what the doctrine tells players. An open caller is
 deliberate: if only an owner could move funds, a lost key would strand the
 treasury.
@@ -66,8 +66,8 @@ Settings → Secrets and variables → Actions → **New repository secret**:
 | Secret | What it is |
 |---|---|
 | `DEPLOYER_KEY` | Private key of the deploying wallet, `0x`-prefixed. Needs a little AVAX for gas — that is all it ever needs. It does **not** receive mint money. |
-| `TEAM_ADDRESS` | Gets 10% of mint. **Immutable once deployed.** |
-| `TREASURY_ADDRESS` | Gets 90% of mint. **Immutable once deployed.** |
+| `TEAM_ADDRESS` | Gets 20% of mint. **Immutable once deployed.** |
+| `TREASURY_ADDRESS` | Gets 80% of mint. **Immutable once deployed.** |
 | `SNOWTRACE_KEY` | Optional, for contract verification. |
 
 ### About the deploying wallet

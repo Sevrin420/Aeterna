@@ -28,9 +28,9 @@ on:
         required: false
         default: ''
       max_supply:
-        description: 'Hard cap on Bloodlines. IMMUTABLE — cannot be raised later.'
+        description: 'Hard cap on Bloodlines. IMMUTABLE — cannot be raised later. The default is 2^256-1, i.e. uncapped.'
         required: true
-        default: '3333'
+        default: '115792089237316195423570985008687907853269984665640564039457584007913129639935'
       base_uri:
         description: 'Where the server serves metadata. Must end in a slash.'
         required: true

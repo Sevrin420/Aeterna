@@ -61,14 +61,24 @@ describe('AeternaBloodline', () => {
     await expect(tiny.connect(alice).mint(1, { value: PRICE })).to.be.revertedWith('sold out');
   });
 
-  it('splits withdrawals 10/90 and can be called by anyone', async () => {
+  it('splits withdrawals 20/80 and can be called by anyone', async () => {
     await c.connect(alice).mint(10, { value: PRICE * 10n });   // 0.1 AVAX
     const t0 = await ethers.provider.getBalance(team.address);
     const r0 = await ethers.provider.getBalance(treasury.address);
     await c.connect(bob).withdraw();                            // not the owner
-    expect(await ethers.provider.getBalance(team.address) - t0).to.equal(ethers.parseEther('0.01'));
-    expect(await ethers.provider.getBalance(treasury.address) - r0).to.equal(ethers.parseEther('0.09'));
+    expect(await ethers.provider.getBalance(team.address) - t0).to.equal(ethers.parseEther('0.02'));
+    expect(await ethers.provider.getBalance(treasury.address) - r0).to.equal(ethers.parseEther('0.08'));
     expect(await ethers.provider.getBalance(await c.getAddress())).to.equal(0);
+  });
+
+  it('mints past any plausible cap when supply is set uncapped', async () => {
+    const MAX = 2n ** 256n - 1n;
+    const F = await ethers.getContractFactory('AeternaBloodline');
+    const open = await F.deploy(PRICE, MAX, team.address, treasury.address, 'https://x/nft/');
+    await open.setMintOpen(true);
+    expect(await open.maxSupply()).to.equal(MAX);
+    for (let i = 0; i < 5; i++) await open.connect(alice).mint(1, { value: PRICE });
+    expect(await open.minted()).to.equal(5);
   });
 
   it('never lets the owner touch the money', () => {
