@@ -197,8 +197,15 @@ const WEST_CORRIDOR = { x0: 10, y0: 105, x1: 41, y1: 108 };
 const ROOM_COLS = [[12, 19], [23, 30], [34, 41]];
 export const ROOMS = [];
 for (const [cx0, cx1] of ROOM_COLS) {
-  ROOMS.push({ x0: cx0, y0: 97, x1: cx1, y1: 103, mouth: { col: Math.round((cx0 + cx1) / 2), row: 104 } });
-  ROOMS.push({ x0: cx0, y0: 110, x1: cx1, y1: 116, mouth: { col: Math.round((cx0 + cx1) / 2), row: 109 } });
+  // The doorway is two tiles, not one. A single tile is the narrowest opening
+  // the grid can express, and these are the cells everyone arrives in and ends
+  // the day in — the way in should not be the tightest gap in the abbey. Fifty
+  // percent of one tile is half a tile, which the grid cannot hold, so it
+  // widens to the next whole one: the pair straddles the room's true centre
+  // (cols 15 and 16 of a 12..19 cell), which a single rounded tile never did.
+  const mc = Math.round((cx0 + cx1) / 2);
+  ROOMS.push({ x0: cx0, y0: 97, x1: cx1, y1: 103, mouth: { col: mc, row: 104 }, mouthCols: [mc - 1, mc] });
+  ROOMS.push({ x0: cx0, y0: 110, x1: cx1, y1: 116, mouth: { col: mc, row: 109 }, mouthCols: [mc - 1, mc] });
 }
 
 // One bed per cell, set against the wall furthest from the corridor, and the
@@ -343,7 +350,7 @@ function buildGrid() {
   fillRect(grid, MANCALA_HALL.x0, MANCALA_HALL.y0, MANCALA_HALL.x1, MANCALA_HALL.y1, '.');
   for (const c of MANCALA_THROAT) grid[TRANSEPT.y1 + 1][c] = '.';
   // the mouth of each cell — walkable, and nothing stands in it any more
-  for (const rm of ROOMS) grid[rm.mouth.row][rm.mouth.col] = 'c';
+  for (const rm of ROOMS) for (const c of rm.mouthCols) grid[rm.mouth.row][c] = 'c';
 
   // walls
   wallRing(grid, NAVE.x0 - 1, NAVE.y0 - 1, NAVE.x1 + 1, NAVE.y1 + 1);
@@ -366,7 +373,7 @@ function buildGrid() {
   // wedges of void between the points unwalled.
   wrapWalls(grid, STAR_CELLS);
   // re-open the cell mouths the wall rings may have sealed
-  for (const rm of ROOMS) grid[rm.mouth.row][rm.mouth.col] = 'c';
+  for (const rm of ROOMS) for (const c of rm.mouthCols) grid[rm.mouth.row][c] = 'c';
   return grid.map((row) => row.join(''));
 }
 
@@ -440,3 +447,54 @@ export function isSolid(col, row) {
   if (SOLID_CHARS.has(tileAt(col, row))) return true;
   return solidProps.has(`${col},${row}`);
 }
+
+// Three times the gargoyles.
+//
+// Hand-placing another forty coordinates would be forty more numbers to strand
+// the next time a room moves, so they are derived from the finished grid by the
+// same rule the sixteen hand-placed ones follow: a wall tile with floor on
+// exactly ONE side — a flat face rather than a corner, so the carving has a
+// wall behind it and nothing to clip through.
+//
+// Restricting that to EAST/WEST faces only, which is where this started, finds
+// 59 tiles in the whole abbey and cannot seat the quota without crowding them
+// into a line. Horizontal courses count too: `face` only mirrors the sprite, so
+// on a north or south face it is chosen by column parity to keep a long wall
+// from reading as a row of identical stamps.
+//
+// Spacing is greedy from a seeded shuffle: the same layout every load, spread
+// over the whole building rather than clustered wherever the scan started. The
+// minimum gap relaxes until the quota is met, so a cramped abbey still gets its
+// full count instead of silently placing half of them.
+(() => {
+  const target = STATUES.filter((s) => s.kind === 'gargoyle').length * 2;
+  const taken = STATUES.map((s) => ({ col: s.col, row: s.row }));
+  const cand = [];
+  for (let r = 1; r < ROWS - 1; r++) {
+    for (let c = 1; c < COLS - 1; c++) {
+      if (GRID[r][c] !== '#') continue;
+      const w = GRID[r][c - 1] !== '#';
+      const e = GRID[r][c + 1] !== '#';
+      const n = GRID[r - 1][c] !== '#';
+      const so = GRID[r + 1][c] !== '#';
+      if (w + e + n + so !== 1) continue;              // a corner, buried, or open on two sides
+      cand.push({ col: c, row: r, face: e ? 1 : w ? -1 : (c % 2 ? 1 : -1) });
+    }
+  }
+  let seed = 20260802;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  for (let i = cand.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [cand[i], cand[j]] = [cand[j], cand[i]];
+  }
+  const added = [];
+  for (let gap = 9; gap >= 2 && added.length < target; gap--) {
+    for (const p of cand) {
+      if (added.length >= target) break;
+      if (taken.some((q) => Math.hypot(p.col - q.col, p.row - q.row) < gap)) continue;
+      added.push({ col: p.col, row: p.row, kind: 'gargoyle', face: p.face });
+      taken.push(p);
+    }
+  }
+  STATUES.push(...added);
+})();

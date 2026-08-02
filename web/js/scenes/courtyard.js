@@ -1177,24 +1177,60 @@ export class CourtyardScene {
   // accent pair — nothing else in the palette is allowed to compete with it.
   _drawRunner(ctx) {
     const cx = px(NAVE_CX), w = 9;
-    const y0 = NAVE.y0 * TILE, y1 = NAVE.y1 * TILE;
+    this._runnerBand(ctx, cx - w, NAVE.y0 * TILE, w * 2, NAVE.y1 * TILE - NAVE.y0 * TILE, false);
+
+    // The arms of the cross. The runner now goes east and west along the
+    // transept as well as down the nave, and each arm STOPS SHORT OF ITS
+    // STAIRWELL — carpet laid over an opening in the floor is a trip, and the
+    // stair heads are exactly where the arms would otherwise end.
+    const armRow = STAIRS.length
+      ? STAIRS.reduce((r, s) => (s.row < r ? s.row : r), STAIRS[0].row) : TRANSEPT.y0 + 6;
+    const inTransept = STAIRS.filter((s) => s.col >= TRANSEPT.x0 && s.col <= TRANSEPT.x1);
+    const westStair = inTransept.reduce((a, s) => (s.col < a ? s.col : a), TRANSEPT.x1);
+    const eastStair = inTransept.reduce((a, s) => (s.col > a ? s.col : a), TRANSEPT.x0);
+    // one clear tile between the pile of the carpet and the first step
+    const ax0 = (westStair + 2) * TILE;
+    const ax1 = (eastStair - 1) * TILE;
+    const cy = px(armRow);
+    if (ax1 > ax0) this._runnerBand(ctx, ax0, cy - w, ax1 - ax0, w * 2, true);
+  }
+
+  // One band of runner: dark edge, base, one lit edge, gold piping and a sparse
+  // woven diamond. Drawn along its own axis so the nave and the transept arms
+  // are the same carpet turned, not two different ones that happen to be red.
+  _runnerBand(ctx, x, y, w, h, horizontal) {
     // The runner sits a step DOWN the blood ramp from its accent value —
     // at full BLOOD.b a stripe this long swamps every other thing in the room.
-    ctx.fillStyle = 'rgba(0,0,0,0.30)';                                    // contact shadow
-    ctx.fillRect(cx - w - 2, y0, w * 2 + 4, y1 - y0);
-    ctx.fillStyle = BLOOD.o; ctx.fillRect(cx - w, y0, w * 2, y1 - y0);
-    ctx.fillStyle = BLOOD.d; ctx.fillRect(cx - w + 1.5, y0, w * 2 - 3, y1 - y0);
-    ctx.fillStyle = BLOOD.b; ctx.fillRect(cx - w + 1.5, y0, 1.2, y1 - y0);  // lit left edge
-    ctx.fillStyle = GOLD.o;
-    ctx.fillRect(cx - w + 3.4, y0, 0.8, y1 - y0);
-    ctx.fillRect(cx + w - 4.2, y0, 0.8, y1 - y0);
-    for (let y = y0 + 8; y < y1 - 8; y += 28) {
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';                                     // contact shadow
+    if (horizontal) ctx.fillRect(x, y - 2, w, h + 4);
+    else ctx.fillRect(x - 2, y, w + 4, h);
+    ctx.fillStyle = BLOOD.o; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = BLOOD.d;
+    ctx.fillRect(horizontal ? x : x + 1.5, horizontal ? y + 1.5 : y,
+      horizontal ? w : w - 3, horizontal ? h - 3 : h);
+    ctx.fillStyle = BLOOD.b;                                                // lit edge
+    if (horizontal) ctx.fillRect(x, y + 1.5, w, 1.2);
+    else ctx.fillRect(x + 1.5, y, 1.2, h);
+    ctx.fillStyle = GOLD.o;                                                 // piping
+    if (horizontal) {
+      ctx.fillRect(x, y + 3.4, w, 0.8);
+      ctx.fillRect(x, y + h - 4.2, w, 0.8);
+    } else {
+      ctx.fillRect(x + 3.4, y, 0.8, h);
+      ctx.fillRect(x + w - 4.2, y, 0.8, h);
+    }
+    const mid = horizontal ? y + h / 2 : x + w / 2;
+    const from = (horizontal ? x : y) + 8;
+    const to = (horizontal ? x + w : y + h) - 8;
+    for (let d = from; d < to; d += 28) {
+      const dx = horizontal ? d : mid;
+      const dy = horizontal ? mid : d;
       ctx.fillStyle = GOLD.o;
       ctx.beginPath();
-      ctx.moveTo(cx, y); ctx.lineTo(cx + 2.4, y + 3.2);
-      ctx.lineTo(cx, y + 6.4); ctx.lineTo(cx - 2.4, y + 3.2);
+      ctx.moveTo(dx, dy); ctx.lineTo(dx + 2.4, dy + 3.2);
+      ctx.lineTo(dx, dy + 6.4); ctx.lineTo(dx - 2.4, dy + 3.2);
       ctx.closePath(); ctx.fill();
-      ctx.fillStyle = GOLD.d; ctx.fillRect(cx - 0.8, y + 2.6, 1.6, 1.2);
+      ctx.fillStyle = GOLD.d; ctx.fillRect(dx - 0.8, dy + 2.6, 1.6, 1.2);
     }
   }
 

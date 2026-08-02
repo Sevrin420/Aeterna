@@ -263,7 +263,11 @@ function cowlFrom(rows, dir) {
         const last = WID - 1 - [...cells].reverse().findIndex((c) => c !== '.');
         const grow = y <= 23 ? 2 : 1;
         for (let d = 1; d <= grow; d++) {
-          if (first - d >= 0) cells[first - d] = 'H';
+          // In profile the face is at the LOW-x end, so draping that side puts
+          // cloth across the front of the face — a hood worn over the nose.
+          // The cowl only grows backward and over the crown when side-on; the
+          // front-facing views still drape both cheeks, which is correct there.
+          if (first - d >= 0 && dir !== 'side') cells[first - d] = 'H';
           if (last + d < WID) cells[last + d] = 'H';
         }
       }
