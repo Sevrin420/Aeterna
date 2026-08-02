@@ -640,15 +640,12 @@ fastify.post('/x/claim', async (req, reply) => {
   return { success: true, kind, devotionGained: amount };
 });
 
-// ========== SOCIAL ==========
-fastify.get('/leaderboard', async () => {
-  return db.prepare(`
-    SELECT name, prefix, level, devotion, streak
-    FROM players
-    ORDER BY devotion DESC
-    LIMIT 10
-  `).all();
-});
+// The /leaderboard endpoint is gone. Nothing in the game drew one -- there was
+// no overlay in index.html and no caller for api.leaderboard() -- but the route
+// still served a public ranking of every player by Devotion to anyone who asked
+// for the URL, which is a leaderboard whether or not the game renders it. Kept
+// out entirely rather than left dark; it is a dozen lines to restore from git
+// when it is wanted.
 
 // ========== SEASON (GDD section 2: 56 active days / 14 day break) ==========
 fastify.get('/season', async () => getSeasonInfo());

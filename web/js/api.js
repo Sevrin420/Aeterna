@@ -104,9 +104,6 @@ export const api = {
   referral(xHandle) {
     return req('/referral', { method: 'POST', body: who({ xHandle }) });
   },
-  leaderboard() {
-    return req('/leaderboard');
-  },
   season() {
     return req('/season');
   },
