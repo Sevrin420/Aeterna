@@ -137,15 +137,31 @@ const AVAX_RPC = process.env.AVAX_RPC || 'https://api.avax.network/ext/bc/C/rpc'
 const BLOODLINE_ADDRESS = process.env.BLOODLINE_ADDRESS
   || '0xC5D08383B1e56297Adbfa4f15E87588996f4C343';
 
+// Two failures live here and they are NOT the same thing, so they are thrown
+// apart. A dead RPC must fail closed (nobody gets bound on an unverified
+// claim); a revert means the chain answered perfectly well and the token simply
+// does not exist, which is the caller's mistake and not an outage.
+class ChainDown extends Error {}
+class NoSuchToken extends Error {}
+
 async function chainCall(data) {
-  const res = await fetch(AVAX_RPC, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: BLOODLINE_ADDRESS, data }, 'latest'] }),
-    signal: AbortSignal.timeout(8000),
-  });
-  const body = await res.json();
-  if (body.error) throw new Error(body.error.message || 'eth_call failed');
+  let body;
+  try {
+    const res = await fetch(AVAX_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: BLOODLINE_ADDRESS, data }, 'latest'] }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new ChainDown(`RPC HTTP ${res.status}`);
+    body = await res.json();
+  } catch (e) {
+    throw new ChainDown(e.message);
+  }
+  // ownerOf() reverts on an unminted id, and a bare '0x' is the same answer
+  // from a node that would rather not say so.
+  if (body.error) throw new NoSuchToken(body.error.message || 'reverted');
+  if (!body.result || body.result === '0x') throw new NoSuchToken('empty result');
   return body.result;
 }
 
@@ -173,6 +189,9 @@ fastify.post('/bind', async (req, reply) => {
   try {
     onChain = await readTokenFromChain(tid);
   } catch (e) {
+    if (e instanceof NoSuchToken) {
+      return reply.code(404).send({ error: 'No such Bloodline has been raised' });
+    }
     req.log.error({ err: e }, 'bind: chain read failed');
     return reply.code(503).send({ error: 'Could not reach the chain to verify that Bloodline' });
   }
