@@ -993,13 +993,20 @@ export class CourtyardScene {
         const st = this._activeStation;
         const intro = this._introFor(st);
         const key = `${st.id}|${this.carrying ? this.carrying.kind : ''}`;
-        if (intro && this._lastIntro !== key) {
+        // A station reads itself once per approach; pressing A again performs
+        // the rite without making the player sit through the text a second
+        // time. The BED is exempt, and must be: that shortcut turns the second
+        // press into an unprompted save-and-exit, so answering "No" and then
+        // pressing A again ended the day with no question asked at all — which
+        // is precisely what the question exists to prevent. It always asks.
+        const isBed = st.kind === 'bed';
+        if (intro && (isBed || this._lastIntro !== key)) {
           this._lastIntro = key;
           // The bed is the one station that asks before it acts: lying down
           // ends the day and drops the player out of the abbey, which is not
           // something to do to somebody who pressed A walking past. Every
           // other station reads, closes, and runs.
-          if (st.kind === 'bed') {
+          if (isBed) {
             this.dialogue.show([intro], {
               choices: ['Yes', 'No'],
               onChoice: (i) => { if (i === 0) this._runStation(st); },
