@@ -709,6 +709,13 @@ function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = '
     walletSkipBtn.hidden = false;
     walletSubmitBtn.textContent = confirm;
     walletSkipBtn.textContent = skip;
+    // Own the enabled state rather than inheriting it. The mint rite disables
+    // this same button while it waits on the chain, and it re-enables it in a
+    // finally that cannot run until THIS prompt resolves — which needs a click
+    // on the button the mint rite left disabled. That deadlock killed both
+    // prompts outright.
+    walletSubmitBtn.disabled = false;
+    walletSkipBtn.disabled = false;
     try { walletInput.focus(); } catch { /* not focusable on some mobile shells */ }
 
     const done = (value) => {
@@ -867,6 +874,11 @@ async function openMintPicker(menu) {
       const receipt = await waitForTx(hash);
       if (receipt && receipt.status === '0x0') throw new Error('The transaction was reverted.');
       teardown();
+      // Hand the controls back BEFORE the bind, which opens the handle and
+      // referral prompts on this same button. Leaving them disabled until the
+      // finally below is a deadlock: that finally waits on those prompts.
+      cultistRange.disabled = false;
+      walletSubmitBtn.disabled = false;
       walletOverlay.hidden = true;
       if (!receipt) {
         showToast('Mint sent but not yet confirmed. Reconnect in a moment to see it.');
