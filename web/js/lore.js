@@ -80,19 +80,22 @@ export const LORE = {
     },
   ],
 
+  // The mint IS open. This said it was not, because it was written before the
+  // collection existed and nobody came back to it — a player could read that
+  // the rite had not begun and then scroll straight into the mint screen.
+  // Two pages: what a Bloodline is, then what it costs and what a spirit is not.
   mint: [
     {
       speaker: 'The Binding',
-      text: 'Cultist NFTs are not yet open for minting.\n\n'
-        + 'When the rite begins, you will mint here: a Cultist bound to your '
-        + 'wallet, with a name the order will use, a face it will recognise, and '
-        + 'a place in the standing.',
+      // Seven lines on a page with a speaker, eight without. Both entries are
+      // cut to sit inside that, or they spill and the reader gets four pages
+      // to scroll instead of two.
+      text: 'A Bloodline is raised here, bound to your wallet.\n\n'
+        + 'It holds 1 to 20 Cultists, fixed the moment it is raised.',
     },
     {
-      text: 'Until then, pass north through the arch as a wandering spirit.\n\n'
-        + 'Every rite you keep and every gift you carry is recorded against you '
-        + 'now, and it follows you into a body when you take one.\n\n'
-        + 'Nothing is lost by starting early.',
+      text: 'Each Cultist costs 0.01 AVAX and multiplies the season’s payout.\n\n'
+        + 'A spirit earns no Devotion. Only a Bloodline is counted.',
     },
   ],
 

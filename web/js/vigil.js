@@ -211,33 +211,53 @@ export class FireVigil {
   // the fire is in front of the brazier it is burning in.
   drawFire(ctx) {
     if (!this.active && this.roar <= 0.01) return;
-    const s = 0.85 + this.roar * 1.05 + this.flare * 0.22;
     const f = 0.86 + Math.sin(this.t * 13) * 0.14;
-    const x = this.bx, y = this.by - 3 - this.roar * 5;
+    const x = this.bx;
+
+    // The fire is SEATED IN THE BOWL. It grows upward out of the fuel and its
+    // base never leaves the brazier.
+    //
+    // It used to scale about its own centre and lift by another 5px as the
+    // rite roared, so at full roar the whole shape had climbed off the bowl
+    // and hung over it — a blob above a brazier rather than a fire burning in
+    // one. Now the base is pinned to the fuel line and only the top rises, and
+    // the width is held near the bowl's own while the height is left free: a
+    // fire that towers reads as fierce, a fire that fattens reads as detached.
+    const baseY = this.by + 2;                                    // the fuel line
+    const sw = 0.85 + Math.min(this.roar, 1) * 0.42 + this.flare * 0.10;
+    const sh = 0.85 + this.roar * 1.05 + this.flare * 0.22;
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const halo = ctx.createRadialGradient(x, y, 1, x, y, 30 * s);
+    // The glow sits over the bowl and the body of the flame, not over its tip.
+    const hy = baseY - 10 * sh * f * 0.5;
+    const halo = ctx.createRadialGradient(x, hy, 1, x, hy, 30 * sh);
     halo.addColorStop(0, this._hot(0.5));
     halo.addColorStop(0.45, this._hot(0.18));
     halo.addColorStop(1, this._hot(0));
     ctx.fillStyle = halo;
-    ctx.fillRect(x - 34 * s, y - 40 * s, 68 * s, 68 * s);
+    ctx.fillRect(x - 34 * sh, hy - 40 * sh, 68 * sh, 68 * sh);
     ctx.restore();
 
-    // Four nested tongues. The deep one is pushed toward BLOOD as the rite
-    // goes on; the core stays white, because a flame with no white centre
-    // reads as a painted shape rather than as something burning.
+    // Four nested tongues, each standing on the fuel line rather than floating.
+    // The deep one is pushed toward BLOOD as the rite goes on; the core stays
+    // white, because a flame with no white centre reads as a painted shape
+    // rather than as something burning.
     const deep = this.blood > 0.35 ? BLOOD.d : FIRE.deep;
     const mid = this.blood > 0.6 ? BLOOD.b : FIRE.mid;
-    ctx.fillStyle = deep;
-    ctx.beginPath(); ctx.ellipse(x, y, 4.6 * s * f, 10 * s * f, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = mid;
-    ctx.beginPath(); ctx.ellipse(x, y + 1, 3.4 * s * f, 7.6 * s * f, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = FIRE.hot;
-    ctx.beginPath(); ctx.ellipse(x, y + 2, 2.1 * s * f, 4.6 * s * f, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = FIRE.core;
-    ctx.beginPath(); ctx.ellipse(x, y + 3, 1.1 * s * f, 2.4 * s * f, 0, 0, Math.PI * 2); ctx.fill();
+    // `sink` seats each inner tongue a little deeper into the fuel, which is
+    // what keeps the nest reading as one fire instead of four stacked shells.
+    const tongue = (rx, ry, fill, sink) => {
+      const hh = ry * sh * f;
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.ellipse(x, baseY - hh + sink, rx * sw * f, hh, 0, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    tongue(4.6, 10, deep, 0);
+    tongue(3.4, 7.6, mid, 1);
+    tongue(2.1, 4.6, FIRE.hot, 2);
+    tongue(1.1, 2.4, FIRE.core, 3);
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
