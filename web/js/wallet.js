@@ -48,7 +48,10 @@ export function hasInjectedWallet() {
 const _meta = (n) => (typeof document !== 'undefined'
   ? (document.querySelector(`meta[name="${n}"]`) || {}).content || '' : '');
 export const WC_PROJECT_ID = _meta('wc-project-id');
-const WC_CHAIN = Number(_meta('wc-chain-id')) || 1;          // Ethereum mainnet
+const WC_CHAIN = Number(_meta('wc-chain-id')) || 43114;      // Avalanche C-Chain
+// The deployed collection. Both are read by fetchCultists() below.
+export const BLOODLINE_ADDRESS = _meta('bloodline-address');
+export const BLOODLINE_CHAIN_ID = Number(_meta('bloodline-chain-id')) || 43114;
 const WC_SRC = 'https://esm.sh/@walletconnect/ethereum-provider@2.17.2';
 
 export function hasWalletConnect() { return !!WC_PROJECT_ID; }

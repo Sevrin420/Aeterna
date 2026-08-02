@@ -1,0 +1,12 @@
+{
+  "network": "avalanche",
+  "chainId": 43114,
+  "address": "0xC5D08383B1e56297Adbfa4f15E87588996f4C343",
+  "pricePerCultistWei": "10000000000000000",
+  "maxSupply": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+  "baseURI": "https://membersonly.cc/nft/",
+  "teamBps": 2000,
+  "deployedAt": "2026-08-02T02:29:39Z",
+  "deployRun": "https://github.com/Sevrin420/Aeterna/actions/runs/30728931702",
+  "note": "team, treasury and deployer are deliberately omitted here: they are held as GitHub secrets. They are not confidential -- anyone can read them from the chain with team()/treasury()/owner() -- but they are left out so this public file does not restate them. openMint.js only reads .address."
+}
