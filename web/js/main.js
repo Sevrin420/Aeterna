@@ -177,6 +177,22 @@ input.bindDpadZone(document.getElementById('dpad'));
 input.bindButton(document.getElementById('btnA'), 'a');
 input.bindButton(document.getElementById('btnB'), 'b');
 
+// Every control is placed as a percentage of .console, which only lands on the
+// artwork while .console is genuinely its containing block. A stray </div> once
+// closed .console early and left the whole row of them children of .stage, which
+// is not positioned — so the percentages resolved against the VIEWPORT instead.
+// The zones then moved with the browser's chrome rather than with the console
+// and missed their buttons by a different amount in every browser. That failure
+// is invisible by construction, because the hit zones are transparent: nothing
+// looks wrong, the presses just land somewhere else. So check it out loud.
+const consoleEl = document.getElementById('console');
+for (const el of document.querySelectorAll('.btn-hit, .dpad-zone, .power-switch, .mute-toggle, .emoji-toggle')) {
+  if (el.offsetParent && el.offsetParent !== consoleEl) {
+    const against = el.offsetParent.className || el.offsetParent.tagName;
+    console.error(`[aeterna] ${el.id || el.className} resolves its position against ${against}, not .console — its hit zone will not line up with the artwork.`);
+  }
+}
+
 // Scenes draw in a fixed 208-logical coordinate space; the canvas backing
 // store is 2x that (416x412) so the pixel art stays crisp when the console
 // is scaled up on a phone (Club Nile does the same — a 240-logical world
