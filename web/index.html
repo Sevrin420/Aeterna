@@ -23,7 +23,7 @@
 <body>
   <div class="stage">
     <div class="console" id="console">
-      <img class="console-art" src="assets/console.jpg" alt="" draggable="false" />
+      <img class="console-art" src="assets/console.jpg" alt="" draggable="false" width="1024" height="1536" />
 
       <!-- Screen -->
       <div class="screen-bezel">
@@ -63,9 +63,6 @@
         <!-- Toast -->
         <div class="toast" id="toast" hidden></div>
 
-        <!-- Speech is emoji only. The button fades in with the console the way
-             the mute toggle does, and opens the ring below it. -->
-        <button type="button" class="emoji-toggle" id="emojiToggle" aria-label="Emoji">☺</button>
         <div class="emoji-wheel" id="emojiWheel" hidden></div>
 
         </div>
@@ -103,8 +100,12 @@
         </div>
       </div>
 
-      <!-- Mute -->
+      <!-- Mute, and beside it Speech. Both are children of .console so they
+           share a containing block and therefore actually line up; the emoji
+           button was inside .screen-bezel, which is why it could never sit on
+           the mute button's row however its percentages were tuned. -->
       <button type="button" class="mute-toggle" id="muteToggle" aria-label="Mute sound" aria-pressed="false">&#9834;</button>
+      <button type="button" class="emoji-toggle" id="emojiToggle" aria-label="Emoji">&#9786;</button>
 
       <!-- Power slider (Club Nile style: wood pill, ON/OFF labels, ridged knob) -->
       <button type="button" class="power-switch" id="powerSwitch" aria-label="Power" aria-pressed="false">
