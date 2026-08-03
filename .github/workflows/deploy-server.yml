@@ -17,12 +17,57 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ONE CONNECTION, NOT FIVE.
+      # sshd on the box runs the stock `MaxStartups 10:30:100`: once ten
+      # UNAUTHENTICATED connections are in flight it starts refusing new ones at
+      # random, 30% at the threshold. The box takes constant SSH scanning, so
+      # those ten slots are usually most of the way full before a deploy starts
+      # — sshd's own log shows it entering throttling and dropping connections
+      # #10 through #13 from four different addresses. This deploy used to open
+      # five separate connections (keyscan, two rsyncs, two remote shells), and
+      # every one of them was an independent roll against that 30%. Losing any
+      # single roll killed the deploy, sometimes AFTER the code had been synced
+      # but BEFORE the service was restarted, which leaves the box serving old
+      # code out of new files.
+      #
+      # So: open one connection, retry it if it is refused, and multiplex
+      # everything else over it. ssh-keyscan is gone because it was a sixth
+      # connection buying nothing — `accept-new` learns the host key on first
+      # contact, which is the same trust-on-first-use the keyscan performed.
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking accept-new
+            ControlMaster auto
+            ControlPath ~/.ssh/cm-%C
+            ControlPersist 10m
+            ConnectTimeout 20
+            ServerAliveInterval 30
+            ServerAliveCountMax 6
+          EOF
+          chmod 600 ~/.ssh/config
+          # Throttling windows in the log last 1-56 seconds, so backing off in
+          # growing steps clears one comfortably.
+          for i in 1 2 3 4 5 6; do
+            if ssh -N -f vps; then
+              echo "SSH master established on attempt $i"
+              break
+            fi
+            if [ "$i" = 6 ]; then
+              echo "::error::Could not open an SSH connection to the VPS after 6 attempts."
+              exit 1
+            fi
+            echo "Attempt $i refused (MaxStartups throttling?) — retrying in $((i * 15))s"
+            sleep $((i * 15))
+          done
+          ssh -O check vps
 
       - name: Sync server code
         run: |
@@ -30,8 +75,8 @@ jobs:
             --exclude 'node_modules' \
             --exclude 'data' \
             --exclude '.env' \
-            -e "ssh -i ~/.ssh/deploy_key" \
-            server/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/aeterna-server/"
+            -e ssh \
+            server/ vps:/opt/aeterna-server/
 
       # server/src/index.js resolves its static webRoot as ../../web relative
       # to src/, i.e. a sibling of /opt/aeterna-server — so the frontend has
@@ -40,12 +85,12 @@ jobs:
       - name: Sync web frontend
         run: |
           rsync -az --delete \
-            -e "ssh -i ~/.ssh/deploy_key" \
-            web/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/web/"
+            -e ssh \
+            web/ vps:/opt/web/
 
       - name: Install deps and restart service
         run: |
-          ssh -i ~/.ssh/deploy_key "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" '
+          ssh vps '
             set -e
             cd /opt/aeterna-server
             rm -rf node_modules
@@ -70,7 +115,7 @@ jobs:
       # rewrites the tiny Caddyfile and reloads each run.
       - name: Set up HTTPS reverse proxy (Caddy)
         run: |
-          ssh -i ~/.ssh/deploy_key "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" '
+          ssh vps '
             set -e
             if ! command -v caddy >/dev/null 2>&1; then
               export DEBIAN_FRONTEND=noninteractive
@@ -111,3 +156,10 @@ jobs:
           else
             echo "✅ Live at https://membersonly.cc/"
           fi
+
+      # Hand the connection back rather than letting ControlPersist hold it open
+      # for ten more minutes — those are exactly the unauthenticated-ish slots
+      # the next deploy is competing for.
+      - name: Close the SSH connection
+        if: always()
+        run: ssh -O exit vps 2>/dev/null || true
