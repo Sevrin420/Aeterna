@@ -18,22 +18,30 @@ jobs:
       - uses: actions/checkout@v4
 
       # ONE CONNECTION, NOT FIVE.
-      # sshd on the box runs the stock `MaxStartups 10:30:100`: once ten
+      # sshd on the box used to run the stock `MaxStartups 10:30:100`: once ten
       # UNAUTHENTICATED connections are in flight it starts refusing new ones at
       # random, 30% at the threshold. The box takes constant SSH scanning, so
-      # those ten slots are usually most of the way full before a deploy starts
-      # — sshd's own log shows it entering throttling and dropping connections
-      # #10 through #13 from four different addresses. This deploy used to open
-      # five separate connections (keyscan, two rsyncs, two remote shells), and
-      # every one of them was an independent roll against that 30%. Losing any
-      # single roll killed the deploy, sometimes AFTER the code had been synced
-      # but BEFORE the service was restarted, which leaves the box serving old
-      # code out of new files.
+      # those ten slots were usually most of the way full before a deploy
+      # started — sshd's own log showed it entering throttling and dropping
+      # connections #10 through #13 from four different addresses. This deploy
+      # used to open five separate connections (keyscan, two rsyncs, two remote
+      # shells), and every one of them was an independent roll against that 30%.
+      # Losing any single roll killed the deploy, sometimes AFTER the code had
+      # been synced but BEFORE the service was restarted, which leaves the box
+      # serving old code out of new files.
       #
       # So: open one connection, retry it if it is refused, and multiplex
       # everything else over it. ssh-keyscan is gone because it was a sixth
       # connection buying nothing — `accept-new` learns the host key on first
       # contact, which is the same trust-on-first-use the keyscan performed.
+      #
+      # The box side was raised to `MaxStartups 60:30:100` with
+      # `LoginGraceTime 30`, in /etc/ssh/sshd_config.d/01-aeterna-maxstartups.conf
+      # — the hard cap stays 100 so worst-case pre-auth memory is unchanged, and
+      # a stalled scanner frees its slot in 30s instead of 120s. That lives on
+      # the VPS, not in this repo: delete that one file and reload ssh to revert.
+      # Keep the multiplexing regardless — it is what makes a refusal survivable
+      # rather than merely unlikely.
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
