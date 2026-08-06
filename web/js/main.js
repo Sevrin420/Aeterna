@@ -7,11 +7,16 @@ import { LORE } from './lore.js';
 import { CourtyardScene } from './scenes/courtyard.js';
 import { api, setTokenId, getTokenId } from './api.js';
 import { sfx, AUDIO_MASTER } from './sfx.js';
+import { PAGE_TITLE } from './config.js';
 import {
   connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen,
   fetchPricePerCultist, formatAvax, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
   ensureChain, currentChainId,
 } from './wallet.js';
+
+// The tab follows the flag too, so ?oldName=1 rolls the rename back everywhere
+// the player can read it and not just inside the canvas.
+document.title = PAGE_TITLE;
 
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');

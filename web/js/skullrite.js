@@ -16,7 +16,7 @@
 // vertical axis. It is simply held at zero now, facing whoever woke it.
 
 import { BONE, BLOOD, VOID, SOUL, WALL, SHADOW, blueFlame, candleFlame, SOULFIRE } from './palette.js';
-import { CONFIG } from './config.js';
+import { CHANT_PAIR } from './config.js';
 
 // The rite starts from ONE tile, and it is painted blood red so you can see
 // which. It used to start from anywhere inside a 44px circle, which let the
@@ -70,9 +70,7 @@ const HOP_H = 3.2;
 
 // Two phrases, alternating, three times each: six lines and six steps of
 // altitude, now spread across LINE_GAP seconds apiece.
-const CHANT_LINES_NEW = ['Eternal Throb', 'Eternal Life', 'Eternal Throb', 'Eternal Life', 'Eternal Throb', 'Eternal Life'];
-const CHANT_LINES_OLD = ['Sanguis aeternus', 'Vita aeterna', 'Sanguis aeternus', 'Vita aeterna', 'Sanguis aeternus', 'Vita aeterna'];
-const CHANT_LINES = CONFIG.chantingNew ? CHANT_LINES_NEW : CHANT_LINES_OLD;
+const CHANT_LINES = [...CHANT_PAIR, ...CHANT_PAIR, ...CHANT_PAIR];
 const CHANT = CHANT_LINES.length * LINE_GAP;
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);

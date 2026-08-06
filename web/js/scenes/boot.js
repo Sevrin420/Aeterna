@@ -1,9 +1,15 @@
-// Boot scene: the night-castle title art fades in, the Aeterna logo falls and
+// Boot scene: the night-castle title art fades in, the title logo falls and
 // bounces to rest in the middle of it, then a blinking PRESS A. Both images are
-// real assets (web/assets/title-bg.jpg + title-logo.png). This sequence runs on
+// real assets (web/assets/title-bg.jpg + the logo below). This sequence runs on
 // every power-on.
+//
+// The falling logo IS the game's name, so it follows the rename rather than
+// sitting beside it: Throbbin Abbey drops now, and ?oldName=1 drops the old
+// Aeterna plate instead. Stacking the new name under the old one was the first
+// attempt and it was wrong twice over — two titles at once, and the one the
+// player reads first is the retired one.
 
-import { CONFIG } from '../config.js';
+import { NEW_NAME } from '../config.js';
 
 const W = 208, H = 208;
 const FONT = '"Press Start 2P", monospace';
@@ -38,8 +44,7 @@ export class BootScene {
     this.blink = 0;
 
     this.bg = loadImage('assets/title-bg.jpg');
-    this.logo = loadImage('assets/title-logo.png');
-    this.dropdown = CONFIG.dropdownShow ? loadImage('assets/title-dropdown.png') : null;
+    this.logo = loadImage(NEW_NAME ? 'assets/title-logo-throbbin.png' : 'assets/title-logo.png');
   }
 
   enter() {}
@@ -91,15 +96,7 @@ export class BootScene {
 
     ctx.imageSmoothingEnabled = smooth;
 
-    // 3) dropdown image (Undying Abbots) below the logo once landed
-    if (this.landed && this.dropdown && this.dropdown.complete && this.dropdown.naturalWidth) {
-      const dw = W * 0.85;
-      const dh = dw * (this.dropdown.naturalHeight / this.dropdown.naturalWidth);
-      const dy = H * 0.62;
-      ctx.drawImage(this.dropdown, (W - dw) / 2, dy, dw, dh);
-    }
-
-    // 4) blinking PRESS A once everything has landed
+    // 3) blinking PRESS A once everything has landed
     if (this.landed) {
       const on = Math.floor(this.blink / 0.5) % 2 === 0;
       if (on) {
@@ -115,7 +112,7 @@ export class BootScene {
       }
     }
 
-    // 5) fade the whole screen up from black over the first `fadeIn` seconds
+    // 4) fade the whole screen up from black over the first `fadeIn` seconds
     if (this.t < this.fadeIn) {
       ctx.fillStyle = `rgba(0,0,0,${1 - this.t / this.fadeIn})`;
       ctx.fillRect(0, 0, W, H);

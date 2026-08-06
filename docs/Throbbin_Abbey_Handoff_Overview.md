@@ -1,7 +1,7 @@
 # Throbbin Abbey — Complete Handoff Package
 **Version:** 4.1  
 **Date:** July 23, 2026  
-**Slogan:** Vita Throbbin Abbey
+**Slogan:** Eternal Life
 
 ---
 

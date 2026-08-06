@@ -1,4 +1,4 @@
-// Core Devotion / streak rules from docs/Aeterna_GDD_v4.1.md section 5-6.
+// Core Devotion / streak rules from docs/Throbbin_Abbey_GDD_v4.1.md section 5-6.
 // Exact per-duty Devotion amounts aren't specified in the GDD (only gift and
 // confession amounts are), so DUTY_DEVOTION below is this server's concrete
 // choice for that gap, tuned to the documented multiplier curve.
@@ -32,11 +32,18 @@ export const X_COMMENT_DEVOTION = 10;
 export const X_DEVOTION = { comment: X_COMMENT_DEVOTION };
 
 // What has to be in the comment, word for word in meaning if not in spacing.
-export const X_PHRASE = 'Sanguis Aeternus, Vita Aeterna';
+// This is what the abbey ASKS for now that it is Throbbin Abbey.
+export const X_PHRASE = 'Eternal Throb, Eternal Life';
+
+// The Latin motto the abbey asked for before the rename. Still accepted, and
+// deliberately so: comments carrying it were posted in good faith against the
+// instructions of the day, and a rename must not turn a paid comment into an
+// unpaid one. Drop this from the array to stop honouring it.
+const X_PHRASES = [X_PHRASE, 'Sanguis Aeternus, Vita Aeterna'];
 
 // Matching is deliberately forgiving about the things a phone does to a person
-// typing a Latin motto -- case, curly apostrophes, doubled spaces, a trailing
-// full stop, a comma they dropped -- and strict about the words themselves and
+// typing a motto -- case, curly apostrophes, doubled spaces, a trailing full
+// stop, a comma they dropped -- and strict about the words themselves and
 // their order. Someone who typed the motto should be paid; someone who typed
 // half of it should not.
 export function matchesPhrase(text) {
@@ -46,7 +53,8 @@ export function matchesPhrase(text) {
     .replace(/[^a-z ]+/g, ' ')      // drop punctuation, keep word boundaries
     .replace(/\s+/g, ' ')
     .trim();
-  return norm(text).includes(norm(X_PHRASE));
+  const t = norm(text);
+  return X_PHRASES.some((p) => t.includes(norm(p)));
 }
 // Paid to BOTH sides of a referral, once. Deliberately the same as a duty:
 // bringing someone into the abbey is worth a day's work, not a fortune.
@@ -77,7 +85,7 @@ export function confessionCost(confessionCount) {
   return Number((0.005 + confessionCount * 0.001).toFixed(3));
 }
 
-// Season structure from docs/Aeterna_GDD_v4.1.md section 2: 56 days active
+// Season structure from docs/Throbbin_Abbey_GDD_v4.1.md section 2: 56 days active
 // play, then a 14-day break, repeating. SEASON_START is this server's
 // concrete choice for a start date (the GDD doesn't pin one) — override with
 // the SEASON_START env var to rebase it.

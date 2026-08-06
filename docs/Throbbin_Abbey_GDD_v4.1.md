@@ -1,5 +1,5 @@
 # Throbbin Abbey — Game Design Document v4.1
-**Slogan:** Vita Throbbin Abbey  
+**Slogan:** Eternal Life  
 **Season Structure:** 56 Days Active / 14 Days Break  
 **Last Updated:** July 23, 2026
 

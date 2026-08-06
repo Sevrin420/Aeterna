@@ -12,12 +12,19 @@
 // break is a beat.
 
 import { GOLD, BLOOD, SOUL, BONE, IRON } from './palette.js';
+import { GAME_NAME } from './config.js';
+// The cast's own switch, not a second one: when BIRDS is false the sprites are
+// people again, and so are the few lines below that name a body part. One flag
+// moves the pictures and the words together.
+import { BIRDS } from './pixelchar.js';
+
+const HANDS = BIRDS ? 'claws' : 'hands';
 
 export const LORE = {
   doctrine: [
     {
       speaker: 'The Doctrine',
-      text: 'Vita Aeterna is a death-cult.\n\n'
+      text: `${GAME_NAME} is a death-cult.\n\n`
         + 'Spirits gather in the sanctuary beneath the inverted cross to earn '
         + 'Devotion. Devotion is the only thing the abbey counts, and it counts '
         + 'everything.',
@@ -51,7 +58,7 @@ export const LORE = {
       chart: {
         slices: [
           { label: 'Season 1', sub: 'paid to winners', pct: 50, color: GOLD.b, emoji: '🏆' },
-          { label: 'Bloodline', sub: 'Aeterna, long term', pct: 50, color: SOUL.b, emoji: '🧬' },
+          { label: 'Bloodline', sub: 'the abbey, long term', pct: 50, color: SOUL.b, emoji: '🧬' },
         ],
       },
     },
@@ -113,7 +120,7 @@ export const LORE = {
     guru: {
       speaker: 'The Abbot',
       text: 'He does not look up. He never looks up.\n\n'
-        + 'His hands are open, and they are waiting.',
+        + `His ${HANDS} are open, and they are waiting.`,
     },
     // shown when you arrive carrying a switch
     scourge: {
@@ -131,7 +138,7 @@ export const LORE = {
     // wearing a robe.
     scourgeTooSoon: {
       speaker: 'The Abbot',
-      text: 'He closes his hands.\n\n'
+      text: `He closes his ${HANDS}.\n\n`
         + 'He does not look up, and he does not explain.',
     },
     scourgedAlready: {

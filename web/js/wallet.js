@@ -8,7 +8,7 @@
 // spirit (per the design) — but a wallet whose chain read FAILS does not, since
 // "the RPC is down" and "you own nothing" must never look the same.
 
-import { CONFIG } from './config.js';
+import { GAME_NAME } from './config.js';
 
 // ── DEMO / TEST MODE ────────────────────────────────────────────────────────
 // Add ?demo (or ?mock) to the URL to test the full connect -> choose-Cultist ->
@@ -70,13 +70,12 @@ async function initWalletConnect() {
     throw new Error('WC_LOAD_FAILED');
   }
   const EthereumProvider = mod.EthereumProvider || mod.default;
-  const gameName = CONFIG.gameNameNew ? 'Throbbin Abbey' : 'Vita Aeterna';
   _wc = await EthereumProvider.init({
     projectId: WC_PROJECT_ID,
     chains: [WC_CHAIN],
     showQrModal: true,
     metadata: {
-      name: gameName,
+      name: GAME_NAME,
       description: 'A death-cult abbey.',
       url: typeof location !== 'undefined' ? location.origin : 'https://membersonly.cc',
       icons: [`${typeof location !== 'undefined' ? location.origin : ''}/assets/icon.png`],

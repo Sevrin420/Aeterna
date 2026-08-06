@@ -13,6 +13,7 @@ import { FireRite } from '../firerite.js';
 import { Scourge, StickPile } from '../scourge.js';
 import { SkullShrine } from '../skullrite.js';
 import { FireVigil } from '../vigil.js';
+import { CHANT_PAIR } from '../config.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, ROOMS, BEDS, SPAWN_BEDS, SKULL_ROOM, SKULL_ALTAR, NAVE, TRANSEPT, NAVE_CX,
@@ -79,8 +80,8 @@ const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
 
 // The mantra every rite is performed to. All three daily duties speak it in
 // bubbles over the worshipper's head, so the whole day has one voice — the
-// shrine simply says it three times over.
-const CHANT_PAIR = ['Sanguis aeternus', 'Vita aeterna'];
+// shrine simply says it three times over. The words are CHANT_PAIR in
+// config.js; this file, vigil.js and skullrite.js all read that one array.
 
 // The altar's box used to hold for a mandatory ten seconds because reading it
 // WAS the prayer duty. Praying pays nothing now, so holding the player there

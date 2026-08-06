@@ -65,8 +65,12 @@ fastify.get('/nft/:tokenId', async (req, reply) => {
 
   reply.header('Cache-Control', 'public, max-age=60');
   return {
-    name: given ? `${given} — Bloodline #${tokenId}` : `Aeterna Bloodline #${tokenId}`,
-    description: 'A bloodline of the abbey of Vita Aeterna. It holds a fixed '
+    // The abbey's name as a marketplace shows it. NOT the on-chain collection
+    // name: that is baked into the deployed contract's constructor ("Aeterna
+    // Bloodline") and only a redeploy could change it. To roll this back,
+    // put "Aeterna" and "Vita Aeterna" back in the two lines below.
+    name: given ? `${given} — Bloodline #${tokenId}` : `Throbbin Abbey Bloodline #${tokenId}`,
+    description: 'A bloodline of Throbbin Abbey. It holds a fixed '
       + 'number of Cultists, set the day it was raised and never added to. Its '
       + 'Devotion is earned, and rises for as long as the line is kept.',
     external_url: `https://membersonly.cc/?bloodline=${tokenId}`,

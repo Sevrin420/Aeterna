@@ -16,15 +16,13 @@
 // camera framing and the timing, and the scene hands over input while it runs.
 
 import { FIRE, BLOOD, GOLD, VOID, SHADOW } from './palette.js';
-import { CONFIG } from './config.js';
+import { CHANT_PAIR } from './config.js';
 
 // The mantra, three times through. Slow on purpose — the shrine's chant is
 // spaced the same way, and the two rites should feel like the same liturgy
-// said at different altars.
-const PAIR_NEW = ['Eternal Throb', 'Eternal Life'];
-const PAIR_OLD = ['Sanguis aeternus', 'Vita aeterna'];
-const PAIR = CONFIG.chantingNew ? PAIR_NEW : PAIR_OLD;
-export const VIGIL_LINES = [...PAIR, ...PAIR, ...PAIR];
+// said at different altars. The words themselves live in config.js so all
+// three altars say the same thing.
+export const VIGIL_LINES = [...CHANT_PAIR, ...CHANT_PAIR, ...CHANT_PAIR];
 const LINE_GAP = 2.8;
 
 const KNEEL = 1.6;                      // going down
