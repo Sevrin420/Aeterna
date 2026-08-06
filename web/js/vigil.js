@@ -20,7 +20,7 @@ import { FIRE, BLOOD, GOLD, VOID, SHADOW } from './palette.js';
 // The mantra, three times through. Slow on purpose — the shrine's chant is
 // spaced the same way, and the two rites should feel like the same liturgy
 // said at different altars.
-const PAIR = ['Sanguis aeternus', 'Vita aeterna'];
+const PAIR = ['Eternal Throb', 'Eternal Life'];
 export const VIGIL_LINES = [...PAIR, ...PAIR, ...PAIR];
 const LINE_GAP = 2.8;
 
