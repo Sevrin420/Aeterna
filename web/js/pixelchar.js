@@ -674,6 +674,60 @@ HD_BODIES.birdrobe = {
   ],
 };
 
+/* THE PLUCKED BIRD, for the rite at the shrine.
+
+   birdrobe recoloured to skin would not do, for the same reason the file
+   already gives for not recolouring a dress: a garment recoloured is still a
+   garment SHAPE. birdrobe's whole silhouette is a habit — narrow shoulder,
+   skirt flaring to a hem — and in bare skin that reads as a robe someone
+   painted flesh-coloured, not as a body out of its robe.
+
+   So the bare bird is its own rows, and they invert the robe's logic. The
+   widest point is a small belly a third of the way down and everything tapers
+   from there, so the figure narrows toward the ground instead of flaring: no
+   skirt, no hem, nothing to hide behind. It is deliberately narrower than the
+   skull, which leaves the head looking too big for the body — that is most of
+   what makes it read as vulnerable at twenty-one pixels, far more than any
+   detail drawn inside the outline could.
+
+   The plucked colour is a trait (bareSkin), not these glyphs: 3/J/j here are
+   the same coat cells every body uses, and the bare palette in makeCharacterHD
+   points them at raw skin instead of wool.
+
+   Steps sit on rows 4, 8 and 10, per the sub-pixel rule documented above. */
+HD_BODIES.birdbare = {
+  front: [
+    '...........3JJJJJJJJj...........',
+    '...........3JJJJJJJJj...........',
+    '...........3JJJJJJJJj...........',
+    '...........3JJJJJJJJj...........',
+    '..........3JJJJJJJJJJj..........',
+    '..........3JJJJJJJJJJj..........',
+    '..........3JJJJJJJJJJj..........',
+    '..........3JJJJJJJJJJj..........',
+    '...........3JJJJJJJJj...........',
+    '...........3JJJJJJJJj...........',
+    '............3JJJJJJj............',
+    '............jjjjjjjj............',
+  ],
+  // In profile the belly carries forward, under the thrust-out head, and the
+  // rump tucks away behind — the reverse of the robe, whose mass fell backward.
+  side: [
+    '............3JJJJJJJJj..........',
+    '............3JJJJJJJJj..........',
+    '............3JJJJJJJJj..........',
+    '............3JJJJJJJJj..........',
+    '...........3JJJJJJJJJJj.........',
+    '...........3JJJJJJJJJJj.........',
+    '...........3JJJJJJJJJJj.........',
+    '...........3JJJJJJJJJJj.........',
+    '...........3JJJJJJJJJj..........',
+    '...........3JJJJJJJJJj..........',
+    '............3JJJJJJJj...........',
+    '............jjjjjjjjj...........',
+  ],
+};
+
 /* Paints a block of rows at an arbitrary cell size, horizontally centred in the
    sprite's 18-logical-px content box, with its top edge at yTop. The cell size
    is a parameter (it used to be hardcoded at 0.5 for every part) so the head
@@ -916,7 +970,7 @@ function drawCloak(g, dir, cl) {
 // `dir` is accepted to match drawCloak's signature but deliberately unused: a
 // collar cut to the skull is the same shape from every angle, and the bird's
 // head is the same width in all three views.
-function drawBirdMantle(g, dir, cl) {
+function drawBirdMantle(g, dir, cl, bare) {
   const B = cl.base, H = cl.hi, S = cl.sh;
   /* Accessory painters are handed a context already scaled 1.1x about
      (9, FEET_Y) so that art authored against the OLD layout still lands (see
@@ -926,6 +980,19 @@ function drawBirdMantle(g, dir, cl) {
   const K = 1 / 1.1;
   const box = (X, Y, W, Ht, col) => blk(g, 9 + (X - 9) * K, 26 + (Y - 26) * K, W * K, Ht * K, col);
 
+  // Stripped, this is a bare NECK, not a mantle: it barely widens at all,
+  // because a plucked bird has no shoulder to speak of and the whole point of
+  // the pose is that there is nothing on it. It still has to close the same
+  // gap, and it stops at birdbare's narrower top row (x 6.25..11.75) rather
+  // than birdrobe's.
+  if (bare) {
+    box(6.9, 12.5, 4.1, 1.1, B);        // throat, cut to the skull's underside
+    box(6.25, 13.5, 5.5, 1.6, B);       // neck, meeting the bare body
+    box(6.9, 12.5, 4.1, 0.35, H);
+    box(6.25, 13.5, 0.8, 1.6, H);
+    box(11.0, 13.5, 0.75, 1.6, S);
+    return;
+  }
   // y 12.5 is the first logical row below the skull; y 15.0 is BODY_Y, and
   // x 5.15..12.85 is exactly the span of the body grid's top row. The bands
   // overlap by a tenth so no rounding can open a seam between them.
@@ -948,7 +1015,9 @@ function accPainter(t, ax) {
   // shanks it exists to reveal, and in profile piled its back drape on the
   // beak side of the figure.
   return (g, dir) => {
-    if (ax.cloak) (BIRDS ? drawBirdMantle : drawCloak)(g, dir, ax.cloak);
+    if (ax.cloak) {
+      if (BIRDS) drawBirdMantle(g, dir, ax.cloak, ax.bare); else drawCloak(g, dir, ax.cloak);
+    }
     ff(g, dir, ax); hf(g, dir, ax);
   };
 }
@@ -957,7 +1026,15 @@ export function makeCharacterHD(t) {
   return makeCharacterHD_human(t);
 }
 function makeCharacterHD_human(t) {
-  const skin = ramp(mixc('#e8c88a', t.skin || '#e8c88a', 0.22)), hat = rampWool(t.hat), coat = rampWool(t.coat);
+  /* Human skin is blended 22% toward one common tan so that the whole rolled
+     pool stays inside a single believable family — no cultist comes out mint
+     or lilac. Plumage is not a skin tone and must not be washed that way: at
+     22% the bird's #6fbb42 arrived as #cdc57a, a pale khaki, which is why the
+     birds have been rendering so much lighter than the colour they are set to.
+     ramp() lifting its highlight was only ever the smaller half of it. Birds
+     take their plumage colour undiluted; humans keep the tan mix exactly. */
+  const skinBase = BIRDS ? (t.skin || '#e8c88a') : mixc('#e8c88a', t.skin || '#e8c88a', 0.22);
+  const skin = ramp(skinBase), hat = rampWool(t.hat), coat = rampWool(t.coat);
   const pants = rampWool(t.pants), hair = ramp(t.hair), shoes = ramp(t.shoes);
   const shirt = rampSoft(t.shirt || '#f4ead2');
   const leather = rampLeather(t.leather || '#5a3a1d');
@@ -977,23 +1054,33 @@ function makeCharacterHD_human(t) {
     P: t.beak || '#b9d13f', p: mixc(t.beak || '#b9d13f', '#2a2410', 0.45),
     B: pants.base, b: pants.sh, F: shoes.base, f: shoes.sh
   };
-  // A bare figure. Every garment cell becomes the HEAD's exact skin ramp.
-  //
-  // Setting the garment colours to the skin colour is not enough, and that is
-  // what was wrong: the head is built with ramp(), the coat and pants with
-  // rampWool() and the belt with rampLeather(), and those three mix their
-  // highlights and shadows differently. Same base colour, three different
-  // materials — so the body read as a skin-coloured garment rather than as
-  // skin, and rampLeather's highlight (56% toward cream) drew a bright band
-  // across the waist that looked exactly like a thin belt.
+  /* A bare figure. Every garment cell becomes one skin ramp.
+
+     Setting the garment colours to the skin colour is not enough, and that is
+     what was wrong: the head is built with ramp(), the coat and pants with
+     rampWool() and the belt with rampLeather(), and those three mix their
+     highlights and shadows differently. Same base colour, three different
+     materials — so the body read as a skin-coloured garment rather than as
+     skin, and rampLeather's highlight (56% toward cream) drew a bright band
+     across the waist that looked exactly like a thin belt.
+
+     WHICH skin, though, differs by cast. A bare human is skin from the crown
+     down, so the body takes the head's own ramp and the figure is one colour.
+     A plucked bird is not stripped that evenly: the head keeps its feathers —
+     it is where the beak and the eye are, and a bald green head would just
+     read as a different bird — while the body below is bare. So it passes
+     bareSkin, and the seam of colour at the throat is the whole point of the
+     pose. Humans set no bareSkin, so bareR is the head ramp and nothing about
+     them changes. */
+  const bareR = t.bareSkin ? ramp(t.bareSkin) : skin;
   if (t.bare) {
-    pal['3'] = skin.hi; pal.J = skin.base; pal.j = skin.sh;      // coat
-    pal.B = skin.base; pal.b = skin.sh;                          // legs
-    pal.C = skin.base; pal.R = skin.base;                        // shirt, tie
-    pal.T = skin.base; pal.Y = skin.base;                        // the belt, gone
-    pal.L = skin.sh;                                             // trim
-    pal.F = skin.base; pal.f = skin.sh;                          // shoes
-    pal.G = skin.base; pal.g = skin.base;                        // buttons, buckles
+    pal['3'] = bareR.hi; pal.J = bareR.base; pal.j = bareR.sh;   // coat
+    pal.B = bareR.base; pal.b = bareR.sh;                        // legs
+    pal.C = bareR.base; pal.R = bareR.base;                      // shirt, tie
+    pal.T = bareR.base; pal.Y = bareR.base;                      // the belt, gone
+    pal.L = bareR.sh;                                            // trim
+    pal.F = bareR.base; pal.f = bareR.sh;                        // shoes
+    pal.G = bareR.base; pal.g = bareR.base;                      // buttons, buckles
   }
   const metal = ramp(t.metal || '#d9c07a');
   const jewel = ramp(t.jewel || '#b02a3c');
@@ -1005,11 +1092,12 @@ function makeCharacterHD_human(t) {
     featherHi: (t.feather && ramp(t.feather).hi) || '#fff8ea',
     hat: bycol.base, hatHi: bycol.hi, hatDark: mixc(bycol.sh, '#0d1a0e', 0.35),
     // The habit's cloak is wool, not glossy. On a BARE figure it is not cloth
-    // at all — it is the bare bird's shoulders — so it takes the head's own
-    // skin ramp instead. Same reasoning as the `bare` block above: matching the
-    // colour is not enough when the material's highlight and shadow differ.
+    // at all — it is the plucked bird's own neck — so it takes the same bare
+    // ramp the body does. Same reasoning as the `bare` block above: matching
+    // the colour is not enough when the material's highlight and shadow differ.
     // Humans are unaffected: traitsForNaked leaves their cloak null.
-    cloak: t.cloak ? (t.bare ? skin : rampWool(t.cloak)) : null
+    cloak: t.cloak ? (t.bare ? bareR : rampWool(t.cloak)) : null,
+    bare: !!t.bare
   };
   const acc = (t.cloak || (t.headAcc && t.headAcc !== 'none') || (t.faceAcc && t.faceAcc !== 'none'))
     ? accPainter(t, ax) : null;
@@ -1106,6 +1194,13 @@ export const BIRDS = (() => {
 const PLUMAGE = '#6fbb42';      // the green from the reference
 const HABIT_GREY = '#8f8f88';   // every cultist, novice and passer-by
 const BEAK = '#b9d13f';         // beak and talons
+// Plucked skin, for the rite at the shrine. Deliberately raw and a little
+// sickly, and deliberately NOT drawn from the abbey's ramps: everything else
+// on the figure belongs to this world, and the point of the pose is that this
+// does not. Kept clear of BLOOD so it never reads as wounded, only as bare —
+// and clear of the human skin pool, so a plucked bird is never mistaken for a
+// person out of their habit.
+const PLUCKED = '#c9a091';
 
 // Deterministic Cultist traits from a wallet-id/name seed, in the same shape
 // makeCharacterHD expects. Always cloaked (a hooded wool habit), tonsured or
@@ -1227,13 +1322,14 @@ export function traitsForNaked(seed, sex) {
     // as a skin-coloured robe rather than as a body — whereas vest over suit
     // legs gives a torso and two legs, which is what a bare figure needs.
     //
-    // The same argument is why a bird cannot borrow them. A human vest under a
-    // bird's head is a human SHAPE: square shoulders the skull does not sit on,
-    // and shoes where there should be talons. birdrobe recoloured to plumage is
-    // the bird's own outline — narrow at the shoulder, swelling to the hem —
-    // which is a bird's body, and the bird leg rows are bare keratin already,
-    // so the shanks need no recolouring to be bare.
-    body: BIRDS ? 'birdrobe' : 'vest',
+    // The same argument is why a bird can borrow neither them nor its own
+    // habit. A human vest under a bird's head is a human SHAPE — square
+    // shoulders the skull does not sit on, shoes where there should be talons
+    // — and birdrobe is a habit SHAPE, which in bare skin reads as a robe
+    // painted flesh-coloured. birdbare is neither: a scrawny body that tapers
+    // to the ground with nothing to hide behind. The bird leg rows are bare
+    // keratin already, so the shanks need no recolouring to be bare.
+    body: BIRDS ? 'birdbare' : 'vest',
     legs: BIRDS ? 'bird' : 'suit',
     // `bare` makes the palette build every garment cell from the head's own
     // skin ramp — see makeCharacterHD. The colours below still matter as a
@@ -1241,12 +1337,14 @@ export function traitsForNaked(seed, sex) {
     bare: true,
     hat: skin, coat: skin, pants: skin, shirt: skin, shoes: skin,
     leather: skin, trim: skin, tie: skin,
+    // The bird's head keeps its feathers; only the body below is plucked.
+    bareSkin: BIRDS ? PLUCKED : undefined,
     // A human out of the habit has a hand-authored neck inside the head grid
     // and needs nothing here. A bird's skull stops two logical pixels above the
     // body grid, and only accessory space reaches between them — so the bare
-    // bird keeps a mantle, in its own plumage, and it reads as the shoulders
-    // the head sits on rather than as cloth. Without it the head simply floats.
-    cloak: BIRDS ? skin : null,
+    // bird keeps a neck drawn from accessory space, in the plucked skin, or the
+    // head simply floats. Humans keep null and draw no cloak at all.
+    cloak: BIRDS ? PLUCKED : null,
     headAcc: 'none', faceAcc: 'none',
   };
 }
