@@ -399,6 +399,18 @@ function matchHairToFront(h, name, view) {
 
 function lttpHead(name) {
   const h = HD_HEADS[name] || HD_HEADS.cowl;
+  // A bird carries its own face, so both of the passes below have to be skipped
+  // for it. They exist to make HUMAN heads agree with one another across views:
+  //   - lttpFace() resets every E/W/M cell to skin and re-stamps an LttP face at
+  //     human coordinates — two eyes where a bird has one, and nothing at all
+  //     where the beak is. It was deleting the bird's face and painting a
+  //     person's over it.
+  //   - matchHairToFront() swaps a view whose hair-cell ratio falls under
+  //     HAIR_MATCH, on the theory that a profile with too little hair is a lie.
+  //     A bird has NO hair cells, so it tripped on every view and every frame
+  //     came back facing front.
+  // A generated bird head already agrees with itself in all three views.
+  if (name === 'bird' || name === 'birdcowl') return { down: h.down, up: h.up, side: h.side };
   return {
     down: lttpFace(h.down, 'down', name),
     // The BACK view has the same disagreement as the profile — bald is 28 hair
@@ -441,8 +453,11 @@ function bShade(g) {
   const snap = g.map((r) => r.slice());
   for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) {
     if (snap[y][x] !== 'S') continue;
+    // Shade the lower-right edge only. Lighting the upper-left edge as well
+    // left a nine-pixel skull with almost no base colour in it at all — every
+    // cell touches an edge at that radius — and the plumage washed out to its
+    // own highlight.
     if ((x + 1 < BW && snap[y][x + 1] === '.') || (y + 1 < BH && snap[y + 1][x] === '.')) bPut(g, x, y, 's');
-    else if ((x > 0 && snap[y][x - 1] === '.') || (y > 0 && snap[y - 1][x] === '.')) bPut(g, x, y, '1');
   }
 }
 function bEye(g, ex, ey, r) {
