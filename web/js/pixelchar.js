@@ -415,6 +415,91 @@ HD_HEADS.cowl = {
   side: cowlFrom(HD_HEADS.bald.side, 'side'),
 };
 
+/* ===== THE BIRD ABBEY =====================================================
+   Every head above is hand-authored as 32 rows of 36 characters. A bird only
+   varies in three things — skull, beak and the socket over the eye — so it is
+   GENERATED rather than typed out three times. The output is the same rows of
+   the same letters the hand-authored heads use, so everything downstream
+   (cowlFrom, lttpFace, the outline pass, the regalia in cultLook) treats it as
+   just another head and needs no special case.
+
+   New letters: P and p, beak and talon keratin. It is neither plumage nor
+   cloth — it takes a harder, yellower ramp than either — so reusing S or Y
+   would have shaded it wrong. */
+const BW = 36, BH = 32;
+function bBlank() { return Array.from({ length: BH }, () => Array(BW).fill('.')); }
+function bPut(g, x, y, c) { if (y >= 0 && y < BH && x >= 0 && x < BW) g[y][x] = c; }
+function bEllipse(g, cx, cy, rx, ry, c) {
+  for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) {
+    const dx = (x - cx) / rx, dy = (y - cy) / ry;
+    if (dx * dx + dy * dy <= 1) bPut(g, x, y, c);
+  }
+}
+// Shade the lower-right, light the upper-left: the same key light every other
+// material in the abbey obeys.
+function bShade(g) {
+  const snap = g.map((r) => r.slice());
+  for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) {
+    if (snap[y][x] !== 'S') continue;
+    if ((x + 1 < BW && snap[y][x + 1] === '.') || (y + 1 < BH && snap[y + 1][x] === '.')) bPut(g, x, y, 's');
+    else if ((x > 0 && snap[y][x - 1] === '.') || (y > 0 && snap[y - 1][x] === '.')) bPut(g, x, y, '1');
+  }
+}
+function bEye(g, ex, ey, r) {
+  bEllipse(g, ex, ey, r + 0.8, r + 0.8, 'W');
+  bEllipse(g, ex, ey, r, r, 'E');
+  bPut(g, ex - 1, ey - 1, 'W');            // one catchlight pixel, not a ring
+}
+
+function birdHeadRows(dir) {
+  const g = bBlank();
+  const cx = 18, cy = 16, rx = 9, ry = 8.5;
+  bEllipse(g, cx, cy, rx, ry, 'S');
+  bEllipse(g, cx - 1, cy + 2, rx - 1, ry - 2, 'S');   // jowl
+  bEllipse(g, cx - 3, cy + 4, rx - 4, ry - 4, 'S');   // nape, following the curve
+
+  if (dir === 'side') {
+    // The bird's own view: beak in profile, one eye. This is the reference
+    // pose and the one the player sees most, walking left and right.
+    for (let x = cx - 2; x <= cx + 6; x++) bPut(g, x, cy - 5, 's');   // brow shelf
+    const bx = cx + 7, by = cy + 1;
+    for (let i = 0; i < 9; i++) {
+      const t = i < 3 ? 2 : (i < 6 ? 1 : 0);
+      for (let j = -t; j <= t; j++) bPut(g, bx + i, by + j + (i > 5 ? 1 : 0), 'P');
+    }
+    for (let i = 2; i < 8; i++) bPut(g, bx + i, by + 1, 'p');          // the gape, one line
+    bShade(g);
+    bEye(g, cx + 4, cy - 2, 1.8);
+  } else if (dir === 'down') {
+    // Facing the player: the beak is foreshortened to a short wedge between
+    // two eyes. Drawing it at profile length here would read as a nose.
+    for (let x = cx - 6; x <= cx + 6; x++) bPut(g, x, cy - 5, 's');
+    bShade(g);
+    bEye(g, cx - 4, cy - 1, 1.8);
+    bEye(g, cx + 4, cy - 1, 1.8);
+    for (let i = 0; i < 4; i++) {
+      const t = 1 - Math.floor(i / 3);
+      for (let j = -t; j <= t; j++) bPut(g, cx + j, cy + 3 + i, 'P');
+    }
+    bPut(g, cx, cy + 4, 'p');
+  } else {
+    // Turned away: no beak, no eyes. Just the back of the skull and the nape —
+    // which is most of what the shrine rite looks at.
+    bShade(g);
+  }
+  return g.map((r) => r.join(''));
+}
+
+HD_HEADS.bird = { down: birdHeadRows('down'), up: birdHeadRows('up'), side: birdHeadRows('side') };
+// Hooded, for everyone who wears the habit's cowl. The derivation is the same
+// one the human cowl uses, so the beak emerges from under the hood exactly the
+// way a human face did.
+HD_HEADS.birdcowl = {
+  down: cowlFrom(HD_HEADS.bird.down, 'down'),
+  up: cowlFrom(HD_HEADS.bird.up, 'up'),
+  side: cowlFrom(HD_HEADS.bird.side, 'side'),
+};
+
 /* bodies + legs (v3) — Nile-era garments. 5 men: belted tunic (suit),
    heraldic surcoat (tux), leather jerkin (vest), quilted gambeson (pinstripe),
    forester's open tunic (openshirt). 5 women: laced kirtle (dress), noble gown
@@ -450,7 +535,24 @@ const HD_LEGS = {
   dress: { front: [ ['.........SSSS......SSSS.........','.........SSSS......SSSS.........','.........sSSs......sSSs.........','.........sSSs......sSSs.........','.........FFFF......FFFF.........','........FFFFF......FFFFF........','........fffff......fffff........','................................'], ['........SSSS........SSSS........','........SSSS........SSSS........','.......sSSs..........sSSs.......','.......sSSs..........sSSs.......','......FFFF............FFFF......','.....FFFFF............FFFFF.....','.....fffff............fffff.....','................................'] ],
     side: [ ['...........SSSSSS...............','...........SSSSSS...............','...........sSSSSs...............','...........sSSSSs...............','..........FFFFFF................','.........FFFFFFF................','.........fffffff................','................................'], ['...........SSSSSS...............','..........SSSS..SSSS............','.........sSSS....SSSs...........','........sSSs......sSSs..........','.......FFFF........FFFF.........','......FFFFF........FFFFF........','......fffff........fffff........','................................'] ] },
   gown: { front: [ ['........BBBBB......BBBBB........','........BBBBB......BBBBB........','.......BBBBBB......BBBBBB.......','.......BBBBBB......BBBBBB.......','......BBBBBBB......BBBBBBB......','......BBBBBBB......BBBBBBB......','.....BBFBBFBB......BBFBBFBB.....','.....ffBBBBff......ffBBBBff.....'], ['........BBBBB......BBBBB........','........BBBBB......BBBBB........','.......BBBBBB......BBBBBB.......','.......BBBBBB......BBBBBB.......','......BBBBBBB......BBBBBBB......','......BBBBBBB......BBBBBBB......','.....BBFBBFBB......BBFBBFBB.....','.....ffBBBBff......ffBBBBff.....'] ],
-    side: [ ['.........BBBBBBBB...............','.........BBBBBBBB...............','........BBBBBBBBB...............','........BBBBBBBBB...............','.......BBBBBBBBBB...............','.......BBBBBBBBBB...............','......BBFBBBBBFB................','......ffBBBBBBff................'], ['.........BBBBBBBB...............','.........BBBBBBBB...............','........BBBBBBBBB...............','........BBBBBBBBB...............','.......BBBBBBBBBB...............','.......BBBBBBBBBB...............','......BBFBBBBBFB................','......ffBBBBBBff................'] ] }
+    side: [ ['.........BBBBBBBB...............','.........BBBBBBBB...............','........BBBBBBBBB...............','........BBBBBBBBB...............','.......BBBBBBBBBB...............','.......BBBBBBBBBB...............','......BBFBBBBBFB................','......ffBBBBBBff................'], ['.........BBBBBBBB...............','.........BBBBBBBB...............','........BBBBBBBBB...............','........BBBBBBBBB...............','.......BBBBBBBBBB...............','.......BBBBBBBBBB...............','......BBFBBBBBFB................','......ffBBBBBBff................'] ] },
+  /* Bird shanks. Frame 0 is the IDLE pose and frame 1 the stride, and the two
+     frames are how the tucked foot pays for itself: a standing bird draws one
+     leg up under itself and puts it down to walk, which is exactly what the
+     existing walk cycle already asks of these rows. No new animation state,
+     no new code — the pose falls out of the frame it is drawn in.
+
+     Keratin (P/p), not cloth (B/b): these are bare scaly legs below the hem. */
+  bird: {
+    front: [
+      ['...............PP...............','...............PP...............','...............PP.....PP........','...............PP....PPPP.......','..............PPPP....PP........','.............PPPPPP.............','.............pppppp.............','................................'],
+      ['...........PP.......PP..........','...........PP.......PP..........','...........PP.......PP..........','...........PP.......PP..........','..........PPPP.....PPPP.........','.........PPPPPP...PPPPPP........','.........pppppp...pppppp........','................................'],
+    ],
+    side: [
+      ['..............PP................','..............PP................','..............PP...PP...........','..............PP..PPPP..........','.............PPPPP..PP..........','............PPPPPP..............','............pppppp..............','................................'],
+      ['...........PP......PP...........','...........PP......PP...........','..........PP........PP..........','..........PP........PP..........','.........PPPP......PPPP.........','........PPPPPP....PPPPPP........','........pppppp....pppppp........','................................'],
+    ],
+  }
 };
 
 /* Paints a block of rows at an arbitrary cell size, horizontally centred in the
@@ -690,6 +792,9 @@ function makeCharacterHD_human(t) {
     T: leather.base, Y: leather.hi,                   // per-character leather belt / jerkin
     G: metalR.hi, g: metalR.base,                     // #3 buttons / buckles match the token's metal
     E: t.iris || '#1a1216', W: '#fff6e6', M: t.mouth || '#8e4a42',
+    // Beak and talon keratin. Harder and yellower than plumage or cloth, so it
+    // gets its own two steps rather than borrowing the skin or leather ramp.
+    P: t.beak || '#b9d13f', p: mixc(t.beak || '#b9d13f', '#2a2410', 0.45),
     B: pants.base, b: pants.sh, F: shoes.base, f: shoes.sh
   };
   // A bare figure. Every garment cell becomes the HEAD's exact skin ramp.
@@ -780,8 +885,17 @@ const AETERNA_IRIS = ['#241a12', '#1a2436', MOSS.o, SOUL.o];
 // glance, at 20px, without depending on a cult-regalia roll that the player and
 // their peers never get. One slot in four is left bare so a tonsure or a plain
 // head still turns up in a crowd.
-const HEADS_M = ['cowl', 'cowl', 'cowl', 'bald'];
-const HEADS_F = ['cowl', 'cowl', 'cowl', 'wavy'];
+// Hooded three times in four, bare-headed the fourth — the same mix the human
+// cast had, so a courtyard still reads as mostly cowls with a few uncovered
+// heads among them. Sex no longer changes the head: a green bird is a green
+// bird, and the difference was only ever hair.
+const HEADS_M = ['birdcowl', 'birdcowl', 'birdcowl', 'bird'];
+const HEADS_F = ['birdcowl', 'birdcowl', 'birdcowl', 'bird'];
+
+// The abbey's whole palette for its people: one green, one grey, one keratin.
+const PLUMAGE = '#6fbb42';      // the green from the reference
+const HABIT_GREY = '#8f8f88';   // every cultist, novice and passer-by
+const BEAK = '#b9d13f';         // beak and talons
 
 // Deterministic Cultist traits from a wallet-id/name seed, in the same shape
 // makeCharacterHD expects. Always cloaked (a hooded wool habit), tonsured or
@@ -794,17 +908,23 @@ export function traitsForSeed(seed, sex) {
   const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
   const female = sex === 'female';
 
-  const skin = jitterCol(pick(AETERNA_SKIN), (h * 2246822519) >>> 0, 0.3);
-  const hair = pick(AETERNA_HAIR);
-  const robe = jitterCol(pick(AETERNA_ROBE), (h * 40503 + 7) >>> 0, 0.8);
+  // THE ABBEY IS BIRDS. One plumage, one habit, for everyone who is not the
+  // Abbot or the Confessor. The colour used to be rolled per cultist, which
+  // is what made a crowd read as a crowd of individuals; a congregation in one
+  // identical grey habit reads instead as an ORDER, which is the point. Rank
+  // is now carried by cloth alone — white is the two offices and nothing else.
+  const skin = PLUMAGE;
+  const hair = PLUMAGE;
+  const robe = HABIT_GREY;
   const metal = pick(AETERNA_METAL);
   const jewel = pick(AETERNA_JEWEL);
-  const cloak = jitterCol(pick(AETERNA_ROBE), (h * 0x9e3779b1) >>> 0, 0.6);
+  const cloak = HABIT_GREY;
 
   return {
     head: pick(female ? HEADS_F : HEADS_M),
     body: female ? pick(['dress', 'gown']) : pick(['suit', 'vest']),
-    legs: female ? undefined : 'suit',
+    legs: 'bird',
+    beak: BEAK,
     skin, hair,
     hat: robe, coat: robe, pants: mixc(robe, '#0d0a12', 0.35),
     shoes: '#120d10',
@@ -834,10 +954,11 @@ export function traitsForSeed(seed, sex) {
 // flagstones behind him.
 export function traitsForGuru() {
   return {
-    head: 'cowl',
+    head: 'birdcowl',
     body: 'vest',
-    legs: 'suit',
-    skin: '#e6bd92', hair: '#cfc8b4',
+    legs: 'bird',
+    beak: BEAK,
+    skin: PLUMAGE, hair: PLUMAGE,
     hat: BONE.h, coat: BONE.h, pants: BONE.l,
     shoes: BONE.d,
     metal: GOLD.b, jewel: BLOOD.d, tie: BONE.d,
@@ -857,10 +978,11 @@ export function traitsForGuru() {
 // there to restore.
 export function traitsForConfessor() {
   return {
-    head: 'cowl',
+    head: 'birdcowl',
     body: 'vest',
-    legs: 'suit',
-    skin: '#d8ae86', hair: '#8a8069',
+    legs: 'bird',
+    beak: BEAK,
+    skin: PLUMAGE, hair: PLUMAGE,
     hat: BONE.l, coat: BONE.h, pants: BONE.l,
     shoes: BONE.o,
     metal: IRON.l, jewel: BLOOD.b, tie: BLOOD.d,
@@ -889,7 +1011,7 @@ export function traitsForNaked(seed, sex) {
   const skin = t.skin;
   return {
     ...t,
-    head: sex === 'female' ? 'wavy' : 'bald',
+    head: 'bird',
     // Both sexes take the vest/suit construction rather than the gown one.
     // A dress glyph recoloured to skin is still a dress SHAPE — it would read
     // as a skin-coloured robe rather than as a body — whereas vest over suit
