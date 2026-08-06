@@ -575,25 +575,103 @@ const HD_LEGS = {
   }
 };
 
-/* The bird's habit: the human vest from the front, MIRRORED in profile so the
-   cloth falls away from the beak.
+/* THE BIRD'S HABIT, authored rather than borrowed.
 
-   The same rows read differently on the two bodies, which is the whole reason
-   this exists. A human's head sits centred on the shoulders, so the garment's
-   heavier side reads as depth whichever way the face turns. A bird's head is
-   thrust forward on the beak's axis — the beak IS the direction the figure
-   faces — and against that the same drape reads as cloth piled up in front of
-   the bird's face. Flipped, it falls behind, where a tail would be.
+   This used to be the human vest — front as-is, profile mirrored. Mirroring
+   put the drape on the correct side of the bird (see the direction rule
+   below), but the rows underneath were still a human jerkin, and no reflection
+   of a jerkin describes a bird. What it actually drew was a vertical slab with
+   the vest's leather belt (T/Y) stranded across the middle of it, no shoulder,
+   no hem, and the legs starting halfway up the cloth.
+
+   Three things are authored here that the vest could never supply:
+
+     SHOULDERS. The garment is at its NARROWEST in the top row and widens from
+     there, so the mantle above it (drawBirdMantle) lands on that row at
+     exactly its own width. The two together carry the figure from the
+     underside of the skull to the hem in one unbroken piece of cloth.
+
+     A HEM. The last row is a full-width band of shadow (j) at the bottom of
+     the grid, which is exactly where the leg rows begin — so the shanks come
+     out from UNDER an edge instead of starting mid-garment. That one dark row
+     is what stops the bird reading as cut in half.
+
+     A DRAPE, in profile. The back edge steps out three columns from shoulder
+     to hem while the front edge tucks in two, so the cloth visibly falls and
+     gathers behind the bird instead of hanging as a slab. A fold line (j) runs
+     down inside the drape and steps back with it.
+
+   DIRECTION. The robe falls OPPOSITE the beak, and these rows are authored
+   that way rather than mirrored into it. A human's head sits centred on the
+   shoulders, so a garment's heavier side reads as depth whichever way the face
+   turns. A bird's head is thrust forward and the beak IS the facing direction,
+   so the same drape on the beak side reads as cloth piled in front of its
+   face. In the unmirrored side rows the beak points +x (right), so the drape
+   flares to the LEFT. The 'right' sheet key mirrors the whole frame, which
+   carries the drape with it.
+
+   No leather (T/Y) and no linen (C) anywhere: a habit is one bolt of wool, so
+   it is the coat ramp's three steps (3/J/j) and nothing else. That is what
+   retires the brown block.
+
+   WHERE THE SILHOUETTE IS ALLOWED TO STEP. Body cells are 0.55 logical px,
+   which is 1.1 device px, so almost no cell boundary lands on a pixel edge and
+   a step in the outline leaves a sliver of partial coverage in the corner
+   pixel. That is normally invisible, but the outline pass promotes ANY pixel
+   with alpha > 0 to fully opaque, and a sliver thin in BOTH axes unpremultiplies
+   to a near-white, fully saturated colour — one step, authored a row higher,
+   put a single hot yellow pixel on the robe's back edge.
+   The rule that avoids it: step only on rows whose top edge (32 + 1.1*row in
+   device px) has a large fractional part — rows 4, 5, 6, 7, 8 and 10 are safe,
+   rows 1, 2, 9 and 11 are not — and prefer left edges at column 6 (device x
+   9.0, dead on a pixel edge). Every step below obeys this; move one and check
+   the render, not just the shape.
 
    Bird-only by construction: birdrobe is selected only while BIRDS is on, and
    HD_BODIES.vest is untouched, so every human keeps the garment exactly as it
-   was authored. */
-const mirrorRows = (rows) => rows.map((r) => [...r].reverse().join(''));
+   was authored. Rows are 32 characters wide, like every other body — the head
+   grid's 36 is a different grid — and HD_BODIES holds a FLAT array of row
+   strings, where HD_LEGS nests two walk frames. */
 HD_BODIES.birdrobe = {
-  front: HD_BODIES.vest.front,
-  // HD_BODIES holds a FLAT array of row strings (HD_LEGS nests walk frames),
-  // so this mirrors once, not once per frame.
-  side: mirrorRows(HD_BODIES.vest.side),
+  // Front: a plain A-line habit, shoulders no wider than the skull, flaring
+  // three columns each side to the hem. The single j column down the middle is
+  // the habit's front seam, which keeps the shape from reading as a flat panel.
+  front: [
+    // Not an all-highlight top row like the human bodies have. Theirs is the
+    // lit crest of the shoulder because nothing sits above it; here the mantle
+    // does, and a band of highlight under it read as a stripe across the chest.
+    '.........3JJJJJJjJJJJJj.........',
+    '.........3JJJJJJjJJJJJj.........',
+    '.........3JJJJJJjJJJJJj.........',
+    '.........3JJJJJJjJJJJJj.........',
+    '........3JJJJJJJjJJJJJJj........',
+    '........3JJJJJJJjJJJJJJj........',
+    '........3JJJJJJJjJJJJJJj........',
+    '.......3JJJJJJJJjJJJJJJJj.......',
+    '.......3JJJJJJJJjJJJJJJJj.......',
+    '.......3JJJJJJJJjJJJJJJJj.......',
+    '......3JJJJJJJJJjJJJJJJJJj......',
+    '......jjjjjjjjjjjjjjjjjjjj......',
+  ],
+  // Profile: the same shoulder line, but an asymmetric silhouette. The back
+  // edge (left, away from the beak) steps OUT 9 -> 8 -> 7 -> 6 as the cloth
+  // falls and gathers; the front edge (right, under the thrust-forward head)
+  // tucks IN 22 -> 21 -> 20. The j column is a fold inside the drape and steps
+  // back with it.
+  side: [
+    '.........3JJJJJJJJJJJJj.........',
+    '.........3JJJJJJJJJJJJj.........',
+    '.........3JJJJJJJJJJJJj.........',
+    '.........3JJJJJJJJJJJJj.........',
+    '........3JJJJJJJJJJJJJj.........',
+    '........3JJJJJJJJJJJJj..........',
+    '.......3JJJjJJJJJJJJJj..........',
+    '.......3JJJjJJJJJJJJJj..........',
+    '......3JJJjJJJJJJJJJJj..........',
+    '......3JJJjJJJJJJJJJJj..........',
+    '......3JJJjJJJJJJJJJj...........',
+    '......jjjjjjjjjjjjjjj...........',
+  ],
 };
 
 /* Paints a block of rows at an arbitrary cell size, horizontally centred in the
@@ -808,10 +886,71 @@ function drawCloak(g, dir, cl) {
   if (dir === 'up') blk(g, 7.7, 16.6, 3.4, 10, B);                     // back fully covered
   blk(g, 8.4, 14.8, 2.2, 2.2, H);                                      // clasp / brooch
 }
+/* The bird's collar and shoulders — the piece that closes the neck.
+
+   Why this cannot live in the body rows. The body grid is painted starting at
+   BODY_Y and nothing in it can reach above that line, but the bird's skull
+   ends well short of it: the generated head is an ellipse centred in its
+   36x32 grid, so its lowest filled row lands at logical y 13.0 while the
+   garment cannot begin before y 15.0. Two logical pixels of nothing sat
+   between them, and the outline pass drew a hard edge along both sides of the
+   void — the horizontal seam, with the head reading as a ball resting on a
+   box. (The human heads have no such gap: they are hand-authored down to the
+   bottom of their grid and carry their own jaw and neck into the collar.)
+
+   So the join is closed from ABOVE, in accessory space, where drawCloak
+   already reaches. Three steps rather than one rectangle: the collar is cut to
+   the width of the skull's underside so the head sits ON it with no step, and
+   it widens twice on the way down to arrive exactly at the width of the body
+   grid's first row. That slope is the shoulder.
+
+   Closing the gap also retires the pink pixels under the jaw. They were never
+   ear or jaw shading — nothing human survives lttpHead's bird bypass. They are
+   the outline pass's turning shadow, which cools a lit pixel toward violet
+   when the cell below it is EMPTY; along the bottom of a warm tan skull that
+   reads as dusty rose. With cloth beneath the skull those cells are no longer
+   a lower boundary, so the shadow never fires.
+
+   Bird-only: reached only through the BIRDS check in accPainter, so humans
+   keep drawCloak exactly as it was. */
+// `dir` is accepted to match drawCloak's signature but deliberately unused: a
+// collar cut to the skull is the same shape from every angle, and the bird's
+// head is the same width in all three views.
+function drawBirdMantle(g, dir, cl) {
+  const B = cl.base, H = cl.hi, S = cl.sh;
+  /* Accessory painters are handed a context already scaled 1.1x about
+     (9, FEET_Y) so that art authored against the OLD layout still lands (see
+     buildFrameHD). This mantle is new art with no old layout to honour, and it
+     has to meet the head and the body grid at exact logical rows, so undo that
+     scaling here and author in plain logical sprite space. */
+  const K = 1 / 1.1;
+  const box = (X, Y, W, Ht, col) => blk(g, 9 + (X - 9) * K, 26 + (Y - 26) * K, W * K, Ht * K, col);
+
+  // y 12.5 is the first logical row below the skull; y 15.0 is BODY_Y, and
+  // x 5.15..12.85 is exactly the span of the body grid's top row. The bands
+  // overlap by a tenth so no rounding can open a seam between them.
+  box(6.9, 12.5, 4.1, 1.0, B);          // collar, cut to the skull's underside
+  box(6.0, 13.4, 5.9, 0.9, B);          // the shoulders begin to spread
+  box(5.15, 14.2, 7.7, 1.0, B);         // full shoulder, meeting the body grid
+  // Upper-left key light, lower-right turning shadow — the same lighting the
+  // outline pass and every material in the abbey obey.
+  box(6.9, 12.5, 4.1, 0.35, H);
+  box(6.0, 13.4, 0.8, 0.9, H);
+  box(5.15, 14.2, 0.9, 1.0, H);
+  box(11.1, 13.4, 0.8, 0.9, S);
+  box(11.95, 14.2, 0.9, 1.0, S);
+}
 function accPainter(t, ax) {
   const hf = ACC_HEAD[t.headAcc] || ACC_HEAD.none;
   const ff = ACC_FACE[t.faceAcc] || ACC_FACE.none;
-  return (g, dir) => { if (ax.cloak) drawCloak(g, dir, ax.cloak); ff(g, dir, ax); hf(g, dir, ax); };
+  // A bird wears the mantle above; a human wears the full cloak. drawCloak
+  // drapes to the feet, which on a bird buried the authored hem and the bare
+  // shanks it exists to reveal, and in profile piled its back drape on the
+  // beak side of the figure.
+  return (g, dir) => {
+    if (ax.cloak) (BIRDS ? drawBirdMantle : drawCloak)(g, dir, ax.cloak);
+    ff(g, dir, ax); hf(g, dir, ax);
+  };
 }
 
 export function makeCharacterHD(t) {
