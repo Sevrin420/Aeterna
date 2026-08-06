@@ -1,4 +1,4 @@
-# Aeterna — Technical Architecture
+# Throbbin Abbey — Technical Architecture
 
 ## Design Principles
 - One small VPS does almost everything

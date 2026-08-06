@@ -1,14 +1,14 @@
-# Aeterna Smart Contract Notes & Required Changes
+# Throbbin Abbey Smart Contract Notes & Required Changes
 
 ## Rename Map (from original Familia* contracts)
 
 | Old Name              | New Name             |
 |-----------------------|----------------------|
-| FamiliaCultist.sol    | AeternaCultist.sol   |
-| FamiliaSoul.sol       | AeternaSoul.sol      |
-| FamiliaGame.sol       | AeternaGame.sol      |
-| FamiliaPayouts.sol    | AeternaPayouts.sol   |
-| FamiliaCasino.sol     | **Removed** — folded into AeternaGame.sol |
+| FamiliaCultist.sol    | Throbbin AbbeyCultist.sol   |
+| FamiliaSoul.sol       | Throbbin AbbeySoul.sol      |
+| FamiliaGame.sol       | Throbbin AbbeyGame.sol      |
+| FamiliaPayouts.sol    | Throbbin AbbeyPayouts.sol   |
+| FamiliaCasino.sol     | **Removed** — folded into Throbbin AbbeyGame.sol |
 
 ## Major Design Changes Since Original Contracts
 
@@ -30,19 +30,19 @@
 
 ## Required Contract Work
 
-### AeternaCultist.sol
+### Throbbin AbbeyCultist.sol
 - Add optional `xHandle`
 - Support rank/prefix updates (admin)
 - Support Brother/Sister + Roman numerals for children
 - Season-aware mint pricing if desired
 
-### AeternaSoul.sol
+### Throbbin AbbeySoul.sol
 - Progressive cap per season
 - Store Devotion amount on the Soul
 - Free Soul vs Bloodline Soul distinction
 - Binding rules
 
-### AeternaGame.sol (largest changes)
+### Throbbin AbbeyGame.sol (largest changes)
 - Remove all mid-season gold logic
 - Remove Legacy
 - Implement escalating Confession
@@ -52,7 +52,7 @@
 - Admin functions for manual Devotion awards and rank changes
 - Admin yield controls
 
-### AeternaPayouts.sol
+### Throbbin AbbeyPayouts.sol
 - End-of-season gold payouts only
 - Yield claim functions (admin-unlockable)
 - Support stacked claims if desired

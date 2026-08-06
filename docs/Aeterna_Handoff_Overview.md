@@ -1,7 +1,7 @@
-# Aeterna — Complete Handoff Package
+# Throbbin Abbey — Complete Handoff Package
 **Version:** 4.1  
 **Date:** July 23, 2026  
-**Slogan:** Vita Aeterna
+**Slogan:** Vita Throbbin Abbey
 
 ---
 
@@ -19,7 +19,7 @@
 
 ## Project Summary
 
-**Aeterna** is an invitation-only, multi-generational NFT cult RPG.
+**Throbbin Abbey** is an invitation-only, multi-generational NFT cult RPG.
 
 Players mint Cultist NFTs, perform daily duties in a shared top-down pixel abbey, give physical gifts, build streaks, level up (uncapped), and at the end of each 56-day season perform Final Communion. All value accrual is expressed through **Devotion**. Souls carry Devotion across generations. Yield is distributed based on Devotion and is fully admin-controlled.
 

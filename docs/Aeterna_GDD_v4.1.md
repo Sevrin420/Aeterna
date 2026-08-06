@@ -1,5 +1,5 @@
-# Aeterna — Game Design Document v4.1
-**Slogan:** Vita Aeterna  
+# Throbbin Abbey — Game Design Document v4.1
+**Slogan:** Vita Throbbin Abbey  
 **Season Structure:** 56 Days Active / 14 Days Break  
 **Last Updated:** July 23, 2026
 
@@ -7,7 +7,7 @@
 
 ## 1. Vision & Core Fantasy
 
-Aeterna is an invitation-only, multi-generational NFT cult RPG set in a living digital abbey.
+Throbbin Abbey is an invitation-only, multi-generational NFT cult RPG set in a living digital abbey.
 
 Players join a sacred community, perform daily duties, recruit others, build bloodlines, and ultimately decide whether to perform the Final Communion. The game explores faith, devotion, groupthink, and the cost of belief — powered by real DeFi yield.
 

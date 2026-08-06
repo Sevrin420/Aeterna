@@ -3,6 +3,8 @@
 // real assets (web/assets/title-bg.jpg + title-logo.png). This sequence runs on
 // every power-on.
 
+import { CONFIG } from '../config.js';
+
 const W = 208, H = 208;
 const FONT = '"Press Start 2P", monospace';
 
@@ -26,8 +28,6 @@ function loadImage(src) {
   return img;
 }
 
-const SHOW_DROPDOWN = new URLSearchParams(window.location.search).get('dropdown') !== '0';
-
 export class BootScene {
   constructor({ onComplete }) {
     this.onComplete = onComplete;
@@ -39,7 +39,7 @@ export class BootScene {
 
     this.bg = loadImage('assets/title-bg.jpg');
     this.logo = loadImage('assets/title-logo.png');
-    this.dropdown = SHOW_DROPDOWN ? loadImage('assets/title-dropdown.png') : null;
+    this.dropdown = CONFIG.dropdownShow ? loadImage('assets/title-dropdown.png') : null;
   }
 
   enter() {}

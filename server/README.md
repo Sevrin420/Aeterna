@@ -1,4 +1,4 @@
-# Aeterna Server Starter
+# Throbbin Abbey Server Starter
 
 Minimal Node.js + Fastify + SQLite + Socket.io backend for Season 1.
 

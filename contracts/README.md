@@ -1,4 +1,4 @@
-# Aeterna Bloodline — Avalanche C-Chain
+# Throbbin Abbey Bloodline — Avalanche C-Chain
 
 One NFT is a **Bloodline**. It is minted once holding **1–20 Cultists** at
 **0.01 AVAX each**, and that count is fixed forever — there is no function
