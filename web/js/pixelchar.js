@@ -575,16 +575,25 @@ const HD_LEGS = {
   }
 };
 
-// The bird's habit is the human vest, unchanged in both views.
-//
-// It was briefly mirrored in profile, on my reading that the cloth was draping
-// over the beak. That was backwards: rendering the HUMAN cast side by side
-// shows the authored garment already falls BEHIND the figure, so mirroring it
-// is what threw the drape onto the facing side. The rows were right all along
-// and the mirror was the bug.
+/* The bird's habit: the human vest from the front, MIRRORED in profile so the
+   cloth falls away from the beak.
+
+   The same rows read differently on the two bodies, which is the whole reason
+   this exists. A human's head sits centred on the shoulders, so the garment's
+   heavier side reads as depth whichever way the face turns. A bird's head is
+   thrust forward on the beak's axis — the beak IS the direction the figure
+   faces — and against that the same drape reads as cloth piled up in front of
+   the bird's face. Flipped, it falls behind, where a tail would be.
+
+   Bird-only by construction: birdrobe is selected only while BIRDS is on, and
+   HD_BODIES.vest is untouched, so every human keeps the garment exactly as it
+   was authored. */
+const mirrorRows = (rows) => rows.map((r) => [...r].reverse().join(''));
 HD_BODIES.birdrobe = {
   front: HD_BODIES.vest.front,
-  side: HD_BODIES.vest.side,
+  // HD_BODIES holds a FLAT array of row strings (HD_LEGS nests walk frames),
+  // so this mirrors once, not once per frame.
+  side: mirrorRows(HD_BODIES.vest.side),
 };
 
 /* Paints a block of rows at an arbitrary cell size, horizontally centred in the
