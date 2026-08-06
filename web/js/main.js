@@ -653,6 +653,13 @@ async function bindBloodline(bl, menu, bloodlineName) {
 
 // The picker, for a wallet holding more than one. Reuses the entrance overlay
 // the Cultist chooser already lived in.
+//
+// Driven by the console's own controls — d-pad to move, A to take up, B to back
+// out — because this screen appears on a device whose whole face is a d-pad and
+// two buttons, and asking the player to reach past them and tap a card is
+// asking them to stop using the thing they are holding. Tapping still works.
+let _picker = null;
+
 function openBloodlinePicker(menu) {
   if (_mintTeardown) _mintTeardown();
   walletOverlay.hidden = false;
@@ -663,25 +670,81 @@ function openBloodlinePicker(menu) {
   walletSkipBtn.hidden = true;
   cultistSlider.hidden = true;
   cultistGrid.hidden = false;
+  cultistGrid.className = 'cultist-grid bloodline-list';
   cultistGrid.innerHTML = '';
   walletTitle.textContent = 'Choose your Bloodline';
   walletMsg.innerHTML = `<span class="addr">${shortAddr(connectedAddr)}</span> holds ${heldBloodlines.length} Bloodlines. `
-    + 'Choose the one to take up — you play one at a time, and its Devotion is its own.';
-  heldBloodlines.forEach((bl) => {
+    + 'Choose the one to take up — you play one at a time, and its Devotion is its own.'
+    + '<br><span class="bl-sub">D-PAD to choose · A to take up · B to go back</span>';
+
+  const cards = heldBloodlines.map((bl) => {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'cultist-card';
-    const named = bl.name && bl.name !== `Bloodline #${bl.id}`;
-    card.textContent = named
-      ? `${bl.name}  ·  #${bl.id}  ·  ${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}`
-      : `Bloodline #${bl.id}  ·  ${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}`;
-    if (bl.id === boundToken) card.classList.add('sel');
-    card.addEventListener('click', async () => {
-      walletOverlay.hidden = true;
-      await bindBloodline(bl, menu);
-    });
+    // The name is the whole point of this screen, so it gets its own line and
+    // the largest type here. A line that was never named still reads as itself
+    // rather than as a blank: the token number IS its name until it has one.
+    const name = document.createElement('span');
+    name.className = 'bl-name';
+    name.textContent = (bl.name && bl.name.trim()) || `Bloodline #${bl.id}`;
+    const sub = document.createElement('span');
+    sub.className = 'bl-sub';
+    const dev = typeof bl.devotion === 'number' ? `  ·  ${bl.devotion} Devotion` : '';
+    sub.textContent = `#${bl.id}  ·  ${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}${dev}`;
+    card.append(name, sub);
+    if (bl.id === boundToken) card.classList.add('current');
+    card.addEventListener('click', () => _picker && _picker.choose(heldBloodlines.indexOf(bl)));
     cultistGrid.appendChild(card);
+    return card;
   });
+
+  // Nothing queued carries into this screen. Without it the B that backed out
+  // of the picker is still unread when the picker is opened again, and the
+  // next frame spends it closing what just opened.
+  input.flush();
+
+  // Start on the Bloodline already being borne, so the common case — a holder
+  // reconnecting to carry on where they left off — is one press of A.
+  const startAt = Math.max(0, heldBloodlines.findIndex((bl) => bl.id === boundToken));
+  _picker = {
+    index: startAt,
+    busy: false,
+    paint() {
+      cards.forEach((c, i) => c.classList.toggle('sel', i === this.index));
+      const el = cards[this.index];
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+    },
+    move(step) {
+      if (!cards.length) return;
+      this.index = (this.index + step + cards.length) % cards.length;
+      sfx.click();
+      this.paint();
+    },
+    async choose(i) {
+      if (this.busy) return;
+      this.busy = true;
+      const bl = heldBloodlines[i];
+      closeBloodlinePicker();
+      await bindBloodline(bl, menu);
+    },
+    handleInput(input) {
+      const d = input.consumeDir ? input.consumeDir() : null;
+      if (d === 'up' || d === 'left') this.move(-1);
+      else if (d === 'down' || d === 'right') this.move(1);
+      if (input.consumeAPress()) { this.choose(this.index); return; }
+      // B backs out without choosing. The wallet is still connected, so WALLET
+      // on the menu brings this straight back.
+      if (input.consumeBPress()) { closeBloodlinePicker(); if (menu) menu.sel = 0; }
+    },
+  };
+  _picker.paint();
+}
+
+function closeBloodlinePicker() {
+  _picker = null;
+  walletOverlay.hidden = true;
+  // Hand the grid back to the Cultist picker exactly as it found it.
+  cultistGrid.className = 'cultist-grid';
 }
 
 // ---- Asking for a single line of text in the entrance overlay ----------------
@@ -763,23 +826,40 @@ async function offerXHandleAndReferral(player) {
     }
   }
 
-  if (!player.referred && !_askedThisSession.has(`ref:${key}`)) {
+  // Asked ONCE, for good. `referralAsked` is the server's record that the
+  // question has already been put — whether it was answered with a handle or
+  // waved away — so it survives a reload, a new browser and a second Bloodline.
+  // The in-memory Set stays only to stop a double-ask inside one session,
+  // before the server has been told.
+  if (!player.referred && !player.referralAsked && !_askedThisSession.has(`ref:${key}`)) {
     _askedThisSession.add(`ref:${key}`);
     const who = await askOverlay({
       title: 'Who brought you here?',
       message: `Name the X handle of the Cultist who brought you in. You are both `
-        + `granted ${REFERRAL_DEVOTION} Devotion — once, and only once.`,
+        + `granted ${REFERRAL_DEVOTION} Devotion — once, and only once. `
+        + `<em>You are asked this once.</em>`,
       placeholder: '@theirhandle',
       confirm: 'Speak the name',
+      skip: 'Nobody',
     });
+    let credited = false;
     if (who) {
       try {
         const r = await api.referral(who);
         showToast(`@${r.referrer} brought you in. ${r.devotionGained} Devotion to you both.`);
+        credited = true;
+        player.referred = r.referrer;
       } catch (e) {
         showToast(e.message || 'That name is not known here.');
         sfx.error();
       }
+    }
+    // Nothing was credited, so the question is closed rather than left to come
+    // back on the next connect. A failed handle counts: they were asked, they
+    // answered, and being nagged after a typo is the same nuisance.
+    if (!credited) {
+      player.referralAsked = true;
+      try { await api.declineReferral(); } catch { /* it will be asked once more at worst */ }
     }
   }
   walletOverlay.hidden = true;
@@ -939,7 +1019,10 @@ function proceedIntoGame() {
 
 walletEnterBtn.addEventListener('click', proceedIntoGame);
 walletBackBtn.addEventListener('click', () => {
-  walletOverlay.hidden = true;
+  // Through closeBloodlinePicker, not by hiding the overlay directly: a live
+  // picker left behind would go on swallowing every d-pad and A press with
+  // nothing on screen to show for it.
+  closeBloodlinePicker();
   if (scene && scene.resume) scene.resume();
 });
 
@@ -998,6 +1081,9 @@ function powerOn() {
         // The ring owns the controls while it is up, so a d-pad press turns it
         // instead of also walking the player underneath.
         if (emojiWheel.open) { emojiWheel.handleInput(input); return; }
+        // Likewise the Bloodline chooser: without this an A press would both
+        // take up a Bloodline AND fire whatever the menu had selected behind it.
+        if (_picker) { _picker.handleInput(input); return; }
         if (scene) scene.update(dt, input);
       },
       () => {
@@ -1073,7 +1159,7 @@ const backableOverlays = () => [
 function anyOverlayOpen() { return backableOverlays().some((o) => o && !o.hidden); }
 function backOut() {
   if (!communionOverlay.hidden) { communionOverlay.hidden = true; return true; }
-  if (!walletOverlay.hidden) { walletOverlay.hidden = true; if (scene && scene.resume) scene.resume(); return true; }
+  if (!walletOverlay.hidden) { closeBloodlinePicker(); if (scene && scene.resume) scene.resume(); return true; }
   if (!chatForm.hidden) { chatForm.hidden = true; return true; }
   return false;
 }

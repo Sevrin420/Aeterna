@@ -179,6 +179,11 @@ const AVALANCHE_PARAMS = {
 // and every read below would then be answered by a chain that has never heard
 // of this contract.
 export async function ensureChain() {
+  // There is no chain to switch to in demo mode, and no provider to ask. Every
+  // other demo entry point short-circuits like this; this one did not, so
+  // ?demo threw NO_WALLET here and could never reach the Bloodline picker —
+  // the documented way to look at the entrance without a wallet was shut.
+  if (MOCK_WALLET) return true;
   const p = activeProvider();
   if (!p) throw new Error('NO_WALLET');
   if ((await currentChainId()) === BLOODLINE_CHAIN_ID) return true;

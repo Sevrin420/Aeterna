@@ -95,6 +95,19 @@ if (playersDDL && /\bwallet\b[^,]*\bUNIQUE\b/i.test(playersDDL.sql)) {
 // pile of Devotion the moment they switched between them.
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_players_wallet_token ON players(wallet, token_id)'); } catch { /* older sqlite, or rows already conflict */ }
 
+// Who has already been ASKED who brought them in. Being referred is recorded
+// in `referrals`, but declining left no trace at all, so the only record that
+// the question had been put was a Set in the browser's memory — which a reload
+// emptied, and the player was asked again every single time they connected.
+//
+// Keyed to the wallet, not the Bloodline, for the same reason `referrals` is:
+// a referral is a fact about a person, and minting a second Bloodline should
+// not re-open a question they have already answered.
+db.exec(`CREATE TABLE IF NOT EXISTS referral_declines (
+  wallet     TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL
+)`);
+
 // An X handle identifies a person, so it may be claimed once across the whole
 // abbey — otherwise anyone could type someone else's handle onto their own
 // Bloodline and collect that person's referrals. Guarded rather than put in

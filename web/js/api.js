@@ -109,6 +109,12 @@ export const api = {
   referral(xHandle) {
     return req('/referral', { method: 'POST', body: who({ xHandle }) });
   },
+  // The question was put and no handle was given. Recorded server-side so it is
+  // never put again — the browser's memory used to be the only record, and a
+  // reload wiped it.
+  declineReferral() {
+    return req('/referral/decline', { method: 'POST', body: who() });
+  },
   // Names (and current standing) for Bloodlines the caller already knows the
   // ids of, so the picker can list them by name instead of by token number.
   bloodlines(tokenIds) {

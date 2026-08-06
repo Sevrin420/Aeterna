@@ -749,6 +749,11 @@ export class CourtyardScene {
           text: 'The day is kept.\n\n'
             + `Your streak stands at ${res.streak} day${res.streak === 1 ? '' : 's'}, `
             + `and every act is now worth ${res.multiplier}x.\n\n`
+            // The streak is the thing they will be sorest to lose, and it is
+            // only written down when they lie down. Saying it HERE, in the one
+            // box a day that they are certain to read, is the whole point of
+            // saying it at all.
+            + 'Rest in a bed to set it down, or the day is not yet yours.\n\n'
             + 'Come back tomorrow, or lose it.',
         }]);
       }

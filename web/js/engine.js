@@ -164,6 +164,17 @@ export class Input {
     this._bJustPressed = false;
     return v;
   }
+
+  // Throw away everything queued but not yet read. Anything that opens a new
+  // screen should call this first, or it inherits the press that opened it:
+  // the B that closes the Bloodline picker is still sitting in _bJustPressed
+  // when the picker is opened again, and the very next frame reads it and
+  // closes the picker before it can be seen.
+  flush() {
+    this._dirQueue = [];
+    this._aJustPressed = false;
+    this._bJustPressed = false;
+  }
 }
 
 export function makeLoop(update, render) {

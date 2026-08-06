@@ -314,14 +314,31 @@ fastify.post('/bind', async (req, reply) => {
     name: sibling ? sibling.name : `Bloodline ${tid}`,
     prefix: sibling ? sibling.prefix : 'Brother',
     sex: sibling ? sibling.sex : 'male',
-    x_handle: sibling ? sibling.x_handle : null,
+    // NOT carried across from the sibling, however tempting the symmetry with
+    // name/prefix/sex looks. An X handle is unique across the whole abbey
+    // (idx_players_x_handle), because it is how one PERSON is told from
+    // another when a referral is credited. Copying it onto the second row
+    // violated that index, so the INSERT threw and every attempt to bind a
+    // second Bloodline died as a 500 — the holder could mint it and never
+    // play it. The handle stays on the row that already carries it; referral
+    // lookups find that row and pay it, which is the behaviour either way.
+    x_handle: null,
     created_at: new Date().toISOString(),
     flags_date: todayStr(),
   };
-  db.prepare(`
-    INSERT INTO players (id, wallet, token_id, cultists, bloodline_name, name, prefix, sex, x_handle, created_at, flags_date)
-    VALUES (@id, @wallet, @token_id, @cultists, @bloodline_name, @name, @prefix, @sex, @x_handle, @created_at, @flags_date)
-  `).run(player);
+  // A constraint failure here used to surface as a bare 500, which told the
+  // player nothing and told the log only a column name. Binding is the one
+  // call standing between a paid-for Bloodline and being able to play it, so
+  // it says which Bloodline and what went wrong.
+  try {
+    db.prepare(`
+      INSERT INTO players (id, wallet, token_id, cultists, bloodline_name, name, prefix, sex, x_handle, created_at, flags_date)
+      VALUES (@id, @wallet, @token_id, @cultists, @bloodline_name, @name, @prefix, @sex, @x_handle, @created_at, @flags_date)
+    `).run(player);
+  } catch (e) {
+    req.log.error({ err: e, tokenId: tid, wallet: w }, 'bind: could not create the Bloodline row');
+    return reply.code(500).send({ error: `Bloodline #${tid} could not be taken up: ${e.message}` });
+  }
   return db.prepare('SELECT * FROM players WHERE id = ?').get(player.id);
 });
 
@@ -378,12 +395,18 @@ fastify.get('/me', async (req, reply) => {
   // is what the referrals table is unique on.
   const referral = db.prepare('SELECT referrer_handle FROM referrals WHERE referee_wallet = ?')
     .get(String(wallet).toLowerCase());
+  // Asked and declined counts as answered. Without this the client only knew
+  // about referrals that SUCCEEDED, so anyone who said "not now" was asked
+  // again on every connect for the rest of the season.
+  const declined = db.prepare('SELECT 1 FROM referral_declines WHERE wallet = ?')
+    .get(String(wallet).toLowerCase());
   return {
     ...fresh,
     multiplier: streakMultiplier(fresh.streak, fresh.level),
     needsConfession: !!pending,
     confessionCost: pending ? confessionCost(fresh.confession_count) : null,
     referred: referral ? referral.referrer_handle : null,
+    referralAsked: !!(referral || declined),
   };
 });
 
@@ -590,6 +613,19 @@ fastify.post('/x/handle', async (req, reply) => {
 // The remaining hole is two genuinely separate wallets cross-referring, which
 // costs a mint each and is not solvable here; it needs the signature auth the
 // API still lacks.
+// The question was put and not answered with a handle. Recorded so it is never
+// put again — a referral is asked ONCE. Deliberately forgiving: no Bloodline is
+// required (a ghost may be asked too) and re-declining is not an error, because
+// this is only ever called to close a prompt the player has already dismissed.
+fastify.post('/referral/decline', async (req, reply) => {
+  const { wallet } = req.body || {};
+  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+  const w = String(wallet).toLowerCase();
+  db.prepare('INSERT OR IGNORE INTO referral_declines (wallet, created_at) VALUES (?, ?)')
+    .run(w, new Date().toISOString());
+  return { success: true, referralAsked: true };
+});
+
 fastify.post('/referral', async (req, reply) => {
   const { wallet, tokenId, xHandle } = req.body || {};
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });

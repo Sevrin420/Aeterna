@@ -563,6 +563,45 @@ body.powered .mute-toggle {
   padding-bottom: 3px;
 }
 .cultist-card.sel { border-color: #d24b4b; box-shadow: 0 0 6px rgba(210,75,75,0.6); }
+
+/* ===== Choosing a Bloodline =====
+   A LIST, not the three-across portrait grid the Cultist picker uses. What
+   tells one Bloodline from another is its NAME, and a name wants a line to
+   itself rather than a caption crushed under a square. */
+.cultist-grid.bloodline-list {
+  grid-template-columns: 1fr;
+  max-height: 56%;
+}
+.bloodline-list .cultist-card {
+  aspect-ratio: auto;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  padding: clamp(4px, 1.5cqw, 8px);
+  padding-bottom: clamp(4px, 1.5cqw, 8px);
+  text-align: left;
+}
+.bl-name {
+  font-size: clamp(7px, 2.1cqw, 11px);
+  color: #e8dcc0;
+  letter-spacing: 0.02em;
+}
+.bl-sub { font-size: clamp(5px, 1.4cqw, 7px); color: #9b8ba6; }
+/* The one currently taken up, so a holder can see where they left off. It is
+   NOT the cursor — .sel is the cursor, and the two are often different rows. */
+.bloodline-list .cultist-card.current .bl-name::after {
+  content: ' — borne now';
+  color: #8ef06e;
+  font-size: 0.85em;
+}
+.bloodline-list .cultist-card.sel .bl-name { color: #ffe9c8; }
+/* The d-pad cursor has to read at a glance from arm's length, so it is a solid
+   fill rather than the thin outline that marks a tapped card. */
+.bloodline-list .cultist-card.sel {
+  background: #2e2036;
+  border-color: #d24b4b;
+}
 .wallet-back {
   background: none;
   border: none;
