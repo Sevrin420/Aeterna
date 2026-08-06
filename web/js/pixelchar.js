@@ -486,17 +486,22 @@ function birdHeadRows(dir) {
     bShade(g);
     bEye(g, cx + 4, cy - 2, 1.8);
   } else if (dir === 'down') {
-    // Facing the player: the beak is foreshortened to a short wedge between
-    // two eyes. Drawing it at profile length here would read as a nose.
-    for (let x = cx - 6; x <= cx + 6; x++) bPut(g, x, cy - 5, 's');
+    // Facing the player. The first attempt put two eyes close together with a
+    // small wedge under them, which is a HUMAN face — eyes to the front, nose
+    // between and below. A bird's eyes sit on the SIDES of its skull and the
+    // beak starts up between them and runs down past the jaw, so the beak is
+    // the largest thing on the face rather than an afterthought beneath it.
+    for (let x = cx - 7; x <= cx + 7; x++) bPut(g, x, cy - 5, 's');   // brow shelf
     bShade(g);
-    bEye(g, cx - 4, cy - 1, 1.8);
-    bEye(g, cx + 4, cy - 1, 1.8);
-    for (let i = 0; i < 4; i++) {
-      const t = 1 - Math.floor(i / 3);
-      for (let j = -t; j <= t; j++) bPut(g, cx + j, cy + 3 + i, 'P');
+    // Beak first, eyes after, so nothing overdraws an eye.
+    for (let i = 0; i < 10; i++) {
+      const t = Math.max(0, 3 - Math.floor(i / 2.4));
+      for (let j = -t; j <= t; j++) bPut(g, cx + j, cy - 2 + i, 'P');
     }
-    bPut(g, cx, cy + 4, 'p');
+    for (let j = -3; j <= 3; j++) bPut(g, cx + j, cy - 1, 'p');       // the gape, across
+    // Out at the temples, where a bird's actually are.
+    bEye(g, cx - 6, cy - 2, 1.8);
+    bEye(g, cx + 6, cy - 2, 1.8);
   } else {
     // Turned away: no beak, no eyes. Just the back of the skull and the nape —
     // which is most of what the shrine rite looks at.
