@@ -575,17 +575,16 @@ const HD_LEGS = {
   }
 };
 
-// The bird's habit, mirrored out of the human one: identical from the front,
-// reversed in profile so the cloth falls behind the bird instead of over its
-// beak. Derived rather than authored, so it cannot drift from the garment the
-// front view is still using.
-// NOTE the shape difference that caught me: HD_BODIES stores a FLAT array of
-// row strings, while HD_LEGS nests two walk frames. So the body mirrors once,
-// not once per frame.
-const mirrorRows = (rows) => rows.map((r) => [...r].reverse().join(''));
+// The bird's habit is the human vest, unchanged in both views.
+//
+// It was briefly mirrored in profile, on my reading that the cloth was draping
+// over the beak. That was backwards: rendering the HUMAN cast side by side
+// shows the authored garment already falls BEHIND the figure, so mirroring it
+// is what threw the drape onto the facing side. The rows were right all along
+// and the mirror was the bug.
 HD_BODIES.birdrobe = {
   front: HD_BODIES.vest.front,
-  side: mirrorRows(HD_BODIES.vest.side),
+  side: HD_BODIES.vest.side,
 };
 
 /* Paints a block of rows at an arbitrary cell size, horizontally centred in the
@@ -924,8 +923,31 @@ const AETERNA_IRIS = ['#241a12', '#1a2436', MOSS.o, SOUL.o];
 // bird, and the difference was only ever hair.
 // No hoods anywhere. The cowl was the human cast's silhouette; on a bird it
 // swallows the skull and the beak is the only thing left saying what this is.
+const HEADS_M_HUMAN = ['cowl', 'cowl', 'cowl', 'bald'];
+const HEADS_F_HUMAN = ['cowl', 'cowl', 'cowl', 'wavy'];
 const HEADS_M = ['bird'];
 const HEADS_F = ['bird'];
+
+/* ONE SWITCH FOR THE WHOLE BIRD ABBEY.
+   Everything the swap touches reads this and nothing else does. Set it to
+   false and the human cast comes back exactly as it was: same heads, same
+   rolled robe colours, same legs. No revert commit, no untangling — the bird
+   glyphs stay defined and simply go unused, which costs a few kilobytes of
+   dead data and buys a one-word undo.
+
+   A URL override is honoured as well, so a DEPLOYED build can be looked at
+   both ways without redeploying: ?birds=0 forces humans, ?birds=1 forces
+   birds. That is the fastest possible rollback — it needs no deploy at all,
+   only a link — and it is also how to check whether a bug is the birds' fault
+   or was always there. */
+export const BIRDS = (() => {
+  try {
+    const q = new URLSearchParams(location.search).get('birds');
+    if (q === '0' || q === 'off') return false;
+    if (q === '1' || q === 'on') return true;
+  } catch { /* not in a browser */ }
+  return true;                 // <-- flip to false to restore the humans
+})();
 
 // The abbey's whole palette for its people: one green, one grey, one keratin.
 const PLUMAGE = '#6fbb42';      // the green from the reference
@@ -948,17 +970,17 @@ export function traitsForSeed(seed, sex) {
   // is what made a crowd read as a crowd of individuals; a congregation in one
   // identical grey habit reads instead as an ORDER, which is the point. Rank
   // is now carried by cloth alone — white is the two offices and nothing else.
-  const skin = PLUMAGE;
-  const hair = PLUMAGE;
-  const robe = HABIT_GREY;
+  const skin = BIRDS ? PLUMAGE : jitterCol(pick(AETERNA_SKIN), (h * 2246822519) >>> 0, 0.3);
+  const hair = BIRDS ? PLUMAGE : pick(AETERNA_HAIR);
+  const robe = BIRDS ? HABIT_GREY : jitterCol(pick(AETERNA_ROBE), (h * 40503 + 7) >>> 0, 0.8);
   const metal = pick(AETERNA_METAL);
   const jewel = pick(AETERNA_JEWEL);
-  const cloak = HABIT_GREY;
+  const cloak = BIRDS ? HABIT_GREY : jitterCol(pick(AETERNA_ROBE), (h * 0x9e3779b1) >>> 0, 0.6);
 
   return {
-    head: pick(female ? HEADS_F : HEADS_M),
-    body: 'birdrobe',
-    legs: 'bird',
+    head: BIRDS ? 'bird' : pick(female ? HEADS_F_HUMAN : HEADS_M_HUMAN),
+    body: BIRDS ? 'birdrobe' : (female ? pick(['dress', 'gown']) : pick(['suit', 'vest'])),
+    legs: BIRDS ? 'bird' : (female ? undefined : 'suit'),
     beak: BEAK,
     skin, hair,
     hat: robe, coat: robe, pants: mixc(robe, '#0d0a12', 0.35),
@@ -989,11 +1011,11 @@ export function traitsForSeed(seed, sex) {
 // flagstones behind him.
 export function traitsForGuru() {
   return {
-    head: 'bird',
-    body: 'birdrobe',
-    legs: 'bird',
+    head: BIRDS ? 'bird' : 'cowl',
+    body: BIRDS ? 'birdrobe' : 'vest',
+    legs: BIRDS ? 'bird' : 'suit',
     beak: BEAK,
-    skin: PLUMAGE, hair: PLUMAGE,
+    skin: BIRDS ? PLUMAGE : '#e6bd92', hair: BIRDS ? PLUMAGE : '#cfc8b4',
     hat: BONE.h, coat: BONE.h, pants: BONE.l,
     shoes: BONE.d,
     metal: GOLD.b, jewel: BLOOD.d, tie: BONE.d,
@@ -1013,11 +1035,11 @@ export function traitsForGuru() {
 // there to restore.
 export function traitsForConfessor() {
   return {
-    head: 'bird',
-    body: 'birdrobe',
-    legs: 'bird',
+    head: BIRDS ? 'bird' : 'cowl',
+    body: BIRDS ? 'birdrobe' : 'vest',
+    legs: BIRDS ? 'bird' : 'suit',
     beak: BEAK,
-    skin: PLUMAGE, hair: PLUMAGE,
+    skin: BIRDS ? PLUMAGE : '#d8ae86', hair: BIRDS ? PLUMAGE : '#8a8069',
     hat: BONE.l, coat: BONE.h, pants: BONE.l,
     shoes: BONE.o,
     metal: IRON.l, jewel: BLOOD.b, tie: BLOOD.d,
@@ -1046,7 +1068,7 @@ export function traitsForNaked(seed, sex) {
   const skin = t.skin;
   return {
     ...t,
-    head: 'bird',
+    head: BIRDS ? 'bird' : (sex === 'female' ? 'wavy' : 'bald'),
     // Both sexes take the vest/suit construction rather than the gown one.
     // A dress glyph recoloured to skin is still a dress SHAPE — it would read
     // as a skin-coloured robe rather than as a body — whereas vest over suit
