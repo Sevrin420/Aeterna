@@ -1,5 +1,5 @@
-// The shrine — a great skull lying on the floor of the east chamber, and the
-// rite that lifts it.
+// The shrine — a great BIRD skull lying on the floor of the east chamber, and
+// the rite that lifts it.
 //
 // Two things live here because they are inseparable: the skull is not a prop
 // that a rite happens next to, it is the thing the rite acts on. It sleeps on
@@ -8,12 +8,18 @@
 // with every line of the chant. At the top its sockets fill with fire, and
 // then it goes back down to the floor to reset.
 //
+// It was a human skull until the abbey's cast became birds, and a congregation
+// of birds worshipping a man's skull is a different story from the one being
+// told. See _drawSkull for what actually changed — it is not a human skull
+// with a beak added.
+//
 // The skull itself does not turn — the FIRE turns, faster the higher the skull
 // gets, which is what sells the rise. The yaw machinery is still here and is
 // still correct, because the drawing is built on a projection rather than on
 // baked frames: every feature is placed in skull-space (u = left/right,
 // v = up/down, w = front/back) and projected through one rotation about the
-// vertical axis. It is simply held at zero now, facing whoever woke it.
+// vertical axis. It is now held at RESTING_YAW rather than at zero, because a
+// beak pointing straight at the viewer is a beak nobody can see.
 
 import { BONE, BLOOD, VOID, SOUL, WALL, SHADOW, blueFlame, candleFlame, SOULFIRE } from './palette.js';
 import { CHANT_PAIR } from './config.js';
@@ -33,6 +39,15 @@ const RISE = 34;                // how high it gets by the last line of the chan
 const BASE_LIFT = 13;
 const RING_N = 11;              // flames in the ring
 const RING_R = 30;              // ring radius
+// How far the skull is turned from facing you, in radians. See _drawSkull.
+const RESTING_YAW = -1.02;
+// A turned bird skull is nearly all beak, and the beak is all on ONE side of
+// the point it is drawn from — so drawing it on the middle of the kerb hangs it
+// off to that side over its own pool. This slides the drawing origin back
+// against the beak by about half its reach, in skull radii, which puts the
+// skull's MASS over the middle instead of its root. Scaled by sin(yaw), so it
+// falls to zero if the skull is ever turned to face front again.
+const BEAK_BALANCE = 0.86;
 
 // Beat lengths. The rite used to run in about sixteen seconds, which made a
 // six-line chant feel like a list being read out. Every beat is now roughly
@@ -93,7 +108,10 @@ export class SkullShrine {
     this.onDone = onDone;
 
     this.t = 0;
-    this.yaw = 0;               // held at zero: the skull faces you and does not turn
+    // Three-quarters, not head-on. A beak aimed at the camera is a dot; this
+    // angle spends the beak's whole length across the screen and still keeps
+    // the near orbit and the braincase in view. Held fixed — it does not turn.
+    this.yaw = RESTING_YAW;
     this.ringA = 0;             // the fire's own angle — this is what spins
     this.phase = 'idle';
     this.pt = 0;
@@ -319,12 +337,12 @@ export class SkullShrine {
             d.r = 0.8 + (this.pt / 0.7) * 1.4;
           } else if (this.pt < 1.4) {
             const u = (this.pt - 0.7) / 0.7;
-            d.x = d.x0 + (this.x - d.x0) * u;
+            d.x = d.x0 + (this._sx() - d.x0) * u;
             // an arc, not a straight line — it is thrown, not dripped
             d.y = d.y0 + (this._cy() - SKULL_S * 0.9 - d.y0) * u - Math.sin(u * Math.PI) * 9;
             d.r = 2.2;
           } else if (this.drop) {
-            this._splash(this.x, this._cy() - SKULL_S * 0.9);
+            this._splash(this._sx(), this._cy() - SKULL_S * 0.9);
             this.drop = null;
             this.onEvent('kindle');
           }
@@ -414,6 +432,12 @@ export class SkullShrine {
     this.drop = { x: this.px + 5, y: this.py - 4, x0: this.px + 5, y0: this.py - 4, r: 0.8 };
   }
 
+  // Where the skull is actually DRAWN, as against this.x, which is the middle
+  // of the kerb it lies in. Anything that has to meet the skull — the blood
+  // thrown onto its crown, above all — must go through this or it will sail
+  // past the head and land in the pool.
+  _sx() { return this.x - BEAK_BALANCE * Math.sin(this.yaw) * SKULL_S; }
+
   _splash(x, y) {
     for (let i = 0; i < 14; i++) {
       const a = -Math.PI + Math.random() * Math.PI;
@@ -485,7 +509,7 @@ export class SkullShrine {
     };
     for (const f of ring) if (f.z <= 0) flame(f);
 
-    this._drawSkull(ctx, this.x, cy, SKULL_S, this.yaw, 1);
+    this._drawSkull(ctx, this._sx(), cy, SKULL_S, this.yaw, 1);
 
     for (const f of ring) if (f.z > 0) flame(f);
 
@@ -525,37 +549,55 @@ export class SkullShrine {
 
   // --- the skull ------------------------------------------------------------
   //
-  // The silhouette is the whole job. A filled ellipse with sockets punched in
-  // it reads as a ball with holes, so the outline is built from a stack of
-  // half-widths down the skull's height — a wide cranial dome, the temples at
-  // the widest point, a pinch under the cheekbones, then a narrower jaw and a
-  // squared chin. Turning the head blends that profile toward a SIDE profile
-  // (longer front-to-back) and leans the lower face in the direction it is
-  // pointing, which is what gives it a muzzle and a chin from three-quarters.
+  // A BIRD's skull, since the abbey's cast are birds — and a bird skull is a
+  // different animal from the human one that used to lie here, not the same
+  // shape with a beak stuck on it. Three things carry the read:
+  //
+  //   the BEAK, which is most of the skull's length and all of its character;
+  //   the ORBITS, which on a bird are enormous — they take up more of the head
+  //     than the braincase does, and they nearly meet in the middle;
+  //   and NO TEETH. Birds have none. The old dental arch is gone and the mouth
+  //     is now the tomium, the cutting edge where the two mandibles close.
+  //
+  // The braincase itself is small, round and set BACK, so the profile is a ball
+  // at one end of a blade rather than the tall dome-over-jaw of a human head.
+  //
+  // It is also turned off dead-front. A beak pointing at the camera is a beak
+  // you cannot see: head-on, the most distinctive thing about the skull becomes
+  // a dot. RESTING_YAW puts it at three-quarters, which shows the full length
+  // of the beak and still keeps both orbits and the braincase in view.
 
   // half-width at each height, front-on and side-on, plus how far that level
-  // juts forward when the head is in profile. v runs -1 (crown) to +1 (chin).
+  // juts forward when the head is in profile. v runs -1 (crown) to +1 (base).
+  // Braincase only — the beak is built separately, in skull space, so that it
+  // swings correctly as the head turns.
   static get PROFILE() {
     return [
       // v      front  side   lean
-      [-1.00, 0.30, 0.32, 0.00],
-      [-0.86, 0.62, 0.66, 0.00],
-      [-0.66, 0.86, 0.94, 0.01],
-      [-0.42, 0.98, 1.08, 0.02],
-      [-0.14, 0.96, 1.06, 0.06],
-      [ 0.10, 0.84, 0.96, 0.11],
-      [ 0.30, 0.68, 0.82, 0.15],
-      [ 0.54, 0.60, 0.74, 0.18],
-      [ 0.78, 0.54, 0.64, 0.19],
-      [ 0.94, 0.42, 0.48, 0.18],
-      [ 1.00, 0.26, 0.30, 0.17],
+      [-1.00, 0.26, 0.30, 0.00],
+      [-0.84, 0.56, 0.64, 0.00],
+      [-0.60, 0.78, 0.92, 0.00],
+      [-0.34, 0.88, 1.06, 0.01],
+      [-0.06, 0.86, 1.04, 0.02],
+      [ 0.18, 0.74, 0.88, 0.03],
+      // Below the orbit a bird has almost nothing: a wire of jugal bar and the
+      // quadrate, and then air. The braincase has to fall away hard here or the
+      // skull grows a cheek and a jaw it never had and reads as a dolphin.
+      [ 0.44, 0.48, 0.58, 0.04],
+      [ 0.66, 0.30, 0.38, 0.05],
+      [ 0.84, 0.16, 0.22, 0.05],
+      [ 1.00, 0.07, 0.11, 0.05],
     ];
   }
 
   _outline(ctx, x, y, S, c, s, grow) {
     const P = SkullShrine.PROFILE;
     const a = Math.abs(s);
-    const H = S * 1.06;
+    // The braincase is SHORTER than the skull's working height and sits above
+    // the beak's axis, where a bird's braincase is. At the full height it hung
+    // below the beak, which put a chin on a thing that has no jaw.
+    const H = S * 0.94;
+    y -= S * 0.12;
     ctx.beginPath();
     for (let i = 0; i < P.length; i++) {
       const [v, fw, sw, lean] = P[i];
@@ -573,29 +615,128 @@ export class SkullShrine {
     ctx.closePath();
   }
 
+  // The two mandibles, as closed paths in screen space. Every horizontal
+  // position goes through proj(), so the beak swings with the head instead of
+  // being pinned to the screen: at yaw 0 it collapses to a point aimed at the
+  // viewer, in profile it reaches its full length, and every angle between
+  // foreshortens on its own.
+  //
+  // Both roots run back PAST the front of the braincase, which then draws over
+  // them: a beak that starts exactly at the skull's edge shows the seam where
+  // the two shapes are stitched, and one that starts inside it does not.
+  _mandible(ctx, x, y, S, H, c, s, lower) {
+    const px = (u, w) => x + proj(u, w, c, s).x * S;
+    const P = lower
+      // Shorter, straighter, and it stops well short of the tip — the upper
+      // mandible closes over and past it, which is what makes a hook a hook.
+      ? [[0.00, -0.30, 0.32], [0.00, 0.90, 0.37], [0.00, 1.72, 0.45],
+        [0.00, 2.08, 0.56], [0.00, 1.72, 0.60], [0.00, 1.00, 0.55],
+        [0.00, -0.30, 0.48]]
+      // Culmen from the root out to the tip and back along the tomium. Long AND
+      // deep: the beak is half the skull, not an ornament on it, and a beak
+      // with no depth at its root is a twig.
+      //
+      // It ends in a drooping dagger rather than a raptor's hooked barb. The
+      // barb was drawn and thrown away: the notch behind it is about two pixels
+      // at this size and the outline stroke is nearly three, so the stroke
+      // filled the hook in and left a chipped-looking wedge. A tip that simply
+      // bends down carries the same menace and survives the outline.
+      : [[0.00, -0.30, -0.36], [0.00, 0.62, -0.31], [0.00, 1.42, -0.16],
+        [0.00, 2.12, 0.03], [0.00, 2.64, 0.22], [0.00, 3.00, 0.44],
+        [0.00, 2.82, 0.56], [0.00, 2.34, 0.36], [0.00, 1.60, 0.31],
+        [0.00, 0.90, 0.29], [0.00, -0.30, 0.28]];
+    ctx.beginPath();
+    P.forEach(([u, w, vy], i) => {
+      const sx = px(u, w), sy = y + vy * H;
+      i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+    });
+    ctx.closePath();
+  }
+
   _drawSkull(ctx, x, y, S, yaw, lit) {
     const c = Math.cos(yaw), s = Math.sin(yaw);
     const front = Math.max(0, c);
     const H = S * 1.06;
+    // How much of the beak's length is actually across the screen rather than
+    // pointing at the viewer. Below a sliver of this there is nothing to draw.
+    const jut = Math.abs(s);
+    // The braincase sits BACK on the head's axis rather than on the centre the
+    // beak runs from. Centred on the same point it swallowed the beak's root
+    // and left a twig sticking out of a ball; set back, the beak keeps its
+    // depth all the way to where it leaves the skull.
+    const bx = x + proj(0, -0.42, c, s).x * S;
 
-    this._outline(ctx, x, y, S, c, s, 1.3);
+    // --- the beak, FIRST ------------------------------------------------
+    // It is drawn before the braincase and its roots run back inside it, so
+    // the braincase then covers the join. Drawn the other way round, the two
+    // shapes met on a visible seam across the face and the beak read as a
+    // separate object laid against the skull rather than grown out of it.
+    // The outline is a fat stroke rather than a grown copy of the path: the
+    // same weight the silhouette gets, for a tenth of the arithmetic.
+    if (jut > 0.06) {
+      ctx.lineJoin = 'round';
+      for (const lower of [true, false]) {
+        this._mandible(ctx, x, y, S, H, c, s, lower);
+        ctx.strokeStyle = BONE.o; ctx.lineWidth = 2.6; ctx.stroke();
+        ctx.fillStyle = BONE.b; ctx.fill();
+        // The lower mandible only takes a step of shade along its underside —
+        // filled dark outright it stopped reading as part of the skull and
+        // became a shadow lying under it.
+        if (lower) {
+          ctx.save(); ctx.clip();
+          ctx.fillStyle = BONE.d;
+          ctx.fillRect(x - S * 4, y + H * 0.45, S * 8, H * 0.3);
+          ctx.restore();
+        }
+      }
+      ctx.save();
+      this._mandible(ctx, x, y, S, H, c, s, false);
+      ctx.clip();
+      // The gape: the dark closing edge. Without it the beak is one lump
+      // instead of a thing that could open.
+      ctx.strokeStyle = 'rgba(8,6,17,0.85)'; ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(x + proj(0, 0.20, c, s).x * S, y + H * 0.21);
+      ctx.lineTo(x + proj(0, 1.60, c, s).x * S, y + H * 0.31);
+      ctx.lineTo(x + proj(0, 2.40, c, s).x * S, y + H * 0.40);
+      ctx.stroke();
+      // and the light down the length of the culmen, the ridge that tells you
+      // the beak has a top rather than being a flat cut-out
+      ctx.strokeStyle = BONE.h; ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x + proj(0, 0.55, c, s).x * S, y - H * 0.17);
+      ctx.lineTo(x + proj(0, 2.16, c, s).x * S, y + H * 0.12);
+      ctx.stroke();
+      ctx.restore();
+
+      // the naris, high on the beak near its root
+      const np = proj(0, 0.92, c, s);
+      if (np.z > -0.4) {
+        ctx.fillStyle = VOID;
+        ctx.beginPath();
+        ctx.ellipse(x + np.x * S, y - H * 0.03, S * 0.15 * jut, H * 0.07, -0.28, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    this._outline(ctx, bx, y, S, c, s, 1.3);
     ctx.fillStyle = BONE.o; ctx.fill();
-    this._outline(ctx, x, y, S, c, s, 0);
+    this._outline(ctx, bx, y, S, c, s, 0);
     ctx.fillStyle = BONE.b; ctx.fill();
 
     // Everything below is clipped to the silhouette, so shading can be laid in
     // with plain shapes without softening the edge that defines the form.
     ctx.save();
-    this._outline(ctx, x, y, S, c, s, 0);
+    this._outline(ctx, bx, y, S, c, s, 0);
     ctx.clip();
 
     // lit from the upper left in hard steps, LttP rather than airbrush
     ctx.fillStyle = BONE.l;
-    ctx.beginPath(); ctx.ellipse(x - S * 0.30, y - H * 0.34, S * 0.78, H * 0.60, -0.25, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(bx - S * 0.30, y - H * 0.34, S * 0.78, H * 0.60, -0.25, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = BONE.h;
-    ctx.beginPath(); ctx.ellipse(x - S * 0.44, y - H * 0.56, S * 0.32, H * 0.22, -0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(bx - S * 0.44, y - H * 0.56, S * 0.32, H * 0.22, -0.3, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = BONE.d;
-    ctx.beginPath(); ctx.ellipse(x + S * 0.78, y + H * 0.46, S * 0.66, H * 0.60, 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(bx + S * 0.78, y + H * 0.46, S * 0.66, H * 0.60, 0.2, 0, Math.PI * 2); ctx.fill();
 
     // coronal suture, swinging round the crown with the head
     ctx.strokeStyle = BONE.d; ctx.lineWidth = 0.9;
@@ -603,7 +744,7 @@ export class SkullShrine {
     for (let i = 0; i <= 10; i++) {
       const u = -1 + (i / 10) * 2;
       const pj = proj(u, 0, c, s);
-      const sx = x + pj.x * S * 0.94;
+      const sx = bx + pj.x * S * 0.94;
       const sy = y - H * 0.60 + Math.abs(u) * H * 0.20 + (i % 2 ? 0.6 : -0.6);
       i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
     }
@@ -616,42 +757,47 @@ export class SkullShrine {
       if (p.z <= 0) continue;
       ctx.fillStyle = BONE.d;
       ctx.beginPath();
-      ctx.ellipse(x + p.x * S, y - H * 0.16, S * 0.19 * (0.3 + 0.7 * Math.abs(c)), H * 0.24, 0, 0, Math.PI * 2);
+      ctx.ellipse(bx + p.x * S, y - H * 0.16, S * 0.19 * (0.3 + 0.7 * Math.abs(c)), H * 0.24, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // zygomatic arch: a lit ridge running back from each cheek
-    for (const side of [-1, 1]) {
-      const p = proj(side * 0.74, 0.30, c, s);
-      if (p.z <= 0.02) continue;
-      ctx.fillStyle = BONE.l;
-      ctx.fillRect(x + p.x * S - S * 0.14, y + H * 0.06, S * 0.28, 1.6);
-    }
     ctx.restore();
 
     // --- eye sockets ---
+    // On a bird these are the biggest thing in the head: round, ringed with the
+    // bony plates of the sclerotic ring, and separated by a wall so thin the
+    // two nearly touch. They are drawn much larger than the human sockets they
+    // replace, and set forward and high on the braincase.
     const eyes = [];
     for (const side of [-1, 1]) {
-      const p = proj(side * 0.40, 0.62, c, s);
+      const p = proj(side * 0.46, 0.30, c, s);
       if (p.z <= 0.04) continue;
-      const ex = x + p.x * S, ey = y - H * 0.14;
-      const ew = S * 0.29 * (0.26 + 0.74 * Math.abs(c));
-      const eh = H * 0.26;
-      // A socket is not a circle: it is squarer at the top where the brow sits
-      // and drawn toward the nose at the bottom inner corner.
+      const ex = bx + p.x * S, ey = y - H * 0.24;
+      const ew = S * 0.40 * (0.30 + 0.70 * Math.abs(c) + 0.36 * jut * (p.z > 0.5 ? 1 : 0));
+      const eh = H * 0.37;
       ctx.fillStyle = BONE.o;
-      ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(ex - ew - 1, ey - eh - 1, (ew + 1) * 2, (eh + 1) * 2, [2.5, 2.5, ew, ew]);
-      else ctx.ellipse(ex, ey, ew + 1, eh + 1, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ex, ey, ew + 1.2, eh + 1.2, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = VOID;
+      ctx.beginPath(); ctx.ellipse(ex, ey, ew, eh, 0, 0, Math.PI * 2); ctx.fill();
+      // sclerotic ring: the plates that sat in the living eye, left behind
+      ctx.strokeStyle = BONE.l; ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.ellipse(ex, ey, ew * 0.70, eh * 0.70, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = BONE.h;                                   // brow above it
       ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(ex - ew, ey - eh, ew * 2, eh * 2, [2, 2, ew * 0.9, ew * 0.9]);
-      else ctx.ellipse(ex, ey, ew, eh, 0, 0, Math.PI * 2);
+      ctx.ellipse(ex, ey - eh * 0.86, ew * 0.86, 1.5, 0, Math.PI, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = BONE.h;                                   // brow shelf
-      ctx.fillRect(ex - ew - 0.5, ey - eh - 2.4, ew * 2 + 1, 1.4);
       eyes.push({ ex, ey, ew, eh });
+    }
+
+    // the jugal bar — the hairline strut of bone that runs from the beak's root
+    // back under the orbit. It is the piece that most says "bird" after the
+    // beak itself, and on a real skull it is barely thicker than a wire.
+    if (jut > 0.10) {
+      ctx.strokeStyle = BONE.l; ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(x + proj(0, 0.46, c, s).x * S, y + H * 0.17);
+      ctx.lineTo(bx + proj(0.30, -0.10, c, s).x * S, y + H * 0.24);
+      ctx.stroke();
     }
 
     // Waking is carried entirely by the sockets now that the mouth is fixed, so
@@ -687,71 +833,14 @@ export class SkullShrine {
       }
     }
 
-    // --- nasal aperture: an inverted heart, only from the front three-quarters
-    const nz = proj(0, 0.78, c, s);
-    if (nz.z > 0.12) {
-      const nx = x + nz.x * S, ny = y + H * 0.20;
-      const nw = S * 0.14 * (0.34 + 0.66 * front);
-      ctx.fillStyle = VOID;
-      ctx.beginPath();
-      ctx.moveTo(nx, ny - S * 0.26);
-      ctx.lineTo(nx - nw, ny + S * 0.05);
-      ctx.lineTo(nx, ny - S * 0.02);
-      ctx.lineTo(nx + nw, ny + S * 0.05);
-      ctx.closePath(); ctx.fill();
-    }
-
-    // --- the mouth ---
-    // One dark band with small teeth hanging into it from above and rising
-    // from below. Placing them on a projected dental ARCH is what keeps them
-    // on the muzzle as the head turns; clamping the width stops them
-    // collapsing into a smear at three-quarters.
+    // No nasal aperture and NO TEETH: the nostril is the naris up on the beak,
+    // drawn with it, and a bird's bite is the tomium — the closing edge of the
+    // two mandibles, already drawn as the gape. The human dental arch that used
+    // to be here is gone rather than shrunk, because a beak with a row of teeth
+    // behind it reads as a mask over a face.
     //
-    // The mouth is fixed. It used to curl into a grin when the skull woke, and
-    // a smiling skull turned out to read as friendly, which is the opposite of
-    // what a thing that has just been fed blood should look like. Waking is now
-    // carried entirely by the sockets.
-    const mouthTop = y + H * 0.46;
-    const mh = S * 0.26;
-    const arch = [];
-    for (let k = -3; k <= 3; k++) {
-      const a = k * 0.30;
-      const p = proj(Math.sin(a) * 0.44, Math.cos(a) * 0.54, c, s);
-      if (p.z <= 0.02) continue;
-      arch.push({ k, x: x + p.x * S });
-    }
-    if (arch.length) {
-      const lo = Math.min(...arch.map(t => t.x)) - S * 0.09;
-      const hi = Math.max(...arch.map(t => t.x)) + S * 0.09;
-      const rise = () => 0;
-      const band = (yTop, h, style) => {
-        ctx.fillStyle = style;
-        ctx.beginPath();
-        ctx.moveTo(lo, yTop);
-        for (const t of arch) ctx.lineTo(t.x, yTop);
-        ctx.lineTo(hi, yTop);
-        ctx.lineTo(hi, yTop + h);
-        for (let i = arch.length - 1; i >= 0; i--) ctx.lineTo(arch[i].x, yTop + h);
-        ctx.lineTo(lo, yTop + h);
-        ctx.closePath(); ctx.fill();
-      };
-      band(mouthTop - 1, mh + 2, BONE.o);
-      band(mouthTop, mh, 'rgba(8,6,17,0.9)');
-
-      // Upper teeth hang from the top of the band and lower teeth rise from
-      // the bottom, offset by half a tooth so they interlock instead of
-      // stacking into one crowded row. A clear dark gap is left between them.
-      const tw = Math.max(1.0, S * 0.095 * (0.45 + 0.55 * Math.abs(c)));
-      for (const t of arch) {
-        ctx.fillStyle = BONE.l;
-        ctx.fillRect(t.x - tw, mouthTop, tw * 2 - 0.7, mh * 0.38);
-      }
-      for (let i = 0; i < arch.length - 1; i++) {
-        const mid = (arch[i].x + arch[i + 1].x) / 2;
-        ctx.fillStyle = BONE.l;
-        ctx.fillRect(mid - tw * 0.75, mouthTop + mh * 0.70, tw * 1.5 - 0.7, mh * 0.30);
-      }
-    }
+    // The one thing kept from the old mouth is the rule it was written under:
+    // the skull does not smile. Waking is carried entirely by the sockets.
 
     // --- the back of the head, once it has turned past three-quarters ---
     if (c < -0.15) {
@@ -760,12 +849,12 @@ export class SkullShrine {
       ctx.globalAlpha = back;
       ctx.strokeStyle = BONE.d; ctx.lineWidth = 1.1;
       ctx.beginPath();
-      ctx.ellipse(x, y + H * 0.06, S * 0.58, H * 0.30, 0, Math.PI * 0.10, Math.PI * 0.90);
+      ctx.ellipse(bx, y + H * 0.06, S * 0.58, H * 0.30, 0, Math.PI * 0.10, Math.PI * 0.90);
       ctx.stroke();
       const fm = proj(0, -0.5, c, s);
       ctx.fillStyle = VOID;
       ctx.beginPath();
-      ctx.ellipse(x + fm.x * S * 0.4, y + H * 0.66, S * 0.16, H * 0.09, 0, 0, Math.PI * 2);
+      ctx.ellipse(bx + fm.x * S * 0.4, y + H * 0.66, S * 0.16, H * 0.09, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
