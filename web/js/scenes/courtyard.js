@@ -5,7 +5,7 @@
 
 import { api, getWalletId } from '../api.js';
 import { sfx } from '../sfx.js';
-import { drawCharacter, getCultistSprite, getGuruSprite, getConfessorSprite, getNakedSprite, getCultistSpriteVariant } from '../spritesheet.js';
+import { drawCharacter, getCultistSprite, getGuruSprite, getConfessorSprite, getNakedSprite, getCultistSpriteVariant, CHAR_SCALE } from '../spritesheet.js';
 import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
 import { DialogueBox, drawBang } from '../dialogue.js';
 import { LORE } from '../lore.js';
@@ -1805,6 +1805,9 @@ export class CourtyardScene {
     const bx = left + 5, bw = 15;
     ctx.fillStyle = WOOD.o; ctx.fillRect(bx - 1, top + 3, bw + 2, H_ - 4);
     ctx.fillStyle = VOID; ctx.fillRect(bx, top + 4, bw, H_ - 5);
+    // NOT scaled by CHAR_SCALE: the bay is bw (15) wide and at this height the
+    // figure already draws exactly 15 wide, so any growth puts him through the
+    // woodwork on both sides.
     drawCharacter(ctx, {
       sheet: getConfessorSprite(), dir: 'down', moving: false, animPhase: this.t,
       x: bx + bw / 2, groundY: y + 3, targetHeight: 21,
@@ -1849,10 +1852,14 @@ export class CourtyardScene {
       if (this.scourge.active) {
         this.scourge.drawAbbot(ctx, getGuruSprite(), this.t, () => this._dropShadow(ctx, 0, 7, 6, 2.4));
       } else {
-        this._dropShadow(ctx, 0, 7, 6, 2.4);
+        // The Abbot stands free at the altar with nothing framing him, so he
+        // takes the same growth the rest of the world cast does. (The
+        // Confessor does not — see his bay below, which is exactly as wide as
+        // he draws.)
+        this._dropShadow(ctx, 0, 7, 6 * CHAR_SCALE, 2.4 * CHAR_SCALE);
         drawCharacter(ctx, {
           sheet: getGuruSprite(), dir: 'down', moving: false, animPhase: this.t,
-          x: 0, groundY: 7, targetHeight: 22.4,
+          x: 0, groundY: 7, targetHeight: 22.4 * CHAR_SCALE,
         });
       }
     } else if (s.id === 'confession') {
@@ -2124,12 +2131,17 @@ export class CourtyardScene {
     const k = lift > 0 ? 1 - Math.min(0.45, lift / 9) : 1;
     ctx.fillStyle = lift > 0 ? SHADOW_SOFT : SHADOW;
     ctx.beginPath();
-    ctx.ellipse(px_, py_ + 5, 5 * k, 2 * k, 0, 0, Math.PI * 2);
+    // The contact shadow grows with the figure, or a bigger cast stands on the
+    // same small smudge and reads as hovering over the flagstones.
+    ctx.ellipse(px_, py_ + 5, 5 * k * CHAR_SCALE, 2 * k * CHAR_SCALE, 0, 0, Math.PI * 2);
     ctx.fill();
 
     const groundY = py_ + 6 - lift;
-    const drawn = drawCharacter(ctx, { sheet, dir, moving, animPhase, x: px_, groundY, targetHeight });
-    const drawY = drawn ? groundY - drawn.h : groundY - targetHeight;
+    const h = targetHeight * CHAR_SCALE;
+    const drawn = drawCharacter(ctx, { sheet, dir, moving, animPhase, x: px_, groundY, targetHeight: h });
+    // Labels, emoji and chat hang off drawY, so they follow the taller figure
+    // on their own rather than needing their own copy of the scale.
+    const drawY = drawn ? groundY - drawn.h : groundY - h;
 
     if (label) {
       ctx.font = '5px "Courier New", monospace';

@@ -1,7 +1,28 @@
 // Builds and caches Cultist sprite sheets using Aeterna's ported Club Nile
 // character generator (web/js/pixelchar.js) and draws/animates them.
 
-import { makeCharacterHD, traitsForSeed, traitsForGuru, traitsForConfessor, traitsForNaked } from './pixelchar.js';
+import { makeCharacterHD, traitsForSeed, traitsForGuru, traitsForConfessor, traitsForNaked, BIRDS } from './pixelchar.js';
+
+/* How much bigger the cast is drawn than the heights the scenes ask for.
+
+   The bird reads smaller than the human it replaced at the same target height,
+   and for a reason that is in the art rather than in the numbers: the human
+   fills its 36x32 head grid corner to corner, while the bird is an ellipse
+   inscribed in that grid with empty rows above and below it, and the bare
+   shanks put daylight where a human had a solid block of legs. Same nominal
+   height, less ink — so the figure sits smaller in the eye than the number
+   says.
+
+   Applied where a figure stands free in the world, and deliberately NOT
+   applied where one is framed by architecture or by a panel: the Confessor's
+   booth bay is fifteen logical px wide and he already draws exactly fifteen
+   wide, the menu sizes its backdrop and its count off CULT_H, and the scourge
+   composes its own shot. Those would overflow their frames rather than read
+   bigger. See the call sites in courtyard.js.
+
+   Rides the same switch as everything else, so BIRDS=false restores the human
+   cast at its original size and not at a size tuned for birds. */
+export const CHAR_SCALE = BIRDS ? 1.3 : 1;
 import { applyRobe } from './cultLook.js';
 
 const cache = new Map(); // seed -> {down:[c0,c1], up:[c0,c1], left:[c0,c1], right:[c0,c1]}

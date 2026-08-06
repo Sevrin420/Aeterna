@@ -1144,8 +1144,22 @@ function makeCharacterHD_human(t) {
   const out = {};
   out.down  = [0,1].map(f => buildFrameHD(hd.down, bd.front, lg.front[f], pal, false, acc, 'down'));
   out.up    = [0,1].map(f => buildFrameHD(hd.up,   bd.front, lg.front[f], pal, false, acc, 'up'));
-  out.left  = [0,1].map(f => buildFrameHD(hd.side, bd.side,  lg.side[f],  pal, false, acc, 'side'));
-  out.right = [0,1].map(f => buildFrameHD(hd.side, bd.side,  lg.side[f],  pal, true,  acc, 'side'));
+  /* WHICH WAY THE PROFILE ALREADY FACES.
+
+     The hand-authored human profiles face -x: eye and nose on the left of the
+     skull, so the unmirrored frame is the one that belongs on the 'left' key
+     and the mirrored one on 'right'. The generated bird profile faces the
+     other way — birdHeadRows puts the beak at cx+7, pointing +x — so feeding
+     it through the same flags walked every bird backwards: beak trailing,
+     drape leading, tail first in the direction of travel.
+
+     So the flags swap for birds. Mirroring happens on the finished frame, so
+     everything on it turns together and the relationships authored into the
+     rows survive: the robe still falls opposite the beak, and the tucked foot
+     still sits behind the standing one. */
+  const beakLeadsRight = BIRDS;
+  out.left  = [0,1].map(f => buildFrameHD(hd.side, bd.side,  lg.side[f],  pal, beakLeadsRight,  acc, 'side'));
+  out.right = [0,1].map(f => buildFrameHD(hd.side, bd.side,  lg.side[f],  pal, !beakLeadsRight, acc, 'side'));
   return out;
 }
 /* ================= unique Nile-era characters (NFT collection) =================
