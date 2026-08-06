@@ -570,6 +570,19 @@ const HD_LEGS = {
   }
 };
 
+// The bird's habit, mirrored out of the human one: identical from the front,
+// reversed in profile so the cloth falls behind the bird instead of over its
+// beak. Derived rather than authored, so it cannot drift from the garment the
+// front view is still using.
+// NOTE the shape difference that caught me: HD_BODIES stores a FLAT array of
+// row strings, while HD_LEGS nests two walk frames. So the body mirrors once,
+// not once per frame.
+const mirrorRows = (rows) => rows.map((r) => [...r].reverse().join(''));
+HD_BODIES.birdrobe = {
+  front: HD_BODIES.vest.front,
+  side: mirrorRows(HD_BODIES.vest.side),
+};
+
 /* Paints a block of rows at an arbitrary cell size, horizontally centred in the
    sprite's 18-logical-px content box, with its top edge at yTop. The cell size
    is a parameter (it used to be hardcoded at 0.5 for every part) so the head
@@ -904,8 +917,10 @@ const AETERNA_IRIS = ['#241a12', '#1a2436', MOSS.o, SOUL.o];
 // cast had, so a courtyard still reads as mostly cowls with a few uncovered
 // heads among them. Sex no longer changes the head: a green bird is a green
 // bird, and the difference was only ever hair.
-const HEADS_M = ['birdcowl', 'birdcowl', 'birdcowl', 'bird'];
-const HEADS_F = ['birdcowl', 'birdcowl', 'birdcowl', 'bird'];
+// No hoods anywhere. The cowl was the human cast's silhouette; on a bird it
+// swallows the skull and the beak is the only thing left saying what this is.
+const HEADS_M = ['bird'];
+const HEADS_F = ['bird'];
 
 // The abbey's whole palette for its people: one green, one grey, one keratin.
 const PLUMAGE = '#6fbb42';      // the green from the reference
@@ -937,7 +952,7 @@ export function traitsForSeed(seed, sex) {
 
   return {
     head: pick(female ? HEADS_F : HEADS_M),
-    body: female ? pick(['dress', 'gown']) : pick(['suit', 'vest']),
+    body: 'birdrobe',
     legs: 'bird',
     beak: BEAK,
     skin, hair,
@@ -969,8 +984,8 @@ export function traitsForSeed(seed, sex) {
 // flagstones behind him.
 export function traitsForGuru() {
   return {
-    head: 'birdcowl',
-    body: 'vest',
+    head: 'bird',
+    body: 'birdrobe',
     legs: 'bird',
     beak: BEAK,
     skin: PLUMAGE, hair: PLUMAGE,
@@ -993,8 +1008,8 @@ export function traitsForGuru() {
 // there to restore.
 export function traitsForConfessor() {
   return {
-    head: 'birdcowl',
-    body: 'vest',
+    head: 'bird',
+    body: 'birdrobe',
     legs: 'bird',
     beak: BEAK,
     skin: PLUMAGE, hair: PLUMAGE,
