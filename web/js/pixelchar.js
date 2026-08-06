@@ -1004,7 +1004,12 @@ function makeCharacterHD_human(t) {
     feather: (t.feather && ramp(t.feather).base) || '#e9dfce',
     featherHi: (t.feather && ramp(t.feather).hi) || '#fff8ea',
     hat: bycol.base, hatHi: bycol.hi, hatDark: mixc(bycol.sh, '#0d1a0e', 0.35),
-    cloak: t.cloak ? rampWool(t.cloak) : null   // the habit's cloak is wool, not glossy
+    // The habit's cloak is wool, not glossy. On a BARE figure it is not cloth
+    // at all — it is the bare bird's shoulders — so it takes the head's own
+    // skin ramp instead. Same reasoning as the `bare` block above: matching the
+    // colour is not enough when the material's highlight and shadow differ.
+    // Humans are unaffected: traitsForNaked leaves their cloak null.
+    cloak: t.cloak ? (t.bare ? skin : rampWool(t.cloak)) : null
   };
   const acc = (t.cloak || (t.headAcc && t.headAcc !== 'none') || (t.faceAcc && t.faceAcc !== 'none'))
     ? accPainter(t, ax) : null;
@@ -1221,14 +1226,27 @@ export function traitsForNaked(seed, sex) {
     // A dress glyph recoloured to skin is still a dress SHAPE — it would read
     // as a skin-coloured robe rather than as a body — whereas vest over suit
     // legs gives a torso and two legs, which is what a bare figure needs.
-    body: 'vest', legs: 'suit',
+    //
+    // The same argument is why a bird cannot borrow them. A human vest under a
+    // bird's head is a human SHAPE: square shoulders the skull does not sit on,
+    // and shoes where there should be talons. birdrobe recoloured to plumage is
+    // the bird's own outline — narrow at the shoulder, swelling to the hem —
+    // which is a bird's body, and the bird leg rows are bare keratin already,
+    // so the shanks need no recolouring to be bare.
+    body: BIRDS ? 'birdrobe' : 'vest',
+    legs: BIRDS ? 'bird' : 'suit',
     // `bare` makes the palette build every garment cell from the head's own
     // skin ramp — see makeCharacterHD. The colours below still matter as a
     // fallback, but they are no longer what makes the figure read as skin.
     bare: true,
     hat: skin, coat: skin, pants: skin, shirt: skin, shoes: skin,
     leather: skin, trim: skin, tie: skin,
-    cloak: null,
+    // A human out of the habit has a hand-authored neck inside the head grid
+    // and needs nothing here. A bird's skull stops two logical pixels above the
+    // body grid, and only accessory space reaches between them — so the bare
+    // bird keeps a mantle, in its own plumage, and it reads as the shoulders
+    // the head sits on rather than as cloth. Without it the head simply floats.
+    cloak: BIRDS ? skin : null,
     headAcc: 'none', faceAcc: 'none',
   };
 }
