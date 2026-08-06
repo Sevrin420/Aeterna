@@ -26,6 +26,8 @@ function loadImage(src) {
   return img;
 }
 
+const SHOW_DROPDOWN = new URLSearchParams(window.location.search).get('dropdown') !== '0';
+
 export class BootScene {
   constructor({ onComplete }) {
     this.onComplete = onComplete;
@@ -37,6 +39,7 @@ export class BootScene {
 
     this.bg = loadImage('assets/title-bg.jpg');
     this.logo = loadImage('assets/title-logo.png');
+    this.dropdown = SHOW_DROPDOWN ? loadImage('assets/title-dropdown.png') : null;
   }
 
   enter() {}
@@ -88,7 +91,15 @@ export class BootScene {
 
     ctx.imageSmoothingEnabled = smooth;
 
-    // 3) blinking PRESS A once everything has landed
+    // 3) dropdown image (Undying Abbots) below the logo once landed
+    if (this.landed && this.dropdown && this.dropdown.complete && this.dropdown.naturalWidth) {
+      const dw = W * 0.85;
+      const dh = dw * (this.dropdown.naturalHeight / this.dropdown.naturalWidth);
+      const dy = H * 0.62;
+      ctx.drawImage(this.dropdown, (W - dw) / 2, dy, dw, dh);
+    }
+
+    // 4) blinking PRESS A once everything has landed
     if (this.landed) {
       const on = Math.floor(this.blink / 0.5) % 2 === 0;
       if (on) {
@@ -104,7 +115,7 @@ export class BootScene {
       }
     }
 
-    // 4) fade the whole screen up from black over the first `fadeIn` seconds
+    // 5) fade the whole screen up from black over the first `fadeIn` seconds
     if (this.t < this.fadeIn) {
       ctx.fillStyle = `rgba(0,0,0,${1 - this.t / this.fadeIn})`;
       ctx.fillRect(0, 0, W, H);
