@@ -32,9 +32,8 @@ export const LORE = {
   // below only line up with their bodies while every entry fits its frame.
   doctrine: [
     {
-      speaker: `${GAME_NAME}`,
-      text: 'An eight week mini game.\n\n'
-        + 'Keep the three duties daily. A week held pays more than a week broken.',
+      speaker: 'You have joined a cult',
+      text: '3 daily tasks you must complete to earn Devotion.',
     },
     {
       speaker: 'The Daily Three',

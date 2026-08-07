@@ -702,17 +702,39 @@ body.rite-open .hud {
    Cultist chooser and the name/handle prompts — which share this overlay and
    are much tighter for room — keep the sizes they were tuned at.
 
-   The type is stepped up about a third. The ceilings are the limit rather than
-   the ratios: this sits inside the console's screen, 416px of canvas at its
-   widest, and the count line is the longest thing on it ("20 Cultists"), so
-   these are set where that line still holds one row at the narrowest phone the
-   layout supports. */
-.wallet-overlay.minting .naming-title { font-size: clamp(9px, 3cqw, 15px); }
-.wallet-overlay.minting .wallet-msg { font-size: clamp(8px, 2.4cqw, 12px); }
-.wallet-overlay.minting .cultist-count { font-size: clamp(15px, 4.6cqw, 23px); }
-.wallet-overlay.minting .cultist-cost { font-size: clamp(11px, 3.4cqw, 16px); }
-.wallet-overlay.minting .cultist-ticks { font-size: clamp(8px, 2.6cqw, 12px); }
-.wallet-overlay.minting .naming-submit { font-size: clamp(9px, 3cqw, 15px); padding: 8px 20px; }
+   The type is pushed as far as it goes. What stops it is NOT wrapping, which
+   was the thing to watch for — it is the height of the box: the overlay is a
+   flex column with no scroll, so the moment the stack is taller than the panel
+   the bottom of it hangs outside the frame. The ceilings below were found by
+   growing everything against the LONGEST message this screen can show (the
+   opening "How many Cultists…", which is longer than any of the errors that
+   replace it) and stopping short of that limit, so a font that loads a little
+   wide has somewhere to go.
+
+   The prose is deliberately grown less than the numbers. It is the longest run
+   of text here and every step it takes costs several lines of height, so
+   holding it back is what buys the count its size — and the count is what the
+   player is actually reading.
+
+   `.naming-title` is the exception to all of the above, and its ceiling is
+   arithmetic rather than measurement: it is the one element in Press Start 2P,
+   which is a FULL-EM monospace — about 1.7x the advance of the Courier New
+   everything else inherits from body. "Raise a Bloodline" is 17 characters, so
+   at 0.02em tracking it needs 17.34x its own font-size, against 337px of
+   content width: 19.4px is where it would touch the edges, and it is set below
+   that. Measuring this in a browser without the webfont is worse than useless,
+   because the fallback is the narrow font and every number comes out flattering. */
+/* The slider's own box was capped at 260px for the small type. The count sits
+   inside it, not in the overlay, so THAT cap — and not the panel — is what the
+   count line has to fit; at the size below "20 Cultists" is 260px wide and was
+   breaking after "20". The mint page gives it the full width of the panel. */
+.wallet-overlay.minting .cultist-slider { width: 100%; max-width: none; }
+.wallet-overlay.minting .naming-title { font-size: clamp(9px, 3.75cqw, 18px); }
+.wallet-overlay.minting .wallet-msg { font-size: clamp(8px, 3.1cqw, 15px); }
+.wallet-overlay.minting .cultist-count { font-size: clamp(15px, 7.7cqw, 37px); }
+.wallet-overlay.minting .cultist-cost { font-size: clamp(11px, 5.4cqw, 26px); }
+.wallet-overlay.minting .cultist-ticks { font-size: clamp(8px, 3.95cqw, 19px); }
+.wallet-overlay.minting .naming-submit { font-size: clamp(9px, 5cqw, 24px); padding: 8px 20px; }
 /* The mint page has no Back button. B backs out of it instead, the same way B
    backs out of the Bloodline chooser — see _mintBack in main.js. Removing the
    button without that would leave the only exit from this screen a purchase. */

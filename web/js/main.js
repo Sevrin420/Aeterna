@@ -461,7 +461,7 @@ const cultistCost = document.getElementById('cultistCost');
 // because opening MINT a second time must dismantle the first: two live
 // onRaise listeners would send two transactions for one press.
 let _mintTeardown = null;
-let _mintBack = null;          // set while the mint slider owns the screen
+let _mintInput = null;         // owns the controls while the mint slider is up
 
 // The Doctrine and the mint rite are read in the in-canvas dialogue box now,
 // so the only DOM overlay the entrance still raises is the wallet flow.
@@ -949,17 +949,48 @@ async function openMintPicker(menu) {
     walletSubmitBtn.removeEventListener('click', onRaise);
     walletBackBtn.removeEventListener('click', teardown);
     _mintTeardown = null;
-    _mintBack = null;
+    _mintInput = null;
   };
   _mintTeardown = teardown;
-  // The way OUT of this screen. The Back button is hidden while the count is
-  // being chosen, so without this the only exits left would be buying a
-  // Bloodline or reloading the page.
-  _mintBack = () => {
-    teardown();
-    closeBloodlinePicker();
-    if (menu) menu.sel = 0;
+
+  // The console drives this screen: d-pad sets the count, A raises the
+  // Bloodline, B backs out. B is also the only way OUT — the Back button is
+  // hidden while the count is being chosen, so without this the exits left
+  // would be buying a Bloodline or reloading the page.
+  //
+  // Left/right step by one and up/down by five. consumeDir is edge-triggered
+  // and deliberately never repeats (see engine.js), so a pure ±1 slider would
+  // be nineteen separate presses to reach the top of the range; the coarse
+  // axis makes the far end reachable without giving up single-Cultist aim.
+  _mintInput = {
+    handleInput(inp) {
+      // While the transaction is in flight the controls are disabled, and that
+      // has to include these — otherwise A fires a second mint over the first.
+      if (cultistRange.disabled) return;
+      const lo = Number(cultistRange.min) || 1;
+      const hi = Number(cultistRange.max) || 20;
+      let d;
+      // Drained rather than read once: the queue can hold more than one press
+      // between frames, and dropping the rest makes the slider feel sticky.
+      while ((d = inp.consumeDir ? inp.consumeDir() : null)) {
+        const step = (d === 'up' || d === 'down') ? 5 : 1;
+        const way = (d === 'right' || d === 'up') ? 1 : -1;
+        const was = Number(cultistRange.value);
+        const now = Math.min(hi, Math.max(lo, was + way * step));
+        if (now !== was) { cultistRange.value = String(now); paint(); sfx.click(); }
+      }
+      if (inp.consumeAPress()) { onRaise(); return; }
+      if (inp.consumeBPress()) {
+        teardown();
+        closeBloodlinePicker();
+        if (menu) menu.sel = 0;
+      }
+    },
   };
+  // The A press that chose MINT is still sitting in the queue. Unflushed, the
+  // very next frame reads it as "Raise it" and sends a real transaction the
+  // player never asked for.
+  input.flush();
 
   async function onRaise() {
     const n = Number(cultistRange.value);
@@ -1106,10 +1137,10 @@ function powerOn() {
         // Likewise the Bloodline chooser: without this an A press would both
         // take up a Bloodline AND fire whatever the menu had selected behind it.
         if (_picker) { _picker.handleInput(input); return; }
-        // The mint slider likewise. It carries no Back button, so B is the way
-        // out; and it swallows the rest of the input while it is up, or an A
-        // press would work the menu sitting behind the overlay.
-        if (_mintBack) { if (input.consumeBPress()) _mintBack(); return; }
+        // The mint slider likewise: d-pad to set the count, A to raise, B to
+        // back out. It swallows the rest of the input while it is up, or a
+        // press would also work the menu sitting behind the overlay.
+        if (_mintInput) { _mintInput.handleInput(input); return; }
         if (scene) scene.update(dt, input);
       },
       () => {
