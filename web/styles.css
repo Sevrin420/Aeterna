@@ -176,48 +176,32 @@ html, body {
 .power-switch.dragging .power-knob { transition: none; }
 .power-switch[aria-pressed="true"] .power-knob { left: 53%; }
 
-/* ===== Mute and Speech: the console's start/select pair =====
-   These used to sit ON the screen, in its top-right corner, which is where a
-   status icon goes and not where a control goes — a playtester reached up into
-   the picture for them while every other control was under their thumbs.
-   They are console furniture now, in the seam between the d-pad and the face
-   buttons.
-
-   The placement is NOT eyeballed. Every control here is a percentage box over
-   fixed artwork, and the touch zones are deliberately larger than the drawn
-   buttons, so the free space is narrower than it looks: the d-pad's zone runs
-   to 46.5%, A begins at 71.5%, and B's top edge is at 79.9%. The corridor below
-   is what is actually clear of all three, with a margin on each side.
-
-   They still fade with the power. A lit button on a dead console reads as a
-   rendering fault, and there is nothing to mute or say while it is off. */
+/* ===== Mute toggle ===== */
+/* sits fully inside the top-right corner of the screen (the bezel spans
+   4.69%..95.22% wide, 3.45% from the top) */
+/* The mute toggle lives ON the screen, so it has no business being visible
+   while the screen is dark — a lit green button floating over a dead CRT reads
+   as a rendering bug. It fades in and out with the power, on the same easing
+   the screen uses, and is not clickable while the console is off. */
 .mute-toggle {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.45s ease;
   position: absolute;
-  left: 48%;
-  top: 69.5%;
+  right: 5.6%;
+  top: 4.8%;
   width: 5%;
   aspect-ratio: 1;
   z-index: 6;
   border-radius: 50%;
-  /* Nearly solid, and beveled like the power switch's knob. The old fill was
-     translucent because it sat on a black screen and only had to tint it; on
-     carved stone it let the artwork through and the button read as an etching
-     in the rock rather than as something to press. */
-  background: linear-gradient(180deg, #16301f 0%, #0a1a10 60%, #060d08 100%);
+  background: rgba(6, 20, 12, 0.8);
   border: 1px solid #2f7a4e;
-  color: #6effb4;
+  color: #59ffa6;
   font-size: clamp(7px, 2.2cqw, 11px);
   line-height: 1;
-  display: grid;
-  place-items: center;
   cursor: pointer;
   touch-action: none;
-  box-shadow: 0 0.35cqw 0.6cqw rgba(0, 0, 0, 0.75),
-              inset 0 0.25cqw 0 rgba(140, 240, 180, 0.35),
-              0 0 0.9cqw rgba(69, 240, 138, 0.30);
+  box-shadow: 0 0 6px rgba(69, 240, 138, 0.35), inset 0 0 4px rgba(69, 240, 138, 0.2);
 }
 body.powered .mute-toggle {
   opacity: 1;
@@ -875,8 +859,9 @@ body.rite-open .hud {
   pointer-events: none;
   transition: opacity 0.45s ease;
   position: absolute;
-  /* Beside the mute toggle on the console face — see the block above for why
-     this corridor and not somewhere roomier.
+  /* Directly UNDER the mute toggle, in the same column and the same size: the
+     two are a pair of console affordances and belong together rather than at
+     opposite corners of the screen.
 
      The 1.47% step is not eyeballed. `width` is a percentage of the console's
      WIDTH and `top` a percentage of its HEIGHT, and the console is the shape of
@@ -887,26 +872,23 @@ body.rite-open .hud {
      emoji at 12.6%, less the 5% button), converted into height: 2/1.5 = 1.33%.
      Hence 8.13 + 1.33 = 9.47%. Change the art's proportions and this has to be
      recomputed. */
-  left: 55.5%;
-  top: 69.5%;
+  right: 5.6%;
+  top: 9.47%;
   width: 5%;
   aspect-ratio: 1;
   z-index: 7;
   border-radius: 50%;
-  background: linear-gradient(180deg, #16301f 0%, #0a1a10 60%, #060d08 100%);
+  background: rgba(6, 20, 12, 0.8);
   border: 1px solid #2f7a4e;
-  color: #6effb4;
+  color: #59ffa6;
   font-size: clamp(7px, 2.4cqw, 12px);
   line-height: 1;
   display: grid;
   place-items: center;
   cursor: pointer;
-  box-shadow: 0 0.35cqw 0.6cqw rgba(0, 0, 0, 0.75),
-              inset 0 0.25cqw 0 rgba(140, 240, 180, 0.35),
-              0 0 0.9cqw rgba(69, 240, 138, 0.30);
 }
 body.powered .emoji-toggle { opacity: 1; pointer-events: auto; }
-.emoji-toggle:active, .mute-toggle:active { transform: translateY(0.2cqw); filter: brightness(1.3); }
+.emoji-toggle:active { background: rgba(12, 40, 24, 0.95); }
 /* while a dialogue box owns the screen the button steps aside, the way the HUD does */
 body.dialogue-open .emoji-toggle { opacity: 0; pointer-events: none; }
 
