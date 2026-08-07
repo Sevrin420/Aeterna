@@ -747,11 +747,21 @@ body.rite-open .hud {
   pointer-events: none;
   transition: opacity 0.45s ease;
   position: absolute;
-  /* Beside the mute toggle, same size and same vertical line: the two are a
-     pair of console affordances and belong together rather than at opposite
-     corners of the screen. */
-  right: 12.6%;
-  top: 4.8%;
+  /* Directly UNDER the mute toggle, in the same column and the same size: the
+     two are a pair of console affordances and belong together rather than at
+     opposite corners of the screen.
+
+     The 1.47% step is not eyeballed. `width` is a percentage of the console's
+     WIDTH and `top` a percentage of its HEIGHT, and the console is the shape of
+     its artwork — 1024x1536, so its height is 1.5x its width. The button is
+     therefore 5%/1.5 = 3.33% of the height tall, putting mute's bottom edge at
+     4.8 + 3.33 = 8.13%. The gap added on top of that is 2% of the WIDTH, which
+     is exactly the gap the two had when they sat side by side (mute at 5.6%,
+     emoji at 12.6%, less the 5% button), converted into height: 2/1.5 = 1.33%.
+     Hence 8.13 + 1.33 = 9.47%. Change the art's proportions and this has to be
+     recomputed. */
+  right: 5.6%;
+  top: 9.47%;
   width: 5%;
   aspect-ratio: 1;
   z-index: 7;
