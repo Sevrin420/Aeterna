@@ -834,6 +834,11 @@ function closeBloodlinePicker() {
 // any time, which is the difference between "once" and "once, and you had to be
 // looking".
 let _lines = null;
+// The question currently on screen, or null. A prompt is a DOM form, but the
+// console's own A and B are what a player reaches for — and with nothing
+// holding them they fell straight through to the menu BEHIND the overlay,
+// which re-fired the very button that opened the prompt.
+let _asking = null;
 
 async function openLinesScreen(menu) {
   if (!connectedAddr) { showToast('Connect a wallet first.'); if (menu) menu.sel = 0; return; }
@@ -900,9 +905,14 @@ async function openLinesScreen(menu) {
   _lines = {
     index: 0,
     paint,
+    busy: false,
     async choose() {
+      // A card can be tapped as well as chosen with A, and a tap does not go
+      // through handleInput — so the guard lives here rather than there.
+      if (this.busy) return;
       const r = rows[this.index];
       if (!r || r.value) { showToast('That is already set, and set once.'); return; }
+      this.busy = true;
       if (r.kind === 'referrer') {
         const who = await askOverlay({
           title: 'Who brought you here?',
@@ -933,9 +943,11 @@ async function openLinesScreen(menu) {
           } catch (e) { showToast((e && e.message) || 'That name was not accepted.'); }
         }
       }
-      // Re-opened rather than repainted: askOverlay borrows this same overlay
-      // and leaves it dressed for a prompt.
-      openLinesScreen(menu);
+      // Re-opened rather than repainted: askOverlay borrows this same overlay,
+      // leaves it dressed for a prompt, and has just cleared _lines. Awaited,
+      // so nothing runs against a half-built screen.
+      this.busy = false;
+      await openLinesScreen(menu);
     },
     handleInput(inp) {
       const d = inp.consumeDir ? inp.consumeDir() : null;
@@ -969,6 +981,14 @@ function closeLinesScreen(menu) {
 function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = 'Not now' }) {
   return new Promise((resolve) => {
     if (_mintTeardown) _mintTeardown();
+    // AND the LINES screen, which is the one that opens these. It is a d-pad
+    // screen holding the controls, and left live it goes on eating A presses
+    // while its own prompt is up: pressing A to confirm a name re-entered
+    // choose(), opened a SECOND prompt over the first, and wiped what had been
+    // typed — two prompts then sharing one pair of buttons, each removing the
+    // other's listeners. That is the naming "glitch". It re-opens itself when
+    // the prompt resolves.
+    _lines = null;
     walletOverlay.classList.remove('picking', 'lines', 'minting');
     // Naming, the X handle and the referral are all one short question with a
     // way out. They get their own dress — see the `.asking` block in
@@ -999,6 +1019,7 @@ function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = '
     try { walletInput.focus(); } catch { /* not focusable on some mobile shells */ }
 
     const done = (value) => {
+      _asking = null;
       // Off on EVERY exit — confirmed, skipped or Entered. Left on, the next
       // screen to borrow this overlay comes up wearing type meant for a
       // three-word question.
@@ -1017,6 +1038,11 @@ function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = '
     walletSubmitBtn.addEventListener('click', onOk);
     walletSkipBtn.addEventListener('click', onSkip);
     walletInput.addEventListener('keydown', onKey);
+    // A confirms, B backs out — the same two buttons that mean that everywhere
+    // else. Typing is unaffected: the engine ignores the keyboard entirely
+    // while a text field has focus, so this only ever fires from the console's
+    // own on-screen buttons.
+    _asking = { ok: onOk, skip: onSkip };
   });
 }
 
@@ -1363,6 +1389,13 @@ function powerOn() {
         if (emojiWheel.open) { emojiWheel.handleInput(input); return; }
         // Likewise the Bloodline chooser: without this an A press would both
         // take up a Bloodline AND fire whatever the menu had selected behind it.
+        // A question owns the buttons before anything else does.
+        if (_asking) {
+          if (input.consumeAPress()) _asking.ok();
+          else if (input.consumeBPress()) _asking.skip();
+          if (input.consumeDir) input.consumeDir();
+          return;
+        }
         if (_picker) { _picker.handleInput(input); return; }
         // The mint slider likewise: d-pad to set the count, A to raise, B to
         // back out. It swallows the rest of the input while it is up, or a
@@ -1464,6 +1497,13 @@ const backableOverlays = () => [
   walletOverlay, chatForm,
 ];
 function anyOverlayOpen() { return backableOverlays().some((o) => o && !o.hidden); }
+// The overlay screens that run their own input loop each have a B of their own,
+// and theirs knows what to undo. This escape hatch predates all of them and
+// knows only one move — hide the wallet overlay and call the picker closed —
+// so on a naming prompt it left the prompt's promise unresolved, its dress
+// still on the overlay and the screen simply gone. That was the other half of
+// the naming "glitch": B did not back out of the question, it deleted it.
+function screenOwnsB() { return !!(_asking || _picker || _mintInput || _lines); }
 function backOut() {
   if (!communionOverlay.hidden) { communionOverlay.hidden = true; return true; }
   if (!walletOverlay.hidden) { closeBloodlinePicker(); if (scene && scene.resume) scene.resume(); return true; }
@@ -1473,7 +1513,7 @@ function backOut() {
 
 const btnBEl = document.getElementById('btnB');
 document.addEventListener('pointerdown', (e) => {
-  if (!anyOverlayOpen()) return;
+  if (!anyOverlayOpen() || screenOwnsB()) return;
   if (e.target === btnBEl || (btnBEl && btnBEl.contains(e.target))) {
     e.stopImmediatePropagation(); e.preventDefault();
     sfx.click(); backOut();
@@ -1482,7 +1522,7 @@ document.addEventListener('pointerdown', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'KeyX' && e.code !== 'ShiftLeft') return;
   const typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
-  if (typing || !anyOverlayOpen()) return;
+  if (typing || !anyOverlayOpen() || screenOwnsB()) return;
   e.stopImmediatePropagation(); e.preventDefault();
   backOut();
 }, true);
