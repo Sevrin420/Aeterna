@@ -12,7 +12,6 @@
 // break is a beat.
 
 import { GOLD, BLOOD, SOUL, BONE, IRON } from './palette.js';
-import { GAME_NAME } from './config.js';
 // The cast's own switch, not a second one: when BIRDS is false the sprites are
 // people again, and so are the few lines below that name a body part. One flag
 // moves the pictures and the words together.
@@ -21,10 +20,11 @@ import { BIRDS } from './pixelchar.js';
 const HANDS = BIRDS ? 'claws' : 'hands';
 
 export const LORE = {
-  // The Doctrine opens by telling the player what the game IS and what to do
-  // today, and only then goes on to what the abbey believes. It used to open
-  // with the creed, which is the right first page for a cult and the wrong one
-  // for someone who has just walked in and wants to know which way to walk.
+  // The Doctrine tells the player what the game IS and what to do today, and
+  // then how the abbey pays for it. It used to open on the creed — the right
+  // first page for a cult and the wrong one for someone who has just walked in
+  // and wants to know which way to walk — and that page is now gone entirely
+  // rather than merely demoted.
   //
   // Each page here is kept short on purpose. The box paginates anything that
   // overflows, so a page written long silently becomes two and the numbering
@@ -63,17 +63,16 @@ export const LORE = {
         + 'That is how the day is closed, counted, and saved.',
     },
     {
-      speaker: 'The Doctrine',
-      text: `${GAME_NAME} is a death-cult.\n\n`
-        + 'Spirits gather in the sanctuary beneath the inverted cross to earn '
-        + 'Devotion. Devotion is the only thing the abbey counts, and it counts '
-        + 'everything.',
-    },
-    {
-      text: 'The abbey sets duties, and it sets them fresh every day.\n\n'
-        + 'Walk the halls. Where something can be done, a gold mark appears '
-        + 'over your head. That is the only invitation you will get, and it is '
-        + 'the only one you need.',
+      // The creed that opened this section — "<name> is a death-cult", and the
+      // spirits gathering under the inverted cross — is gone. The two pages
+      // below were written as its continuation and carried no heading of their
+      // own, so this one takes a heading rather than trailing unlabelled off
+      // the end of "Then Sleep", which is about something else entirely.
+      // Trimmed by a line when it took the heading: a heading costs a line of
+      // frame, and this was written at the full eight an unheaded page gets.
+      speaker: 'The Abbey',
+      text: 'The abbey sets duties, fresh every day.\n\n'
+        + 'Where something can be done, a gold mark appears over your head.',
     },
     {
       text: 'Keep the day\'s duties and your streak grows.\n\n'
