@@ -752,7 +752,7 @@ fastify.get('/bloodlines', async (req, reply) => {
   if (!ids.length) return [];
   const holes = ids.map(() => '?').join(',');
   const rows = db.prepare(
-    `SELECT token_id, bloodline_name, cultists, devotion, streak FROM players WHERE token_id IN (${holes})`
+    `SELECT token_id, bloodline_name, cultists, devotion, streak, x_handle FROM players WHERE token_id IN (${holes})`
   ).all(...ids);
   reply.header('Cache-Control', 'no-store');
   return rows;

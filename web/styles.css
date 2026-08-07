@@ -657,6 +657,19 @@ body.powered .mute-toggle {
 .wallet-overlay.picking .cultist-grid.bloodline-list { max-height: 70%; }
 .wallet-overlay.picking .bloodline-list .cultist-card { gap: 2px; }
 
+/* ---- LINES ------------------------------------------------------------
+   The same large type the picker uses — this is a reading screen, and the two
+   things on it are a name and a handle. `unset` is the whole point of the
+   screen, so it is marked rather than left to be inferred from wording. */
+.wallet-overlay.lines .naming-title { font-size: clamp(9px, 3.1cqw, 15px); }
+.wallet-overlay.lines .bl-name { font-size: clamp(11px, 4.2cqw, 20px); }
+.wallet-overlay.lines .bl-sub { font-size: clamp(8px, 2.7cqw, 13px); }
+.wallet-overlay.lines .wallet-msg { min-height: 0; }
+.wallet-overlay.lines .cultist-grid.bloodline-list { max-height: 70%; }
+.wallet-overlay.lines .bloodline-list .cultist-card { gap: 2px; }
+.wallet-overlay.lines .cultist-card.unset .bl-name { color: #9b8ba6; }
+.wallet-overlay.lines .cultist-card.unset .bl-sub { color: #d24b4b; }
+
 .wallet-back {
   background: none;
   border: none;

@@ -560,6 +560,7 @@ function enterEntrance(player) {
     // so they wear the same bitumen. Every box inside the abbey is untouched.
     onMint: () => { box.show(LORE.mint, { theme: THEMES.bitumen, onClose: () => openMintPicker(menu) }); },
     onDocs: () => box.show(LORE.doctrine, { theme: THEMES.bitumen }),
+    onLines: () => openLinesScreen(menu),
   });
   // The box owns input and the screen while it is up, exactly as in the abbey.
   const baseUpdate = menu.update.bind(menu);
@@ -818,6 +819,148 @@ function closeBloodlinePicker() {
   // picker's.
   walletOverlay.classList.remove('minting');
   walletOverlay.classList.remove('picking');
+}
+
+// ---- LINES: what you hold, and the two things you can still put on it ------
+//
+// A playtester quit during the naming prompt and never got it back — the name
+// was offered once, at the mint, and nowhere else — so they finished a session
+// not knowing what their own Bloodlines were called. The referral was worse:
+// pressing "not now" recorded a decline server-side and it was never offered
+// again.
+//
+// This screen is where both live afterwards. Nothing here can be CHANGED — a
+// name and a referrer are set once — but anything still unset can be set, at
+// any time, which is the difference between "once" and "once, and you had to be
+// looking".
+let _lines = null;
+
+async function openLinesScreen(menu) {
+  if (!connectedAddr) { showToast('Connect a wallet first.'); if (menu) menu.sel = 0; return; }
+  if (_mintTeardown) _mintTeardown();
+  walletOverlay.hidden = false;
+  walletOverlay.classList.remove('picking', 'minting');
+  walletOverlay.classList.add('lines');
+  walletConnectBtn.hidden = true;
+  walletInput.hidden = true;
+  walletSkipBtn.hidden = true;
+  walletSubmitBtn.hidden = true;
+  cultistSlider.hidden = true;
+  walletTitle.textContent = 'Your Bloodlines';
+  walletMsg.innerHTML = '<span class="bl-hint">D-PAD · A TO SET · B BACK</span>';
+  cultistGrid.hidden = false;
+  cultistGrid.className = 'cultist-grid bloodline-list';
+
+  // Freshest names and handles, and who brought this wallet in.
+  try { heldBloodlines = await withNames(await fetchBloodlines(connectedAddr)); } catch { /* show what we have */ }
+  let me = null;
+  try { me = await api.me(); } catch { /* the referrer row simply reads unknown */ }
+
+  const rows = [];
+  // The referrer is a property of the WALLET, not of one line — the referrals
+  // table is unique on the referee — so it is one row above the list rather
+  // than repeated against every Bloodline.
+  rows.push({
+    kind: 'referrer',
+    label: 'Brought here by',
+    value: me && me.referred ? `@${me.referred}` : null,
+    empty: 'not set — press A',
+  });
+  for (const bl of heldBloodlines) {
+    rows.push({
+      kind: 'name',
+      bl,
+      label: bl.name && bl.name.trim() && !/^Bloodline #/.test(bl.name) ? bl.name : null,
+      value: bl.name && bl.name.trim() && !/^Bloodline #/.test(bl.name) ? bl.name : null,
+      empty: 'unnamed — press A',
+      sub: `Bloodline #${bl.id}${bl.x_handle ? `  ·  @${bl.x_handle}` : ''}`,
+    });
+  }
+
+  const paint = () => {
+    cultistGrid.innerHTML = '';
+    rows.forEach((r, i) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'cultist-card' + (i === _lines.index ? ' sel' : '') + (r.value ? '' : ' unset');
+      const n = document.createElement('span');
+      n.className = 'bl-name';
+      n.textContent = r.kind === 'referrer'
+        ? (r.value ? `${r.label}: ${r.value}` : r.label)
+        : (r.value || 'Unnamed');
+      const sub = document.createElement('span');
+      sub.className = 'bl-sub';
+      sub.textContent = r.value ? (r.sub || 'set') : r.empty;
+      card.append(n, sub);
+      card.addEventListener('click', () => { _lines.index = i; paint(); _lines.choose(); });
+      cultistGrid.appendChild(card);
+    });
+  };
+
+  _lines = {
+    index: 0,
+    paint,
+    async choose() {
+      const r = rows[this.index];
+      if (!r || r.value) { showToast('That is already set, and set once.'); return; }
+      if (r.kind === 'referrer') {
+        const who = await askOverlay({
+          title: 'Who brought you here?',
+          message: `Name the X handle of the Cultist who brought you in. You are both granted ${REFERRAL_DEVOTION} Devotion — once.`,
+          placeholder: '@theirhandle',
+          confirm: 'Speak the name',
+        });
+        if (who) {
+          try {
+            const res = await api.referral(who);
+            r.value = `@${String(who).replace(/^@/, '')}`;
+            showToast(res && res.credited ? 'Named. You are both counted.' : 'Named.');
+          } catch (e) { showToast((e && e.message) || 'That name was not accepted.'); }
+        }
+      } else {
+        const given = await askOverlay({
+          title: 'Name the Bloodline',
+          message: 'A line is named once. This one has no name yet.',
+          placeholder: 'House Vane',
+          confirm: 'Name it',
+        });
+        if (given) {
+          try {
+            await api.bind(r.bl.id, connectedAddr, given);
+            r.bl.name = given;
+            r.value = given;
+            showToast(`Named — ${given}.`);
+          } catch (e) { showToast((e && e.message) || 'That name was not accepted.'); }
+        }
+      }
+      // Re-opened rather than repainted: askOverlay borrows this same overlay
+      // and leaves it dressed for a prompt.
+      openLinesScreen(menu);
+    },
+    handleInput(inp) {
+      const d = inp.consumeDir ? inp.consumeDir() : null;
+      if (d === 'up' || d === 'down') {
+        const n = rows.length;
+        this.index = (this.index + (d === 'down' ? 1 : n - 1)) % n;
+        sfx.click();
+        paint();
+      }
+      if (inp.consumeAPress()) { this.choose(); return; }
+      if (inp.consumeBPress()) closeLinesScreen(menu);
+    },
+  };
+  paint();
+  input.flush();
+}
+
+// `menu` is optional: the on-screen Back button has no reference to it.
+function closeLinesScreen(menu) {
+  _lines = null;
+  walletOverlay.hidden = true;
+  walletOverlay.classList.remove('lines');
+  cultistGrid.className = 'cultist-grid';
+  cultistGrid.innerHTML = '';
+  if (menu) menu.sel = 0;
 }
 
 // ---- Asking for a single line of text in the entrance overlay ----------------
@@ -1146,6 +1289,7 @@ function proceedIntoGame() {
 }
 
 walletBackBtn.addEventListener('click', () => {
+  if (_lines) { closeLinesScreen(null); return; }
   // Through closeBloodlinePicker, not by hiding the overlay directly: a live
   // picker left behind would go on swallowing every d-pad and A press with
   // nothing on screen to show for it.
@@ -1215,6 +1359,8 @@ function powerOn() {
         // back out. It swallows the rest of the input while it is up, or a
         // press would also work the menu sitting behind the overlay.
         if (_mintInput) { _mintInput.handleInput(input); return; }
+        // LINES likewise: d-pad to move, A to set what is unset, B out.
+        if (_lines) { _lines.handleInput(input); return; }
         if (scene) scene.update(dt, input);
       },
       () => {

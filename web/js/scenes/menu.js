@@ -13,7 +13,7 @@
 // Layout, top to bottom:
 //   the wallet line          connected / not, and the address if it is
 //   a large rotating Cultist turning through all four facings, x N beside it
-//   a 2x2 grid of buttons    Wallet Connect / Play / Mint / Docs
+//   a grid of buttons        Wallet / Play / Mint / Docs / Lines
 
 import { drawPanel, PANEL_TILE, THEMES } from '../dialogue.js';
 import { drawCharacter, getCultistSprite } from '../spritesheet.js';
@@ -31,24 +31,32 @@ const BOX_X = (W - BOX_W) / 2, BOX_Y = (H - BOX_H) / 2;
 
 const FACES = ['down', 'left', 'up', 'right'];   // the order a body turns in
 const TURN = 1.15;                               // seconds a facing is held
-const CULT_H = 58;                               // how tall the display Cultist is
+// How tall the display Cultist is. Came down from 58 when the grid grew a
+// third row: the buttons rise to meet it, and at 58 the bird stood with its
+// feet behind WALLET and PLAY.
+const CULT_H = 44;
 
-// The grid. Two columns, two rows, in reading order.
+// The grid, two columns wide, in reading order. It no longer has to be square:
+// LINES is a fifth entry and sits alone on the bottom row.
 const BUTTONS = [
   { id: 'wallet', label: 'WALLET' },
   { id: 'play', label: 'PLAY' },
   { id: 'mint', label: 'MINT' },
   { id: 'docs', label: 'DOCS' },
+  { id: 'lines', label: 'LINES' },
 ];
+const COLS = 2;
+const ROWS = Math.ceil(BUTTONS.length / COLS);
 const BTN_W = 64, BTN_H = 18, BTN_GAP_X = 6, BTN_GAP_Y = 6;   // 20% smaller
 
 export class MenuScene {
   constructor({ wallet = null, cultists = 0, seed = 'menu', sex = 'male',
-    onConnect = () => {}, onPlay = () => {}, onMint = () => {}, onDocs = () => {} } = {}) {
+    onConnect = () => {}, onPlay = () => {}, onMint = () => {}, onDocs = () => {},
+    onLines = () => {} } = {}) {
     this.wallet = wallet;
     this.cultists = cultists;
     this.sheet = getCultistSprite(seed, sex);
-    this.on = { wallet: onConnect, play: onPlay, mint: onMint, docs: onDocs };
+    this.on = { wallet: onConnect, play: onPlay, mint: onMint, docs: onDocs, lines: onLines };
     this.t = 0;
     this.sel = wallet ? 1 : 0;                   // land on PLAY if already bound
     this.busy = false;
@@ -67,12 +75,15 @@ export class MenuScene {
   exit() {}
 
   _btnRect(i) {
-    const gw = BTN_W * 2 + BTN_GAP_X;
-    const x0 = (W - gw) / 2;
-    const y0 = BOX_Y + BOX_H - PANEL_TILE - 10 - (BTN_H * 2 + BTN_GAP_Y);
+    const gh = BTN_H * ROWS + BTN_GAP_Y * (ROWS - 1);
+    const y0 = BOX_Y + BOX_H - PANEL_TILE - 8 - gh;
+    const col = i % COLS, row = Math.floor(i / COLS);
+    // A lone button on the last row is centred rather than left-hanging.
+    const inRow = Math.min(COLS, BUTTONS.length - row * COLS);
+    const rowW = BTN_W * inRow + BTN_GAP_X * (inRow - 1);
     return {
-      x: x0 + (i % 2) * (BTN_W + BTN_GAP_X),
-      y: y0 + Math.floor(i / 2) * (BTN_H + BTN_GAP_Y),
+      x: (W - rowW) / 2 + col * (BTN_W + BTN_GAP_X),
+      y: y0 + row * (BTN_H + BTN_GAP_Y),
       w: BTN_W, h: BTN_H,
     };
   }
@@ -102,8 +113,21 @@ export class MenuScene {
   update(dt, input) {
     this.t += dt;
     const d = input.consumeDir ? input.consumeDir() : null;
-    if (d === 'left' || d === 'right') { this.sel ^= 1; sfx.click(); }
-    else if (d === 'up' || d === 'down') { this.sel ^= 2; sfx.click(); }
+    // Real grid arithmetic rather than the bit flips this used to do. `sel ^= 1`
+    // and `sel ^= 2` are only a grid while there are exactly four buttons; on
+    // five they walk off the end onto a button that is not there.
+    if (d) {
+      const n = BUTTONS.length;
+      let col = this.sel % COLS, row = Math.floor(this.sel / COLS);
+      if (d === 'left') col = (col + COLS - 1) % COLS;
+      else if (d === 'right') col = (col + 1) % COLS;
+      else if (d === 'up') row = (row + ROWS - 1) % ROWS;
+      else if (d === 'down') row = (row + 1) % ROWS;
+      let next = row * COLS + col;
+      // The last row can be short. Landing on a hole falls back to a real one.
+      if (next >= n) next = (d === 'left' || d === 'right') ? row * COLS : n - 1;
+      if (next !== this.sel) { this.sel = next; sfx.click(); }
+    }
     if (input.consumeAPress()) this._fire();
     input.consumeBPress();
   }
