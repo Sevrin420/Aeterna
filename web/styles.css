@@ -461,6 +461,8 @@ body.powered .mute-toggle {
   pointer-events: none;
   animation: toast-in 0.22s ease-out;
 }
+/* the save, and anything else that asks for it by name — the largest there is */
+.toast.t-huge { font-size: clamp(18px, 8.8cqw, 42px); }
 /* short — a Devotion award, a refusal. This is the one the size is for. */
 .toast.t-big { font-size: clamp(14px, 7cqw, 34px); }
 /* a sentence */

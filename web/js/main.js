@@ -268,16 +268,23 @@ function drawOff() {
 // and would bury it. So would a fixed time on screen — a line long enough to
 // need three lines of type needs longer than one worth four words, so the dwell
 // is read-time rather than a constant.
-function showToast(msg) {
+//
+// A caller can OVERRIDE both, and one does. Length is a decent guess at how
+// much a message matters, but only a guess: "Saved. 150 Devotion secured."
+// and "Saved. 1500 Devotion secured." are the same moment and land either side
+// of a tier boundary purely on the digit count. Anything that matters at a
+// fixed size should say so rather than hope its wording stays short.
+function showToast(msg, { size = null, dwell = null } = {}) {
   const text = String(msg ?? '');
   toastEl.textContent = text;
-  toastEl.className = `toast ${text.length <= 28 ? 't-big' : text.length <= 64 ? 't-mid' : 't-small'}`;
+  const tier = size || (text.length <= 28 ? 't-big' : text.length <= 64 ? 't-mid' : 't-small');
+  toastEl.className = `toast ${tier}`;
   toastEl.hidden = false;
   clearTimeout(toastTimer);
   // ~14 characters a second on top of a fixed beat, capped so nothing camps on
   // the middle of the screen.
-  const dwell = Math.min(5200, 1700 + text.length * 45);
-  toastTimer = setTimeout(() => { toastEl.hidden = true; }, dwell);
+  const ms = dwell ?? Math.min(5200, 1700 + text.length * 45);
+  toastTimer = setTimeout(() => { toastEl.hidden = true; }, ms);
 }
 
 // Character level is derived from total Devotion (Devotion *is* the XP). Each

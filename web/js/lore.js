@@ -154,9 +154,8 @@ export const LORE = {
     confession: {
       speaker: 'The Confessor',
       text: '"You have broken something."\n\n'
-        + '"I can mend it. Once, and once only, and not for nothing — the '
-        + 'abbey does not forgive, it keeps accounts, and this will be a line '
-        + 'in one."\n\n'
+        + '"I can mend it, and not for nothing — the abbey does not forgive, '
+        + 'it keeps accounts, and this will be a line in one."\n\n'
         + '"Kneel, or go."',
     },
     // One page, and it ends in a question — so it has to say what lying down

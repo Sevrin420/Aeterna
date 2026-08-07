@@ -747,15 +747,18 @@ export class CourtyardScene {
         // or names them — "all three" would be an instruction wearing a robe.
         this.dialogue.show([{
           speaker: 'The Abbey',
-          text: 'The day is kept.\n\n'
+          // The warning LEADS now rather than trailing. It also used to be said
+          // twice — this opened on "The day is kept" and closed on "Come back
+          // tomorrow, or lose it" — and one box saying the same thing at both
+          // ends reads as padding.
+          text: 'Come back tomorrow or lose your streak.\n\n'
             + `Your streak stands at ${res.streak} day${res.streak === 1 ? '' : 's'}, `
             + `and every act is now worth ${res.multiplier}x.\n\n`
             // The streak is the thing they will be sorest to lose, and it is
             // only written down when they lie down. Saying it HERE, in the one
             // box a day that they are certain to read, is the whole point of
             // saying it at all.
-            + 'Rest in a bed to set it down, or the day is not yet yours.\n\n'
-            + 'Come back tomorrow, or lose it.',
+            + 'Rest in a bed to set it down.',
         }]);
       }
     } catch (e) {
@@ -836,7 +839,11 @@ export class CourtyardScene {
   async _handleSaveExit() {
     try {
       const res = await api.save();
-      this.onToast(`Saved. ${res.devotion} Devotion secured.`);
+      // Explicitly the largest size and a long dwell: this is the last thing
+      // the game says before the console goes off, and left to the by-length
+      // default it CHANGED SIZE with the Devotion — 150 came up a tier bigger
+      // than 1500, purely because the number was shorter.
+      this.onToast(`Saved. ${res.devotion} Devotion secured.`, { size: 't-huge', dwell: 7000 });
       this.onSaveExit();
     } catch (e) {
       sfx.error();
