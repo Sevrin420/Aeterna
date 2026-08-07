@@ -11,7 +11,7 @@
 // anything that overflows anyway, so the breaks here are editorial: a page
 // break is a beat.
 
-import { GOLD, BLOOD, SOUL, BONE, IRON } from './palette.js';
+import { GOLD, BLOOD } from './palette.js';
 // The cast's own switch, not a second one: when BIRDS is false the sprites are
 // people again, and so are the few lines below that name a body part. One flag
 // moves the pictures and the words together.
@@ -83,22 +83,15 @@ export const LORE = {
         + 'Miss a day and it is gone. The Confessor mends it, for a price.',
     },
     {
+      // The colours are the ones these two already had elsewhere in the docs —
+      // gold and the trophy for what is paid out, blood for the treasury — so
+      // the wedges still mean what they used to before the split was redrawn.
       speaker: 'Where Mint Goes',
       text: '',
       chart: {
         slices: [
-          { label: 'Treasury', sub: 'for the players', pct: 90, color: BLOOD.b, emoji: '\ud83e\ude78' },
-          { label: 'Team', sub: 'keeps it running', pct: 10, color: IRON.l, emoji: '\ud83d\udc64' },
-        ],
-      },
-    },
-    {
-      speaker: 'The Treasury',
-      text: '',
-      chart: {
-        slices: [
-          { label: 'Season 1', sub: 'paid to winners', pct: 50, color: GOLD.b, emoji: '\ud83c\udfc6' },
-          { label: 'Bloodline', sub: 'the abbey, long term', pct: 50, color: SOUL.b, emoji: '\ud83e\uddec' },
+          { label: 'Winners', pct: 80, color: GOLD.b, emoji: '\ud83c\udfc6' },
+          { label: 'Treasury', pct: 20, color: BLOOD.b, emoji: '\ud83e\ude78' },
         ],
       },
     },
