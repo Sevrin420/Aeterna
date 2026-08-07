@@ -260,11 +260,24 @@ function drawOff() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
+// Everything the abbey says back that is not a dialogue box goes through here.
+//
+// The size is chosen from the message, not fixed: see the .toast block in
+// styles.css. A Devotion award is a handful of characters and wants the screen;
+// the explanation of why a wallet holds no Bloodline is a hundred and fourteen
+// and would bury it. So would a fixed time on screen — a line long enough to
+// need three lines of type needs longer than one worth four words, so the dwell
+// is read-time rather than a constant.
 function showToast(msg) {
-  toastEl.textContent = msg;
+  const text = String(msg ?? '');
+  toastEl.textContent = text;
+  toastEl.className = `toast ${text.length <= 28 ? 't-big' : text.length <= 64 ? 't-mid' : 't-small'}`;
   toastEl.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2400);
+  // ~14 characters a second on top of a fixed beat, capped so nothing camps on
+  // the middle of the screen.
+  const dwell = Math.min(5200, 1700 + text.length * 45);
+  toastTimer = setTimeout(() => { toastEl.hidden = true; }, dwell);
 }
 
 // Character level is derived from total Devotion (Devotion *is* the XP). Each

@@ -423,25 +423,53 @@ body.powered .mute-toggle {
 
 
 /* ===== Toast ===== */
+/* The toast: everything the abbey says back to you that is not a dialogue box —
+   Devotion awards, confessions, saves, and the refusals.
+
+   It used to be a small boxed line along the bottom edge, which is where a
+   status bar goes and not where a reward goes: the one moment the game pays you
+   for a day's work read like a tooltip. It is now large gold letters across the
+   middle of the screen, with no panel behind them — the heavy dark outline is
+   what keeps them readable over a lit courtyard, the same way the sprites carry
+   their own outline.
+
+   THE SIZE IS SET FROM THE MESSAGE, in showToast(). This one element carries
+   both "+10 Devotion" and a hundred-and-fourteen-character explanation of why a
+   wallet holds no Bloodline, and there is no single size that flatters both: at
+   award size the long ones fill the screen, and at a size the long ones fit the
+   awards stop landing. Three tiers, picked by length. */
 .toast {
   position: absolute;
-  bottom: 6%;
+  top: 46%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   z-index: 6;
-  background: rgba(5, 3, 1, 0.88);
-  border: 1px solid #6b5227;
-  color: #f4e5bd;
-  font-size: clamp(6px, 1.8cqw, 9px);
-  padding: 4px 10px;
-  border-radius: 3px;
-  white-space: nowrap;
+  width: 88%;
+  text-align: center;
+  color: #f7dd93;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  /* A ring of hard shadows rather than a blur: this is a pixel game, and a
+     soft glow on text reads as a different medium. The warm outer glow is
+     separate and sits under the ring. */
+  text-shadow:
+    -2px 0 0 #1a1006, 2px 0 0 #1a1006, 0 -2px 0 #1a1006, 0 2px 0 #1a1006,
+    -2px -2px 0 #1a1006, 2px -2px 0 #1a1006, -2px 2px 0 #1a1006, 2px 2px 0 #1a1006,
+    0 0 12px rgba(247, 221, 147, 0.45);
   pointer-events: none;
-  animation: toast-in 0.2s ease-out;
+  animation: toast-in 0.22s ease-out;
 }
+/* short — a Devotion award, a refusal. This is the one the size is for. */
+.toast.t-big { font-size: clamp(14px, 7cqw, 34px); }
+/* a sentence */
+.toast.t-mid { font-size: clamp(11px, 4.6cqw, 22px); }
+/* a paragraph: the wallet and Bloodline explanations */
+.toast.t-small { font-size: clamp(9px, 3.4cqw, 16px); }
 @keyframes toast-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 6px)) scale(0.94); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
 
