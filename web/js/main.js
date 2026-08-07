@@ -681,6 +681,7 @@ let _picker = null;
 
 function openBloodlinePicker(menu) {
   if (_mintTeardown) _mintTeardown();
+  walletOverlay.classList.remove('picking');
   walletOverlay.hidden = false;
   walletConnectBtn.hidden = true;
   walletEnterBtn.hidden = true;
@@ -690,11 +691,16 @@ function openBloodlinePicker(menu) {
   cultistSlider.hidden = true;
   cultistGrid.hidden = false;
   cultistGrid.className = 'cultist-grid bloodline-list';
+  walletOverlay.classList.add('picking');   // see the .picking block in styles.css
   cultistGrid.innerHTML = '';
   walletTitle.textContent = 'Choose your Bloodline';
-  walletMsg.innerHTML = `<span class="addr">${shortAddr(connectedAddr)}</span> holds ${heldBloodlines.length} Bloodlines. `
-    + 'Choose the one to take up — you play one at a time, and its Devotion is its own.'
-    + '<br><span class="bl-sub">D-PAD to choose · A to take up · B to go back</span>';
+  // Everything here that was not a CHOICE is gone, and the room it took goes
+  // into the type. The address said nothing that helps pick between two lines;
+  // the count was the length of a list already on screen; and "you play one at
+  // a time, and its Devotion is its own" is a rule, not a difference between
+  // the things being chosen. The controls stay: they are the one thing here a
+  // player cannot work out by reading the cards.
+  walletMsg.innerHTML = '<span class="bl-hint">D-PAD · A TAKE UP · B BACK</span>';
 
   const cards = heldBloodlines.map((bl) => {
     const card = document.createElement('button');
@@ -709,7 +715,8 @@ function openBloodlinePicker(menu) {
     const sub = document.createElement('span');
     sub.className = 'bl-sub';
     const dev = typeof bl.devotion === 'number' ? `  ·  ${bl.devotion} Devotion` : '';
-    sub.textContent = `#${bl.id}  ·  ${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}${dev}`;
+    // No token number: named, it is noise; unnamed, the name above IS the number.
+    sub.textContent = `${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}${dev}`;
     card.append(name, sub);
     if (bl.id === boundToken) card.classList.add('current');
     card.addEventListener('click', () => _picker && _picker.choose(heldBloodlines.indexOf(bl)));
@@ -766,8 +773,10 @@ function closeBloodlinePicker() {
   cultistGrid.className = 'cultist-grid';
   // And the mint's own dress along with it. Left on, the next screen to borrow
   // this overlay would come up in the mint's larger type with its Back button
-  // hidden — and those screens have no B exit of their own.
+  // hidden — and those screens have no B exit of their own. Same for the
+  // picker's.
   walletOverlay.classList.remove('minting');
+  walletOverlay.classList.remove('picking');
 }
 
 // ---- Asking for a single line of text in the entrance overlay ----------------
@@ -776,6 +785,7 @@ function closeBloodlinePicker() {
 function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = 'Not now' }) {
   return new Promise((resolve) => {
     if (_mintTeardown) _mintTeardown();
+    walletOverlay.classList.remove('picking');
     walletOverlay.hidden = false;
     cultistGrid.hidden = true;
     cultistGrid.innerHTML = '';
@@ -903,6 +913,7 @@ async function openMintPicker(menu) {
     return;
   }
   if (_mintTeardown) _mintTeardown();
+  walletOverlay.classList.remove('picking');
   walletOverlay.hidden = false;
   walletConnectBtn.hidden = true;
   walletEnterBtn.hidden = true;

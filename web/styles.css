@@ -630,6 +630,31 @@ body.powered .mute-toggle {
   background: #2e2036;
   border-color: #d24b4b;
 }
+/* ---- THE BLOODLINE PICKER, and only it ---------------------------------
+   `picking` goes on the overlay while the list is up and comes off with it,
+   the same way `minting` scopes the mint slider. Everything below is inside
+   that, so the Cultist grid and the name prompts — which share this overlay —
+   keep the sizes they were tuned at.
+
+   The type is up roughly half again. Two things paid for it: the address and
+   the count came off the screen, and the token number came off every card.
+
+   `.naming-title` is the one element here in Press Start 2P, which is a
+   FULL-EM monospace — about 1.7x the advance of the Courier New the cards
+   inherit. "Choose your Bloodline" is 21 characters, so at 0.02em tracking it
+   needs 21.4x its own size against 337px of content width: 15.7px is where it
+   would touch the edges, and it is set below that to stay on one line. */
+.wallet-overlay.picking .naming-title { font-size: clamp(9px, 3.1cqw, 15px); }
+.wallet-overlay.picking .bl-name { font-size: clamp(11px, 4.2cqw, 20px); }
+.wallet-overlay.picking .bl-sub { font-size: clamp(8px, 2.7cqw, 13px); }
+/* The controls are the one thing on this screen a player cannot work out by
+   reading the cards, so they stay — quietly, under everything else. */
+.bl-hint { color: #7a6a86; font-size: clamp(7px, 2.1cqw, 10px); letter-spacing: 0.04em; }
+.wallet-overlay.picking .wallet-msg { min-height: 0; }
+/* The list gets the room the message gave up. */
+.wallet-overlay.picking .cultist-grid.bloodline-list { max-height: 70%; }
+.wallet-overlay.picking .bloodline-list .cultist-card { gap: 2px; }
+
 .wallet-back {
   background: none;
   border: none;
