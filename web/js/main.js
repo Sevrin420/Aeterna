@@ -969,7 +969,12 @@ function closeLinesScreen(menu) {
 function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = 'Not now' }) {
   return new Promise((resolve) => {
     if (_mintTeardown) _mintTeardown();
-    walletOverlay.classList.remove('picking');
+    walletOverlay.classList.remove('picking', 'lines', 'minting');
+    // Naming, the X handle and the referral are all one short question with a
+    // way out. They get their own dress — see the `.asking` block in
+    // styles.css — because a question with three words of prose on it can
+    // carry far larger type than a screen that has to hold a list.
+    walletOverlay.classList.add('asking');
     walletOverlay.hidden = false;
     cultistGrid.hidden = true;
     cultistGrid.innerHTML = '';
@@ -994,6 +999,10 @@ function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = '
     try { walletInput.focus(); } catch { /* not focusable on some mobile shells */ }
 
     const done = (value) => {
+      // Off on EVERY exit — confirmed, skipped or Entered. Left on, the next
+      // screen to borrow this overlay comes up wearing type meant for a
+      // three-word question.
+      walletOverlay.classList.remove('asking');
       walletInput.hidden = true;
       walletSubmitBtn.hidden = true;
       walletSkipBtn.hidden = true;

@@ -536,6 +536,21 @@ body.powered .mute-toggle {
 
 /* ===== Entrance overlays: Doctrine / Mint / Wallet ===== */
 .lore-overlay[hidden], .wallet-overlay[hidden] { display: none; }
+/* These overlays are THE ABBEY'S PANEL, not a web dialog that happens to float
+   over it. Every box drawn on the canvas — the Doctrine, the stations, the
+   nightly box — is a crimson ground inside a frame of beveled IRON tiles, and
+   these were a flat dark rounded rectangle with a hairline border, which read
+   as a different program.
+
+   The frame is the canvas bevel, rebuilt as a border-image: one 8x8 tile,
+   filled #14121a with a #4a4854 face, lit #6b6878 along its top and left with a
+   #918da0 spark in the corner, shadowed #2e2c36 along its bottom and right.
+   Those are the same values bevelTile() paints in dialogue.js — matched to the
+   ramp rather than eyeballed, so the DOM panel and the canvas panel cannot
+   drift apart. `crispEdges` keeps it square when the console is scaled.
+
+   No border-radius: the canvas frame is built out of squares and has none, and
+   border-image ignores it anyway. */
 .lore-overlay, .wallet-overlay {
   position: absolute;
   inset: 6%;
@@ -544,11 +559,14 @@ body.powered .mute-toggle {
   flex-direction: column;
   align-items: center;
   gap: clamp(4px, 1.6cqw, 8px);
-  background: rgba(6, 4, 8, 0.94);
-  border: 1px solid #3a2c3e;
-  border-radius: 4px;
-  padding: 5% 5% 4%;
+  background: linear-gradient(180deg, #4a1119 0%, #2c0a10 100%);
+  border: clamp(7px, 2.1cqw, 11px) solid transparent;
+  border-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20shape-rendering%3D%22crispEdges%22%3E%3Cg%20transform%3D%22translate%280%2C0%29%22%3E%3Crect%20width%3D%228%22%20height%3D%228%22%20fill%3D%22%2314121a%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%226%22%20fill%3D%22%234a4854%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23918da0%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%226%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%232e2c36%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%232e2c36%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%288%2C0%29%22%3E%3Crect%20width%3D%228%22%20height%3D%228%22%20fill%3D%22%2314121a%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%226%22%20fill%3D%22%234a4854%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23918da0%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%226%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%232e2c36%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%232e2c36%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2816%2C0%29%22%3E%3Crect%20width%3D%228%22%20height%3D%228%22%20fill%3D%22%2314121a%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%226%22%20fill%3D%22%234a4854%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23918da0%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%226%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%232e2c36%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%232e2c36%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%280%2C8%29%22%3E%3Crect%20width%3D%228%22%20height%3D%228%22%20fill%3D%22%2314121a%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%226%22%20fill%3D%22%234a4854%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23918da0%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%226%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%232e2c36%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%232e2c36%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%288%2C8%29%22%3E%3Crect%20width%3D%228%22%20height%3D%228%22%20fill%3D%22%2314121a%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%226%22%20fill%3D%22%234a4854%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23918da0%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%226%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%232e2c36%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%232e2c36%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2816%2C8%29%22%3E%3Crect%20width%3D%228%22%20height%3D%228%22%20fill%3D%22%2314121a%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%226%22%20fill%3D%22%234a4854%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23918da0%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%226%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%232e2c36%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%232e2c36%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%280%2C16%29%22%3E%3Crect%20width%3D%228%22%20height%3D%228%22%20fill%3D%22%2314121a%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%226%22%20fill%3D%22%234a4854%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23918da0%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%226%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%232e2c36%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%232e2c36%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%288%2C16%29%22%3E%3Crect%20width%3D%228%22%20height%3D%228%22%20fill%3D%22%2314121a%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%226%22%20fill%3D%22%234a4854%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23918da0%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%226%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%232e2c36%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%232e2c36%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2816%2C16%29%22%3E%3Crect%20width%3D%228%22%20height%3D%228%22%20fill%3D%22%2314121a%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%226%22%20fill%3D%22%234a4854%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%236b6878%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%222%22%20height%3D%221%22%20fill%3D%22%23918da0%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%226%22%20width%3D%226%22%20height%3D%221%22%20fill%3D%22%232e2c36%22%2F%3E%3Crect%20x%3D%226%22%20y%3D%221%22%20width%3D%221%22%20height%3D%226%22%20fill%3D%22%232e2c36%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E") 8 repeat;
+  padding: 4% 5% 3%;
   text-align: center;
+  /* the lit inner lip the canvas panel has along its top edge */
+  box-shadow: inset 0 1px 0 rgba(198, 43, 48, 0.22),
+              inset 0 -1px 0 rgba(20, 6, 10, 0.5);
 }
 .lore-body {
   flex: 1;
@@ -669,6 +687,31 @@ body.powered .mute-toggle {
 .wallet-overlay.lines .bloodline-list .cultist-card { gap: 2px; }
 .wallet-overlay.lines .cultist-card.unset .bl-name { color: #9b8ba6; }
 .wallet-overlay.lines .cultist-card.unset .bl-sub { color: #d24b4b; }
+
+/* ---- THE QUESTIONS: naming, the X handle, the referral ------------------
+   One short question, a field and two buttons — there is no list to fit and no
+   chart, so this is the screen that can afford the largest type in the game.
+   Scoped under `asking` so the picker, the mint slider and LINES keep theirs.
+
+   The ceiling on the title is arithmetic, not measurement: it is the one
+   element in Press Start 2P, a FULL-EM monospace about 1.7x the advance of the
+   Courier the rest inherits. "Who brought you here?" is 21 characters, so at
+   0.02em tracking it needs 21.4x its own size against 337px of content width —
+   19.4px is where it touches the edges, and it is set below that. Measuring it
+   headless flatters it, because the webfont does not load there and the
+   fallback is the narrow one. */
+.wallet-overlay.asking .naming-title { font-size: clamp(9px, 3.1cqw, 15px); line-height: 1.5; }
+.wallet-overlay.asking .wallet-msg { font-size: clamp(9px, 2.9cqw, 14px); min-height: 0; }
+.wallet-overlay.asking .naming-input {
+  font-size: clamp(12px, 4.2cqw, 20px);
+  width: 90%;
+  max-width: none;
+  padding: 3% 4%;
+}
+.wallet-overlay.asking .naming-submit {
+  font-size: clamp(10px, 3.4cqw, 17px);
+  padding: 3% 7%;
+}
 
 .wallet-back {
   background: none;
