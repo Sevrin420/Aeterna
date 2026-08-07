@@ -696,6 +696,28 @@ body.rite-open .hud {
   color: #6b5227;
   font-size: clamp(6px, 2cqw, 9px);
 }
+/* ---- THE MINT SLIDER, and only it -------------------------------------
+   `minting` is put on the overlay while the count is being chosen and taken
+   off again by the mint's teardown. Everything here is scoped under it so the
+   Cultist chooser and the name/handle prompts — which share this overlay and
+   are much tighter for room — keep the sizes they were tuned at.
+
+   The type is stepped up about a third. The ceilings are the limit rather than
+   the ratios: this sits inside the console's screen, 416px of canvas at its
+   widest, and the count line is the longest thing on it ("20 Cultists"), so
+   these are set where that line still holds one row at the narrowest phone the
+   layout supports. */
+.wallet-overlay.minting .naming-title { font-size: clamp(9px, 3cqw, 15px); }
+.wallet-overlay.minting .wallet-msg { font-size: clamp(8px, 2.4cqw, 12px); }
+.wallet-overlay.minting .cultist-count { font-size: clamp(15px, 4.6cqw, 23px); }
+.wallet-overlay.minting .cultist-cost { font-size: clamp(11px, 3.4cqw, 16px); }
+.wallet-overlay.minting .cultist-ticks { font-size: clamp(8px, 2.6cqw, 12px); }
+.wallet-overlay.minting .naming-submit { font-size: clamp(9px, 3cqw, 15px); padding: 8px 20px; }
+/* The mint page has no Back button. B backs out of it instead, the same way B
+   backs out of the Bloodline chooser — see _mintBack in main.js. Removing the
+   button without that would leave the only exit from this screen a purchase. */
+.wallet-overlay.minting .wallet-back { display: none; }
+
 #cultistRange {
   width: 100%;
   margin: 0;

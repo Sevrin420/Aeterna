@@ -21,7 +21,48 @@ import { BIRDS } from './pixelchar.js';
 const HANDS = BIRDS ? 'claws' : 'hands';
 
 export const LORE = {
+  // The Doctrine opens by telling the player what the game IS and what to do
+  // today, and only then goes on to what the abbey believes. It used to open
+  // with the creed, which is the right first page for a cult and the wrong one
+  // for someone who has just walked in and wants to know which way to walk.
+  //
+  // Each page here is kept short on purpose. The box paginates anything that
+  // overflows, so a page written long silently becomes two and the numbering
+  // of the duties drifts away from the pages describing them — the headings
+  // below only line up with their bodies while every entry fits its frame.
   doctrine: [
+    {
+      speaker: `${GAME_NAME}`,
+      text: 'An eight week mini game.\n\n'
+        + 'Keep the three duties daily. A week held pays more than a week broken.',
+    },
+    {
+      speaker: 'The Daily Three',
+      text: 'Taken IN ORDER:\n\n'
+        + 'I. Light the Brazier\n'
+        + 'II. Purifying Pain\n'
+        + 'III. Holy Ritual',
+    },
+    {
+      speaker: 'I. Light the Brazier',
+      text: 'The north corridor.\n\n'
+        + 'Lay wood in a brazier, then fetch a torch and bring it to the wood.',
+    },
+    {
+      speaker: 'II. Purifying Pain',
+      text: 'The north corridor, behind the Abbot.\n\n'
+        + 'A switch lies there. Take it up and put it into his hands.',
+    },
+    {
+      speaker: 'III. Holy Ritual',
+      text: 'Down the eastern steps.\n\n'
+        + 'Stand on the blood red tile and let the shrine take it from there.',
+    },
+    {
+      speaker: 'Then Sleep',
+      text: 'With all three done, return to the bed chambers and sleep.\n\n'
+        + 'That is how the day is closed, counted, and saved.',
+    },
     {
       speaker: 'The Doctrine',
       text: `${GAME_NAME} is a death-cult.\n\n`
@@ -91,18 +132,13 @@ export const LORE = {
   // collection existed and nobody came back to it — a player could read that
   // the rite had not begun and then scroll straight into the mint screen.
   // Two pages: what a Bloodline is, then what it costs and what a spirit is not.
+  // One page. What a Bloodline costs and what a spirit is not were a second
+  // page, and they are said again on the mint screen itself a moment later —
+  // the box now gets out of the way and lets the rite do the explaining.
   mint: [
     {
       speaker: 'The Binding',
-      // Seven lines on a page with a speaker, eight without. Both entries are
-      // cut to sit inside that, or they spill and the reader gets four pages
-      // to scroll instead of two.
-      text: 'A Bloodline is raised here, bound to your wallet.\n\n'
-        + 'It holds 1 to 20 Cultists, fixed the moment it is raised.',
-    },
-    {
-      text: 'Each Cultist costs 0.01 AVAX and multiplies the season’s payout.\n\n'
-        + 'A spirit earns no Devotion. Only a Bloodline is counted.',
+      text: 'A bloodline is raised here. Bound to your wallet.',
     },
   ],
 

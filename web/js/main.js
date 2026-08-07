@@ -461,6 +461,7 @@ const cultistCost = document.getElementById('cultistCost');
 // because opening MINT a second time must dismantle the first: two live
 // onRaise listeners would send two transactions for one press.
 let _mintTeardown = null;
+let _mintBack = null;          // set while the mint slider owns the screen
 
 // The Doctrine and the mint rite are read in the in-canvas dialogue box now,
 // so the only DOM overlay the entrance still raises is the wallet flow.
@@ -750,6 +751,10 @@ function closeBloodlinePicker() {
   walletOverlay.hidden = true;
   // Hand the grid back to the Cultist picker exactly as it found it.
   cultistGrid.className = 'cultist-grid';
+  // And the mint's own dress along with it. Left on, the next screen to borrow
+  // this overlay would come up in the mint's larger type with its Back button
+  // hidden — and those screens have no B exit of their own.
+  walletOverlay.classList.remove('minting');
 }
 
 // ---- Asking for a single line of text in the entrance overlay ----------------
@@ -924,6 +929,8 @@ async function openMintPicker(menu) {
   walletSubmitBtn.hidden = false;
   walletSubmitBtn.textContent = 'Raise it';
   cultistRange.value = '1';
+  // Bigger type, and no Back button — see the `.minting` block in styles.css.
+  walletOverlay.classList.add('minting');
 
   const paint = () => {
     const n = Number(cultistRange.value);
@@ -937,12 +944,22 @@ async function openMintPicker(menu) {
   const teardown = () => {
     cultistSlider.hidden = true;
     walletSubmitBtn.hidden = true;
+    walletOverlay.classList.remove('minting');
     cultistRange.removeEventListener('input', paint);
     walletSubmitBtn.removeEventListener('click', onRaise);
     walletBackBtn.removeEventListener('click', teardown);
     _mintTeardown = null;
+    _mintBack = null;
   };
   _mintTeardown = teardown;
+  // The way OUT of this screen. The Back button is hidden while the count is
+  // being chosen, so without this the only exits left would be buying a
+  // Bloodline or reloading the page.
+  _mintBack = () => {
+    teardown();
+    closeBloodlinePicker();
+    if (menu) menu.sel = 0;
+  };
 
   async function onRaise() {
     const n = Number(cultistRange.value);
@@ -1089,6 +1106,10 @@ function powerOn() {
         // Likewise the Bloodline chooser: without this an A press would both
         // take up a Bloodline AND fire whatever the menu had selected behind it.
         if (_picker) { _picker.handleInput(input); return; }
+        // The mint slider likewise. It carries no Back button, so B is the way
+        // out; and it swallows the rest of the input while it is up, or an A
+        // press would work the menu sitting behind the overlay.
+        if (_mintBack) { if (input.consumeBPress()) _mintBack(); return; }
         if (scene) scene.update(dt, input);
       },
       () => {

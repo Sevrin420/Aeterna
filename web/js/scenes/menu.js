@@ -19,6 +19,11 @@ import { drawPanel, PANEL_TILE, THEMES } from '../dialogue.js';
 import { drawCharacter, getCultistSprite } from '../spritesheet.js';
 import { BLOOD, GOLD, BONE, VOID, SHADOW, block } from '../palette.js';
 import { sfx } from '../sfx.js';
+import { GAME_NAME } from '../config.js';
+
+// The title over the mint/wallet panel, in the panel's own capitals. Taken from
+// the one name in config.js, so ?oldName=1 rolls this back with everything else.
+const TITLE = GAME_NAME.toUpperCase();
 
 const W = 208, H = 208;
 const BOX_W = 192, BOX_H = 176;
@@ -123,9 +128,9 @@ export class MenuScene {
     ctx.textBaseline = 'alphabetic';
     ctx.font = 'bold 13px "Courier New", monospace';
     ctx.fillStyle = 'rgba(4,4,7,0.85)';
-    ctx.fillText('VITA AETERNA', W / 2 + 1, y + 1);
+    ctx.fillText(TITLE, W / 2 + 1, y + 1);
     ctx.fillStyle = TH.title.l;
-    ctx.fillText('VITA AETERNA', W / 2, y);
+    ctx.fillText(TITLE, W / 2, y);
     ctx.fillStyle = TH.rule;
     ctx.fillRect(inX, y + 4, inW, 1);
 
