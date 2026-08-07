@@ -11,7 +11,7 @@ import { PAGE_TITLE } from './config.js';
 import {
   connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen,
   fetchPricePerCultist, formatAvax, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
-  ensureChain, currentChainId,
+  ensureChain, currentChainId, disconnectWallet,
 } from './wallet.js';
 
 // The tab follows the flag too, so ?oldName=1 rolls the rename back everywhere
@@ -401,10 +401,6 @@ chatInput.addEventListener('keydown', (e) => {
 const CROWD = parseInt(new URLSearchParams(location.search).get('crowd') || '0', 10) || 0;
 
 function enterCourtyard(player) {
-  // A spirit with no bound Cultist walks the abbey but cannot touch it. The
-  // decision is made HERE, once, on the way in — so nothing downstream has to
-  // re-derive it and the two can never disagree.
-  player.ghost = !connectedAddr || heldCultists < 1;
   updateHud(player);
   // Entering the game: auto-unmute, create fresh game bgm, pause title bgm.
   sfx.setMuted(false);
@@ -462,13 +458,12 @@ function revealTransition(next) {
   });
 }
 
-// ---- Entrance lobby (ghost -> Docs/Mint tables -> north arch -> wallet) ----
+// ---- Entrance lobby (wallet -> Bloodline -> the abbey) ----
 const walletOverlay = document.getElementById('walletOverlay');
 const walletTitle = document.getElementById('walletTitle');
 const walletMsg = document.getElementById('walletMsg');
 const cultistGrid = document.getElementById('cultistGrid');
 const walletConnectBtn = document.getElementById('walletConnect');
-const walletEnterBtn = document.getElementById('walletEnter');
 const walletBackBtn = document.getElementById('walletBack');
 const walletInput = document.getElementById('walletInput');
 const walletSubmitBtn = document.getElementById('walletSubmit');
@@ -499,6 +494,19 @@ let heldCultists = 0;
 // Devotion that follows belongs to `boundToken`, not to the address.
 let heldBloodlines = [];
 let boundToken = getTokenId();
+
+// WHY THE ABBEY WOULD NOT LET YOU IN, or null if it will.
+//
+// There is no walking the abbey unbound any more. The old spirit — connected or
+// not, holding nothing, drifting through a world it could not touch — is gone:
+// a playtester spent minutes inside it wondering why nothing responded, which
+// is what a state that looks like play but is not will always cost.
+function playBlockedBy() {
+  if (!connectedAddr) return 'wallet';
+  if (!heldBloodlines.length) return 'bloodline';
+  if (!boundToken) return 'unbound';
+  return null;
+}
 // Mirrors REFERRAL_DEVOTION in server/src/lib/gameLogic.js. Shown to the
 // player before they answer; the server is what actually pays, so if the two
 // ever drift the server wins and this is only a wrong promise on screen.
@@ -543,7 +551,11 @@ function enterEntrance(player) {
     seed: (player && player.wallet) || 'menu',
     sex: (player && player.sex) || 'male',
     onConnect: () => menuConnect(menu),
-    onPlay: () => proceedIntoGame(),
+    onPlay: () => {
+      const why = playBlockedBy();
+      if (why) { box.show([LORE.blocked[why]], { theme: THEMES.bitumen }); return; }
+      proceedIntoGame();
+    },
     // Mint and Docs are opened FROM the menu and are read on the same screen,
     // so they wear the same bitumen. Every box inside the abbey is untouched.
     onMint: () => { box.show(LORE.mint, { theme: THEMES.bitumen, onClose: () => openMintPicker(menu) }); },
@@ -587,9 +599,9 @@ async function menuConnect(menu) {
     menu.status = null;
 
     if (!heldBloodlines.length) {
-      // No Bloodline: they walk in as a spirit, exactly as before.
+      // No Bloodline: there is nothing to walk in AS. Point at the mint.
       menu.sel = 2;                     // point them at MINT
-      showToast(`${shortAddr(addr)} holds no Bloodline. A spirit may walk the abbey but earns no Devotion — MINT to be counted.`);
+      showToast('No Bloodline in this wallet. MINT to be counted.');
     } else if (heldBloodlines.length === 1) {
       await bindBloodline(heldBloodlines[0], menu);
     } else {
@@ -620,6 +632,29 @@ async function menuConnect(menu) {
 //
 // A failure here is cosmetic and must not block play: the chain-derived label
 // stays, and the player picks by number as before.
+// Wait until the wallet REPORTS one more Bloodline than it had.
+//
+// The receipt is not the thing the rest of the entrance depends on — the
+// holding is. Those two come apart in both directions: waitForTx gives up after
+// two minutes on a slow chain while the mint still lands, and an RPC can hand
+// back a receipt and then answer the very next holdings call from a block it
+// has not caught up to. Waiting on the fact itself covers both.
+//
+// This is what a playtester fell into: the receipt timed out, the mint handler
+// gave up, and they were left holding a Bloodline the game had not bound —
+// connected, paid, and unable to play.
+async function waitForNewBloodline(before, { tries = 40, everyMs = 3000 } = {}) {
+  if (isDemoMode()) return fetchBloodlines(connectedAddr);
+  for (let i = 0; i < tries; i++) {
+    try {
+      const list = await fetchBloodlines(connectedAddr);
+      if (list.length > before) return list;
+    } catch { /* an RPC hiccup is not an answer — keep asking */ }
+    await new Promise((r) => setTimeout(r, everyMs));
+  }
+  return null;
+}
+
 async function withNames(list) {
   if (!list.length || isDemoMode()) return list;
   try {
@@ -691,7 +726,6 @@ function openBloodlinePicker(menu) {
   walletOverlay.classList.remove('picking');
   walletOverlay.hidden = false;
   walletConnectBtn.hidden = true;
-  walletEnterBtn.hidden = true;
   walletInput.hidden = true;
   walletSubmitBtn.hidden = true;
   walletSkipBtn.hidden = true;
@@ -798,7 +832,6 @@ function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = '
     cultistGrid.innerHTML = '';
     cultistSlider.hidden = true;
     walletConnectBtn.hidden = true;
-    walletEnterBtn.hidden = true;
     walletTitle.textContent = title;
     walletMsg.innerHTML = message;
     walletInput.value = '';
@@ -923,7 +956,6 @@ async function openMintPicker(menu) {
   walletOverlay.classList.remove('picking');
   walletOverlay.hidden = false;
   walletConnectBtn.hidden = true;
-  walletEnterBtn.hidden = true;
   walletInput.hidden = true;
   walletSkipBtn.hidden = true;
   cultistGrid.hidden = true;
@@ -1029,10 +1061,19 @@ async function openMintPicker(menu) {
     walletSubmitBtn.disabled = true;
     walletMsg.textContent = `Confirm ${n} Cultist${n === 1 ? '' : 's'} in your wallet…`;
     try {
+      const before = heldBloodlines.length;
       const hash = await mintBloodline(connectedAddr, n);
       walletMsg.innerHTML = `Sent. Waiting for the chain to seal it…<br><span class="addr">${String(hash).slice(0, 18)}…</span>`;
       const receipt = await waitForTx(hash);
       if (receipt && receipt.status === '0x0') throw new Error('The transaction was reverted.');
+
+      // A timed-out receipt is NOT a failed mint, and is no longer treated as
+      // one. Either way the wait runs until the line actually shows up in the
+      // wallet. The overlay stays up for it: the player has just paid, and a
+      // menu with nothing happening on it is the worst place to leave them.
+      walletMsg.textContent = 'Raised. Waiting for the abbey to see it…';
+      const list = await waitForNewBloodline(before);
+
       teardown();
       // Hand the controls back BEFORE the bind, which opens the handle and
       // referral prompts on this same button. Leaving them disabled until the
@@ -1040,15 +1081,18 @@ async function openMintPicker(menu) {
       cultistRange.disabled = false;
       walletSubmitBtn.disabled = false;
       walletOverlay.hidden = true;
-      if (!receipt) {
-        showToast('Mint sent but not yet confirmed. Reconnect in a moment to see it.');
+      if (!list) {
+        // Not lost — not seen yet. The name can be given later from LINES, so
+        // nothing is stranded by this.
+        showToast('The mint is sent but has not appeared yet. Press WALLET when it lands.');
         return;
       }
-      heldBloodlines = await withNames(await fetchBloodlines(connectedAddr));
+      heldBloodlines = await withNames(list);
       heldCultists = totalCultists(heldBloodlines);
       const fresh = heldBloodlines[heldBloodlines.length - 1];
       showToast(`The Bloodline is raised — ${n} Cultist${n === 1 ? '' : 's'}.`);
-      // Named here, at the moment it is raised, and never again.
+      // Offered here, at the moment it is raised. No longer the ONLY chance:
+      // skipping it leaves the line unnamed and LINES can name it later.
       let given = null;
       if (fresh) {
         given = await askOverlay({
@@ -1101,7 +1145,6 @@ function proceedIntoGame() {
   });
 }
 
-walletEnterBtn.addEventListener('click', proceedIntoGame);
 walletBackBtn.addEventListener('click', () => {
   // Through closeBloodlinePicker, not by hiding the overlay directly: a live
   // picker left behind would go on swallowing every d-pad and A press with
@@ -1200,6 +1243,27 @@ function powerOff() {
   if (scene && scene.exit) scene.exit();
   scene = null;
   if (socket) { socket.disconnect(); socket = null; }
+
+  // THE SWITCH IS A POWER SWITCH. It used to tear down the scene, the socket
+  // and the music and leave the wallet exactly where it was, so turning the
+  // console off and on again came back still holding someone's Bloodline — and
+  // a playtester reasonably expected otherwise. It now lets go of everything
+  // the session knew about the player, which also makes power-cycling the
+  // reliable way back to the naming and referral prompts.
+  //
+  // For an injected wallet there is no true disconnect: the page can drop what
+  // it knows, but the provider stays authorised. Dropping our own state is the
+  // part that is ours to do.
+  disconnectWallet().catch(() => { /* nothing to hang up */ });
+  connectedAddr = null;
+  heldBloodlines = [];
+  heldCultists = 0;
+  boundToken = null;
+  setTokenId(null);
+  chosenCultist = null;
+  entrancePlayer = null;
+  _askedThisSession.clear();
+
   chatForm.hidden = true;
   hud.hidden = true;
   toastEl.hidden = true;

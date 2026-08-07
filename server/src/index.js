@@ -114,7 +114,7 @@ fastify.get('/nft/:tokenId/image.svg', async (req, reply) => {
   <rect x="18" y="18" width="564" height="564" fill="none" stroke="#9a7018" stroke-width="3"/>
   <rect x="28" y="28" width="544" height="544" fill="none" stroke="#4a0d16" stroke-width="1"/>
   <text x="300" y="96" font-family="Courier New,monospace" font-size="30" font-weight="bold"
-        fill="#e85a4a" text-anchor="middle">VITA AETERNA</text>
+        fill="#e85a4a" text-anchor="middle">THROBBIN ABBEY</text>
   <text x="300" y="132" font-family="Courier New,monospace" font-size="17"
         fill="#c9a35f" text-anchor="middle">${given || `BLOODLINE #${esc(tokenId)}`}</text>
   ${given ? `<text x="300" y="152" font-family="Courier New,monospace" font-size="12"
@@ -240,6 +240,14 @@ function cleanBloodlineName(v) {
   return t && BLOODLINE_NAME_RE.test(t) ? t : null;
 }
 
+// A Bloodline that was never named. Older rows stored the fallback STRING
+// rather than NULL, which made them look named to every check that asked — so
+// they could never be named afterwards, and the NFT metadata rendered them as
+// "Bloodline #7 — Bloodline #7". Both spellings of "no name" are accepted here.
+function isUnnamed(name, tokenId) {
+  return !name || String(name).trim() === '' || String(name).trim() === `Bloodline #${tokenId}`;
+}
+
 fastify.post('/bind', async (req, reply) => {
   const { wallet, tokenId, address, bloodlineName } = req.body || {};
   const tid = Number(tokenId);
@@ -277,9 +285,10 @@ fastify.post('/bind', async (req, reply) => {
     if (bound.cultists !== onChain.cultists) {
       db.prepare('UPDATE players SET cultists = ? WHERE id = ?').run(onChain.cultists, bound.id);
     }
-    // Named once, at creation. A Bloodline bound before this existed has no
-    // name yet, so it may still take one; one that already has a name keeps it.
-    if (cleanName && !bound.bloodline_name) {
+    // Named ONCE, but not necessarily at creation. A line that is still
+    // unnamed may take a name at any time — the entrance offers it at the mint
+    // and LINES offers it afterwards — and one that has a name keeps it.
+    if (cleanName && isUnnamed(bound.bloodline_name, tid)) {
       db.prepare('UPDATE players SET bloodline_name = ? WHERE id = ?').run(cleanName, bound.id);
     }
     return ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE id = ?').get(bound.id));
@@ -302,7 +311,7 @@ fastify.post('/bind', async (req, reply) => {
         devotion = 0, streak = 0, level = 1, last_duty_date = NULL, confession_count = 0,
         flags_date = ?, pray_today = 0, garden_today = 0, candles_today = 0,
         scourge_today = 0, gifts_given_today = 0, gifts_received_today = 0
-      WHERE id = ?`).run(tid, onChain.cultists, cleanName || `Bloodline #${tid}`, todayStr(), ghost.id);
+      WHERE id = ?`).run(tid, onChain.cultists, cleanName || null, todayStr(), ghost.id);
     return ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE id = ?').get(ghost.id));
   }
 
@@ -314,7 +323,7 @@ fastify.post('/bind', async (req, reply) => {
     wallet: w,
     token_id: tid,
     cultists: onChain.cultists,
-    bloodline_name: cleanName || `Bloodline #${tid}`,
+    bloodline_name: cleanName || null,
     name: sibling ? sibling.name : `Bloodline ${tid}`,
     prefix: sibling ? sibling.prefix : 'Brother',
     sex: sibling ? sibling.sex : 'male',

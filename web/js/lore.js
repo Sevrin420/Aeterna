@@ -97,6 +97,24 @@ export const LORE = {
     },
   ],
 
+  // Why PLAY would not open. There is no wandering the abbey unbound any more —
+  // either you are counted or you are not in — so the refusal has to say what
+  // is missing and what to press, or it is just a locked door.
+  blocked: {
+    wallet: {
+      speaker: 'The Door is Shut',
+      text: 'No wallet is bound.\n\nPress WALLET to connect, then take up a Bloodline.',
+    },
+    bloodline: {
+      speaker: 'The Door is Shut',
+      text: 'Your wallet holds no Bloodline.\n\nPress MINT to raise one. Nothing here is counted without it.',
+    },
+    unbound: {
+      speaker: 'The Door is Shut',
+      text: 'You hold a Bloodline but have not taken one up.\n\nPress WALLET to choose which line walks today.',
+    },
+  },
+
   // The mint IS open. This said it was not, because it was written before the
   // collection existed and nobody came back to it — a player could read that
   // the rite had not begun and then scroll straight into the mint screen.
