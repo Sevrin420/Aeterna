@@ -159,6 +159,15 @@ export function chartHeight(chart) {
   return Math.max(PIE_R * 2 + 10, legend) + 6;
 }
 
+// A page can carry a MENU: a short list the reader moves through with the
+// d-pad and opens with A, whose entries are read inside the same page rather
+// than becoming pages of their own. The three daily duties use it — as separate
+// pages they pushed everything after them four turns further away, and a reader
+// who only wanted the second one had to walk past the first.
+//
+// The list costs the page the height it occupies, the same way a chart does.
+function menuHeight(menu) { return menu.items.length * LINE_H + 8; }
+
 function drawChart(ctx, x, y, w, chart, t) {
   const cx = x + PIE_R + 2;
   const cy = y + PIE_R + 6;
@@ -257,24 +266,45 @@ export class DialogueBox {
       const text = typeof p === 'string' ? p : p.text;
       const who = typeof p === 'string' ? speaker : (p.speaker ?? speaker);
       const chart = typeof p === 'string' ? null : (p.chart || null);
+      const rawMenu = typeof p === 'string' ? null : (p.menu || null);
+      // Wrapped here rather than in the lore, and into a COPY — wrapping in
+      // place would bake the measurements into the shared LORE object and grow
+      // it every time the box is opened.
+      const menu = rawMenu ? {
+        items: rawMenu.items.map((it) => ({
+          label: it.label,
+          lines: this._wrap(it.text),
+        })),
+        // What one opened entry has to fit in: the frame, less the page's own
+        // heading, less the entry's title line. NOT less a row for the "B
+        // BACK" hint — that is drawn down in the panel's indicator strip,
+        // where the ordinary next-page mark goes, and no page counts it
+        // against its text.
+        room: Math.max(1, Math.floor((IN_H - (who ? SPEAKER_H : 0) - (LINE_H + 2)) / LINE_H)),
+      } : null;
       // A chart eats the top of the frame, so its page has fewer lines to give.
-      // So does a row of choices, which sits where the close indicator would.
+      // So does a row of choices, which sits where the close indicator would,
+      // and so does a menu.
       const used = (who ? SPEAKER_H : 0) + (chart ? chartHeight(chart) : 0)
-        + (this.choices ? CHOICE_H : 0);
+        + (this.choices ? CHOICE_H : 0) + (menu ? menuHeight(menu) : 0);
       const room = Math.max(1, Math.floor((IN_H - used) / LINE_H));
       const lines = this._wrap(text);
       // long entries spill onto further pages rather than overflowing the frame
       for (let i = 0; i < lines.length; i += room) {
         this.pages.push({
           speaker: i === 0 ? who : null,
-          // the chart belongs to the first page of its entry, never a spill
+          // the chart and the menu belong to the first page of their entry,
+          // never to a spill
           chart: i === 0 ? chart : null,
+          menu: i === 0 ? menu : null,
           lines: lines.slice(i, i + room),
         });
       }
     }
     this.page = 0;
     this.t = 0;
+    this.menuIndex = 0;      // which entry of a page's menu is under the cursor
+    this.menuOpen = null;    // which one is being read, or null for the list
     this.open = true;
     this.onClose = onClose;
     this.hold = hold;
@@ -291,6 +321,8 @@ export class DialogueBox {
   close() {
     this.choices = null;
     this.onChoice = null;
+    this.menuIndex = 0;
+    this.menuOpen = null;
     this.theme = THEMES.crimson;   // the next box is an abbey box unless it says otherwise
     this.open = false;
     this.pages = [];
@@ -351,11 +383,16 @@ export class DialogueBox {
       return true;
     }
 
+    // ONE read of the direction queue per frame, shared by everything below —
+    // the question, the menu cursor, and paging. Read in two places instead,
+    // whichever ran first would swallow the press.
+    const d = input.consumeDir ? input.consumeDir() : null;
+    const pg = this.pages[this.page];
+
     // A question owns the buttons once its page has finished printing. It is
     // only ever asked on the LAST page, so earlier pages page forward normally.
     const asking = this.choices && this.page >= this.pages.length - 1 && this._pageDone;
     if (asking) {
-      const d = input.consumeDir ? input.consumeDir() : null;
       if (d === 'left' || d === 'right') {
         const n = this.choices.length;
         this.choiceIndex = (this.choiceIndex + (d === 'right' ? 1 : n - 1)) % n;
@@ -378,13 +415,44 @@ export class DialogueBox {
       return true;
     }
 
+    // --- a page's menu ---
+    if (pg && pg.menu) {
+      if (this.menuOpen !== null) {
+        // Reading one entry. The d-pad is dead here on purpose: left/right
+        // would page the docs out from under what is being read.
+        if (input.consumeAPress()) {
+          if (!this._pageDone) this.t = this._charsOnPage / this.cps;
+          else this._closeItem();
+        } else if (input.consumeBPress()) {
+          this._closeItem();
+        }
+        return true;
+      }
+      if (d === 'up' || d === 'down') {
+        const n = pg.menu.items.length;
+        this.menuIndex = (this.menuIndex + (d === 'down' ? 1 : n - 1)) % n;
+        sfx.click();
+      }
+      if (input.consumeAPress()) {
+        if (!this._pageDone) this.t = this._charsOnPage / this.cps;
+        else this._openItem(this.menuIndex);
+        return true;
+      }
+      // left/right and B fall through to the paging below
+    }
+
+    // --- paging with the d-pad ---
+    // Forward AND back, which A alone could never do. Right stops on the last
+    // page rather than closing: A is the way out, and a reader stepping to the
+    // end of the docs should not have the box vanish from under them.
+    if (d === 'left' && this.page > 0) { this._goto(this.page - 1); return true; }
+    if (d === 'right' && this.page < this.pages.length - 1) { this._goto(this.page + 1); return true; }
+
     if (input.consumeAPress()) {
       if (!this._pageDone) {
         this.t = this._charsOnPage / this.cps;  // first press finishes the page
       } else if (this.page < this.pages.length - 1) {
-        this.page++;
-        this.t = 0;
-        this._lines = this.pages[this.page].lines;
+        this._goto(this.page + 1);
       } else {
         this.close();
       }
@@ -392,6 +460,34 @@ export class DialogueBox {
       this.close();
     }
     return true;
+  }
+
+  _goto(i) {
+    this.page = i;
+    this.t = 0;
+    this.menuIndex = 0;
+    this.menuOpen = null;
+    this._lines = this.pages[i].lines;
+  }
+
+  // Opening and closing a menu entry swaps what the page is printing, so the
+  // typewriter and the "page finished" test go on working on the entry's own
+  // text without either of them knowing a menu exists.
+  _openItem(i) {
+    this.menuOpen = i;
+    this._lines = this.pages[this.page].menu.items[i].lines;
+    this.t = 0;
+    sfx.bootConfirm();
+  }
+
+  _closeItem() {
+    this.menuOpen = null;
+    this._lines = this.pages[this.page].lines;
+    // Coming BACK to the list, the page's own line is already read — retyping
+    // it every time an entry is closed makes the list feel like it is being
+    // rebuilt. Opening an entry still types, because that text is new.
+    this.t = this._charsOnPage / this.cps;
+    sfx.click();
   }
 
   render(ctx) {
@@ -431,15 +527,44 @@ export class DialogueBox {
       ctx.font = FONT;
     }
 
+    // While a menu entry is open the page prints THAT instead of its own text,
+    // under the entry's title.
+    const item = pg.menu && this.menuOpen !== null ? pg.menu.items[this.menuOpen] : null;
+    if (item) {
+      ctx.fillStyle = GOLD.h;
+      ctx.fillText(item.label.toUpperCase(), IN_X, y);
+      y += LINE_H + 2;
+    }
+
     // print character by character across the page's lines
     let budget = this._printed;
     ctx.fillStyle = GOLD.l;
-    for (const line of pg.lines) {
+    for (const line of (item ? item.lines : pg.lines)) {
       if (budget <= 0) break;
       const shown = line.slice(0, budget);
       budget -= line.length;
       if (shown) ctx.fillText(shown, IN_X, y);
       y += LINE_H;
+    }
+
+    // the list itself, when nothing from it is open
+    if (pg.menu && !item) {
+      y += 4;
+      pg.menu.items.forEach((it, i) => {
+        const on = i === this.menuIndex;
+        ctx.fillStyle = on ? GOLD.h : shade(BONE.d, -8);
+        ctx.fillText(`${on ? '▸' : ' '} ${it.label}`, IN_X, y);
+        y += LINE_H;
+      });
+    }
+
+    // While an entry is open the only way on is B, so say so rather than
+    // blinking the ordinary "next page" mark at someone who cannot use it.
+    if (item && this._pageDone) {
+      ctx.fillStyle = shade(BONE.d, -8);
+      ctx.textAlign = 'right';
+      ctx.fillText('B  BACK', BOX_X + BOX_W - TILE - 4, BOX_Y + BOX_H - TILE - PAD - 2);
+      ctx.textAlign = 'left';
     }
 
     // continue / close indicator, only once the page has finished printing —

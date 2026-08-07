@@ -33,96 +33,76 @@ export const LORE = {
   doctrine: [
     {
       speaker: 'You have joined a cult',
-      text: '3 daily tasks you must complete to earn Devotion.',
+      text: '3 daily tasks you must complete.',
     },
     {
+      // The three duties are a MENU rather than three pages of their own. As
+      // pages they sat between the reader and everything after them — four
+      // turns to get past duties they may already know — and someone who only
+      // wanted the second had to walk through the first. The list is opened
+      // with A, read in place, and closed with B, so the docs never leave
+      // this page to explain a duty.
       speaker: 'The Daily Three',
-      text: 'Taken IN ORDER:\n\n'
-        + 'I. Light the Brazier\n'
-        + 'II. Purifying Pain\n'
-        + 'III. Holy Ritual',
+      text: 'Taken IN ORDER:',
+      menu: {
+        items: [
+          {
+            label: 'I. Light the Brazier',
+            text: 'The north corridor.\n\n'
+              + 'Lay wood in a brazier, then fetch a torch and bring it to the wood.',
+          },
+          {
+            label: 'II. Purifying Pain',
+            text: 'The north corridor, behind the Abbot.\n\n'
+              + 'A switch lies there. Take it up and put it into his hands.',
+          },
+          {
+            label: 'III. Holy Ritual',
+            text: 'Down the eastern steps.\n\n'
+              + 'Stand on the blood red tile. The shrine does the rest.',
+          },
+        ],
+      },
     },
     {
-      speaker: 'I. Light the Brazier',
-      text: 'The north corridor.\n\n'
-        + 'Lay wood in a brazier, then fetch a torch and bring it to the wood.',
-    },
-    {
-      speaker: 'II. Purifying Pain',
-      text: 'The north corridor, behind the Abbot.\n\n'
-        + 'A switch lies there. Take it up and put it into his hands.',
-    },
-    {
-      speaker: 'III. Holy Ritual',
-      text: 'Down the eastern steps.\n\n'
-        + 'Stand on the blood red tile and let the shrine take it from there.',
-    },
-    {
-      speaker: 'Then Sleep',
+      speaker: 'Sleep',
       text: 'With all three done, return to the bed chambers and sleep.\n\n'
         + 'That is how the day is closed, counted, and saved.',
     },
     {
-      // The creed that opened this section — "<name> is a death-cult", and the
-      // spirits gathering under the inverted cross — is gone. The two pages
-      // below were written as its continuation and carried no heading of their
-      // own, so this one takes a heading rather than trailing unlabelled off
-      // the end of "Then Sleep", which is about something else entirely.
-      // Trimmed by a line when it took the heading: a heading costs a line of
-      // frame, and this was written at the full eight an unheaded page gets.
-      speaker: 'The Abbey',
-      text: 'The abbey sets duties, fresh every day.\n\n'
-        + 'Where something can be done, a gold mark appears over your head.',
-    },
-    {
-      text: 'Keep the day\'s duties and your streak grows.\n\n'
-        + 'A streak multiplies what every duty pays — the longer you hold it, '
-        + 'the more each act is worth. Miss a day and it falls to nothing.\n\n'
-        + 'The confessor in the west arm will mend a broken streak. Once, and '
-        + 'not for free.',
+      // Opens on the streak and on the way to mend one, which is what a reader
+      // arrives at this page wanting. What the abbey does with the gold mark
+      // over your head was the page before it and is gone.
+      speaker: 'The Streak',
+      text: 'Keep all three daily and the streak grows.\n\n'
+        + 'Miss a day and it is gone. The Confessor mends it once, for a price.',
     },
     {
       speaker: 'Where Mint Goes',
-      text: '🩸 Every mint is split two ways.',
+      text: '\ud83e\ude78 Every mint is split two ways.',
       chart: {
         slices: [
-          { label: 'Treasury', sub: 'for the players', pct: 90, color: BLOOD.b, emoji: '🩸' },
-          { label: 'Team', sub: 'keeps it running', pct: 10, color: IRON.l, emoji: '👤' },
+          { label: 'Treasury', sub: 'for the players', pct: 90, color: BLOOD.b, emoji: '\ud83e\ude78' },
+          { label: 'Team', sub: 'keeps it running', pct: 10, color: IRON.l, emoji: '\ud83d\udc64' },
         ],
       },
     },
     {
       speaker: 'The Treasury',
-      text: '⚖️ Two pots, same size.',
+      text: '\u2696\ufe0f Two pots, same size.',
       chart: {
         slices: [
-          { label: 'Season 1', sub: 'paid to winners', pct: 50, color: GOLD.b, emoji: '🏆' },
-          { label: 'Bloodline', sub: 'the abbey, long term', pct: 50, color: SOUL.b, emoji: '🧬' },
+          { label: 'Season 1', sub: 'paid to winners', pct: 50, color: GOLD.b, emoji: '\ud83c\udfc6' },
+          { label: 'Bloodline', sub: 'the abbey, long term', pct: 50, color: SOUL.b, emoji: '\ud83e\uddec' },
         ],
       },
     },
     {
-      speaker: 'Season 1 Winners',
-      text: '💀 Ranked by Devotion.',
-      chart: {
-        slices: [
-          { label: 'Top half', sub: 'split the pot', pct: 50, color: GOLD.b, emoji: '🏆' },
-          { label: 'Bottom half', sub: 'get nothing', pct: 50, color: '#2a2731', emoji: '💀' },
-        ],
-      },
-    },
-    {
+      // Trimmed to one frame. It ran to two, and the second held three words.
+      speaker: 'Below',
       text: 'Two stairways descend from the transept.\n\n'
-        + 'West, a warren of shuttered rooms. East, a chamber walled with '
-        + 'skulls, where something very old is lying on the floor.\n\n'
-        + 'Both are open to you. Neither is safe.',
-    },
-    {
-      text: 'Bind a Cultist to claim your name, your face and your standing in '
-        + 'the order.\n\n'
-        + 'Until then you wander the abbey as a spirit — seen by no one, counted '
-        + 'all the same. Nothing you earn as a spirit is lost when you take a '
-        + 'body.',
+        + 'West, shuttered rooms. East, a chamber walled with skulls. '
+        + 'Neither is safe.',
     },
   ],
 
