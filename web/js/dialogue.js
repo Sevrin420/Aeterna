@@ -262,6 +262,7 @@ export class DialogueBox {
     this.onChoice = onChoice || null;
     this.choiceIndex = 0;
     this.pages = [];
+    this._pageById = {};       // entry id -> the page it starts on
     for (const p of raw) {
       const text = typeof p === 'string' ? p : p.text;
       const who = typeof p === 'string' ? speaker : (p.speaker ?? speaker);
@@ -273,7 +274,11 @@ export class DialogueBox {
       const menu = rawMenu ? {
         items: rawMenu.items.map((it) => ({
           label: it.label,
-          lines: this._wrap(it.text),
+          // An entry either carries text, which is read in place, or `goto`:
+          // the id of another entry, which it LEAVES for. The duties read in
+          // place; "Continue" goes on to the next page.
+          goto: it.goto || null,
+          lines: it.text ? this._wrap(it.text) : [],
         })),
         // What one opened entry has to fit in: the frame, less the page's own
         // heading, less the entry's title line. NOT less a row for the "B
@@ -291,6 +296,10 @@ export class DialogueBox {
       const lines = this._wrap(text);
       // long entries spill onto further pages rather than overflowing the frame
       for (let i = 0; i < lines.length; i += room) {
+        // An entry can name itself, so a menu can jump to it by id rather than
+        // by a page number — which shifts the moment anything above it is cut.
+        // Recorded against the FIRST page of the entry.
+        if (i === 0 && typeof p === 'object' && p.id) this._pageById[p.id] = this.pages.length;
         this.pages.push({
           speaker: i === 0 ? who : null,
           // the chart and the menu belong to the first page of their entry,
@@ -434,8 +443,17 @@ export class DialogueBox {
         sfx.click();
       }
       if (input.consumeAPress()) {
-        if (!this._pageDone) this.t = this._charsOnPage / this.cps;
-        else this._openItem(this.menuIndex);
+        if (!this._pageDone) {
+          this.t = this._charsOnPage / this.cps;
+        } else {
+          const it = pg.menu.items[this.menuIndex];
+          // A `goto` entry leaves the page instead of opening inside it. An id
+          // that names nothing is ignored rather than jumping to page one,
+          // which is what a bare `|| 0` would have done on a typo.
+          const dest = it.goto ? this._pageById[it.goto] : undefined;
+          if (it.goto) { if (dest !== undefined) { sfx.bootConfirm(); this._goto(dest); } }
+          else this._openItem(this.menuIndex);
+        }
         return true;
       }
       // left/right and B fall through to the paging below
@@ -589,7 +607,10 @@ export class DialogueBox {
         cx += widths[i] + gap;
       });
       ctx.textAlign = 'left';
-    } else if (this._pageDone && !holding && Math.floor(this._blink * 2) % 2 === 0) {
+      // ...and NOT while a menu entry is open: the "B BACK" hint already sits
+      // in this corner, and blinking "more" beside it offers a press that does
+      // nothing there.
+    } else if (this._pageDone && !holding && !item && Math.floor(this._blink * 2) % 2 === 0) {
       const last = this.page >= this.pages.length - 1;
       ctx.fillStyle = GOLD.h;
       const cx = BOX_X + BOX_W - TILE - 9;

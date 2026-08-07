@@ -61,13 +61,18 @@ export const LORE = {
             text: 'Down the eastern steps.\n\n'
               + 'Stand on the blood red tile. The shrine does the rest.',
           },
+          // Not a duty: the way OUT of the list. It carries no text, so it
+          // leaves for the page named by `goto` instead of opening in place.
+          { label: 'Continue', goto: 'sleep' },
         ],
       },
     },
     {
+      // Named, so the duties menu can send the reader here by id.
+      id: 'sleep',
       speaker: 'Sleep',
       text: 'With all three done, return to the bed chambers and sleep.\n\n'
-        + 'That is how the day is closed, counted, and saved.',
+        + 'The day is closed, counted, and saved.',
     },
     {
       // Opens on the streak and on the way to mend one, which is what a reader
@@ -75,11 +80,11 @@ export const LORE = {
       // over your head was the page before it and is gone.
       speaker: 'The Streak',
       text: 'Keep all three daily and the streak grows.\n\n'
-        + 'Miss a day and it is gone. The Confessor mends it once, for a price.',
+        + 'Miss a day and it is gone. The Confessor mends it, for a price.',
     },
     {
       speaker: 'Where Mint Goes',
-      text: '\ud83e\ude78 Every mint is split two ways.',
+      text: '',
       chart: {
         slices: [
           { label: 'Treasury', sub: 'for the players', pct: 90, color: BLOOD.b, emoji: '\ud83e\ude78' },
@@ -89,20 +94,13 @@ export const LORE = {
     },
     {
       speaker: 'The Treasury',
-      text: '\u2696\ufe0f Two pots, same size.',
+      text: '',
       chart: {
         slices: [
           { label: 'Season 1', sub: 'paid to winners', pct: 50, color: GOLD.b, emoji: '\ud83c\udfc6' },
           { label: 'Bloodline', sub: 'the abbey, long term', pct: 50, color: SOUL.b, emoji: '\ud83e\uddec' },
         ],
       },
-    },
-    {
-      // Trimmed to one frame. It ran to two, and the second held three words.
-      speaker: 'Below',
-      text: 'Two stairways descend from the transept.\n\n'
-        + 'West, shuttered rooms. East, a chamber walled with skulls. '
-        + 'Neither is safe.',
     },
   ],
 
