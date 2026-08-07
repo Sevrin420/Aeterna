@@ -474,6 +474,42 @@ body.powered .mute-toggle {
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
+/* ===== PLEASE WAIT =====
+   The game reads the chain and the server at several points where nothing on
+   screen moves — connecting a wallet, listing what it holds, waiting for a
+   mint to show up in the holdings — and a player with no feedback presses the
+   button again, which is how one of them minted twice.
+
+   Deliberately the title card's blinking PRESS A: same face, same gold, same
+   beat, so it reads as the machine's own voice rather than a web page's. Above
+   everything, because most of the waiting happens with an overlay up. */
+.please-wait[hidden] { display: none; }
+.please-wait {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 12;
+  width: 100%;
+  text-align: center;
+  pointer-events: none;
+  font-family: 'Press Start 2P', monospace;
+  /* One line, never wrapped: "PLEASE WAIT" is 11 characters and this face is
+     full-em, so the string is 11em wide and the cap is width/11. */
+  font-size: clamp(9px, 7.2cqw, 34px);
+  color: #f7dd93;
+  letter-spacing: 0;
+  text-shadow:
+    -2px 0 0 #1a1006, 2px 0 0 #1a1006, 0 -2px 0 #1a1006, 0 2px 0 #1a1006,
+    -2px -2px 0 #1a1006, 2px -2px 0 #1a1006, -2px 2px 0 #1a1006, 2px 2px 0 #1a1006,
+    0 0 14px rgba(247, 221, 147, 0.5);
+  animation: wait-blink 1s steps(1, end) infinite;
+}
+@keyframes wait-blink {
+  0%, 55% { opacity: 1; }
+  55.01%, 100% { opacity: 0; }
+}
+
 
 
 /* ===== Final Communion cinematic ===== */

@@ -9,6 +9,7 @@
 // "the RPC is down" and "you own nothing" must never look the same.
 
 import { GAME_NAME } from './config.js';
+import { beginWait, endWait } from './wait.js';
 
 // ── DEMO / TEST MODE ────────────────────────────────────────────────────────
 // Add ?demo (or ?mock) to the URL to test the full connect -> choose-Cultist ->
@@ -209,7 +210,17 @@ export async function ensureChain() {
   return true;
 }
 
+// The other door out of the browser, and the slower one — this is the "looking
+// for NFTs" the player waits through. Same treatment as req() in api.js: the
+// PLEASE WAIT is raised here, once, rather than at the several call sites that
+// read the contract.
 async function ethCall(data) {
+  beginWait();
+  try { return await _ethCall(data); }
+  finally { endWait(); }
+}
+
+async function _ethCall(data) {
   const p = activeProvider();
   if (!p) throw new Error('NO_WALLET');
   if (!BLOODLINE_ADDRESS) throw new Error('NO_CONTRACT');
@@ -315,14 +326,22 @@ export function totalCultists(bloodlines) {
 export async function waitForTx(hash, { tries = 60, everyMs = 2000 } = {}) {
   const p = activeProvider();
   if (!p) return null;
-  for (let i = 0; i < tries; i++) {
-    try {
-      const r = await p.request({ method: 'eth_getTransactionReceipt', params: [hash] });
-      if (r) return r;
-    } catch { /* keep waiting */ }
-    await new Promise((res) => setTimeout(res, everyMs));
+  // Held across the whole loop rather than around each poll: this is two
+  // minutes of two-second sleeps, and a legend that came up for each request
+  // and went down for each sleep would be a stutter, not a wait.
+  beginWait();
+  try {
+    for (let i = 0; i < tries; i++) {
+      try {
+        const r = await p.request({ method: 'eth_getTransactionReceipt', params: [hash] });
+        if (r) return r;
+      } catch { /* keep waiting */ }
+      await new Promise((res) => setTimeout(res, everyMs));
+    }
+    return null;
+  } finally {
+    endWait();
   }
-  return null;
 }
 
 // Mint one Bloodline holding `cultists` Cultists. Exact payment only — the

@@ -63,6 +63,12 @@
         <!-- Toast -->
         <div class="toast" id="toast" hidden></div>
 
+        <!-- Shown whenever the game is waiting on the server or reading the
+             chain. It sits above the overlays on purpose: most of the waiting
+             happens with the entrance overlay up, and a spinner underneath it
+             would be a spinner nobody sees. -->
+        <div class="please-wait" id="pleaseWait" hidden>PLEASE WAIT</div>
+
         <div class="emoji-wheel" id="emojiWheel" hidden></div>
 
         <!-- Entrance: connect wallet + choose your Cultist -->

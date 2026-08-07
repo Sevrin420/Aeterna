@@ -2,6 +2,8 @@
 // auth yet (see server/README.md), so we keep a locally generated pseudo-id
 // in localStorage and use it exactly where the server expects a `wallet`.
 
+import { beginWait, endWait } from './wait.js';
+
 const WALLET_KEY = 'aeterna_wallet_id';
 const TOKEN_KEY = 'aeterna_token_id';
 
@@ -50,14 +52,24 @@ export function clearWalletId() {
   localStorage.removeItem(WALLET_KEY);
 }
 
+// Every call to the server goes through here, which is exactly why the
+// PLEASE WAIT lives here too rather than at the call sites: a request that is
+// slow is slow whoever asked for it, and there is no list of "the slow ones"
+// to keep in step with the code. It raises the legend after a grace period and
+// lowers it on the way out, thrown or not.
 async function req(path, opts = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
-    ...opts,
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `Request failed: ${res.status}`);
-  return body;
+  beginWait();
+  try {
+    const res = await fetch(path, {
+      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      ...opts,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Request failed: ${res.status}`);
+    return body;
+  } finally {
+    endWait();
+  }
 }
 
 // The identity every call carries: which wallet, and which Bloodline is being

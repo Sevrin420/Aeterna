@@ -8,6 +8,7 @@ import { CourtyardScene } from './scenes/courtyard.js';
 import { api, setTokenId, getTokenId } from './api.js';
 import { sfx, AUDIO_MASTER } from './sfx.js';
 import { PAGE_TITLE } from './config.js';
+import { beginWait, endWait, clearWait } from './wait.js';
 import {
   connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen,
   fetchPricePerCultist, formatAvax, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
@@ -646,14 +647,22 @@ async function menuConnect(menu) {
 // connected, paid, and unable to play.
 async function waitForNewBloodline(before, { tries = 40, everyMs = 3000 } = {}) {
   if (isDemoMode()) return fetchBloodlines(connectedAddr);
-  for (let i = 0; i < tries; i++) {
-    try {
-      const list = await fetchBloodlines(connectedAddr);
-      if (list.length > before) return list;
-    } catch { /* an RPC hiccup is not an answer — keep asking */ }
-    await new Promise((r) => setTimeout(r, everyMs));
+  // The legend is held across the whole two minutes rather than left to the
+  // individual reads: the sleeps between them are most of the wall clock, and
+  // this is the longest the player is ever asked to sit still.
+  beginWait();
+  try {
+    for (let i = 0; i < tries; i++) {
+      try {
+        const list = await fetchBloodlines(connectedAddr);
+        if (list.length > before) return list;
+      } catch { /* an RPC hiccup is not an answer — keep asking */ }
+      await new Promise((r) => setTimeout(r, everyMs));
+    }
+    return null;
+  } finally {
+    endWait();
   }
-  return null;
 }
 
 async function withNames(list) {
@@ -1457,6 +1466,9 @@ function powerOff() {
   toastEl.hidden = true;
   communionOverlay.hidden = true;
   walletOverlay.hidden = true;
+  // A wait in flight when the switch is thrown would otherwise go on blinking
+  // over a dead screen, and its refcount would never come back to zero.
+  clearWait();
   drawOff();
   hint.textContent = '';
 }
