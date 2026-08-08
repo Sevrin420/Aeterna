@@ -982,6 +982,8 @@ async function openLinesScreen(menu) {
         if (who) {
           try {
             const res = await api.referral(who);
+            // Keep the copy the abbey will be handed in step with the server.
+            if (entrancePlayer && typeof res.devotion === 'number') entrancePlayer.devotion = res.devotion;
             // Read what the server ACTUALLY returns. This used to test
             // `res.credited`, a field /referral has never sent, so a referral
             // that had just been recorded and paid announced itself with a bare
@@ -1198,6 +1200,10 @@ async function offerXHandleAndReferral(player, { afterMint = false } = {}) {
         const r = await api.referral(who);
         showToast(`@${r.referrer} brought you in. ${r.devotionGained} Devotion to you both.`, { size: 't-mid' });
         player.referred = r.referrer;
+        // The award landed on the server and the answer says what the total is
+        // now. Without this the client kept its pre-referral copy, and the
+        // Devotion was real but invisible until something else re-read /me.
+        if (typeof r.devotion === 'number') player.devotion = r.devotion;
         break;
       } catch (e) {
         showToast(e.message || 'That name is not known here.', { size: 't-mid' });
@@ -1353,8 +1359,12 @@ async function openMintPicker(menu) {
       walletOverlay.hidden = true;
       if (!list) {
         // Not lost — not seen yet. The name can be given later from LINES, so
-        // nothing is stranded by this.
+        // nothing is stranded by this. Back to the menu all the same: the rite
+        // is over either way, and leaving the player on a hidden overlay with
+        // the mint's dress still on it was the one exit from here that did not
+        // put them anywhere.
         showToast('The mint is sent but has not appeared yet. Press WALLET when it lands.');
+        returnToMenu(menu);
         return;
       }
       heldBloodlines = await withNames(list);
@@ -1428,10 +1438,23 @@ async function payForConfession(payTo, wei, avax) {
   }
 }
 
-function proceedIntoGame() {
+async function proceedIntoGame() {
   walletOverlay.hidden = true;
-  if (scene && scene.exit) scene.exit();
   const chosen = chosenCultist;
+  // Read the row once more on the way in. Everything the entrance can do to a
+  // player's Devotion — a referral, most of all — happens on the server, and
+  // the copy held here was assembled before any of it. The HUD is the first
+  // thing a player checks, so it is worth one call to have it be the truth
+  // rather than whatever was true when they connected.
+  //
+  // BEFORE the scene is torn down, not after: the menu stays on screen with
+  // PLEASE WAIT over it while this answers, rather than the player watching a
+  // dead frame where the menu used to be.
+  try {
+    const fresh = await api.me();
+    if (fresh && typeof fresh.devotion === 'number') entrancePlayer = fresh;
+  } catch { /* the copy we have still plays */ }
+  if (scene && scene.exit) scene.exit();
   revealTransition(() => {
     enterAbbey(entrancePlayer);
     if (chosen) showToast(`You enter as ${chosen.name}.`);
