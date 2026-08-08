@@ -1,87 +1,109 @@
-# Throbbin Abbey — Complete Handoff Package
-**Version:** 4.1  
-**Date:** July 23, 2026  
-**Slogan:** Eternal Life
+# Throbbin Abbey — Overview
+
+**Slogan:** Eternal Throb, Eternal Life
+**Shape:** one playthrough, eight weeks
+**Chain:** Avalanche C-Chain (43114)
+**Last updated:** August 8, 2026
+
+This was a handoff package describing a project that had not been built. It is
+now an overview of one that has. Where something is still missing it is listed
+under "Gaps" rather than described as if it exists.
 
 ---
 
-## What This Package Contains
+## The documents
 
-| Folder | Contents |
-|--------|----------|
-| `01_GDD` | Full Game Design Document (v4.1) |
-| `02_Architecture` | Backend architecture, API, WebSockets, data models, SQLite schema |
-| `03_Server_Starter` | Ready-to-run Node.js + Fastify + Socket.io starter code |
-| `04_Smart_Contracts` | Contract rename map, required changes, and design notes |
-| `05_Overview` | This handoff file |
-
----
-
-## Project Summary
-
-**Throbbin Abbey** is an invitation-only, multi-generational NFT cult RPG.
-
-Players mint Cultist NFTs, perform daily duties in a shared top-down pixel abbey, give physical gifts, build streaks, level up (uncapped), and at the end of each 56-day season perform Final Communion. All value accrual is expressed through **Devotion**. Souls carry Devotion across generations. Yield is distributed based on Devotion and is fully admin-controlled.
-
-### Core Loop
-1. Mint Cultist (0.02 ETH Season 1, 0.015 ETH later seasons)
-2. Perform 3 required daily duties + optional gift giving
-3. Build streak → higher Devotion multipliers (caps at Level 10)
-4. Manually save progress (Cloudflare Worker signs)
-5. Level Up on-chain (permanent checkpoint)
-6. Day 56 → Final Communion (gold revealed, Devotion doubled, transfer to Child or Free Soul)
-7. Continue bloodline or start fresh next season
-
-### Key Design Decisions (Final)
-- **No Legacy system** — everything is Devotion
-- Level has **no cap**; Level 10 still gives max multiplier
-- Gold is **hidden** until Final Communion
-- Confession cost escalates (+0.001 ETH each use per season)
-- Players must **manually save** when leaving the game
-- Physical gift carrying (pick up → walk → offer → accept)
-- Realtime presence, emojis, and optional chat
-- Yield fully admin-controlled and based on Devotion
-- Progressive Soul cap (0 → 1 → 2 → 3 across seasons)
-- Ranks (Deacon / Bishop / Cardinal) decided by admin at Final Communion
+| File | Contents |
+|---|---|
+| `docs/Throbbin_Abbey_GDD.md` | Game design — the clock, duties, Devotion, confession |
+| `docs/Architecture.md` | Stack and the split between server, worker and chain |
+| `docs/API_and_WebSockets.md` | HTTP routes and socket events |
+| `docs/Contract_Changes.md` | What is deployed on-chain, and what is left |
+| `docs/SQLite_Schema.sql` | Database schema |
+| `README.md` | What is actually playable today |
 
 ---
 
-## Technical Architecture (Minimal)
+## Summary
+
+An invitation-only NFT cult RPG in a shared top-down pixel abbey. Players raise
+a Bloodline, keep three daily duties, build a streak, and are counted for it in
+**Devotion**.
+
+### The run
+
+**One playthrough of eight weeks. Day 0 is the day the contract was deployed
+(2026-08-02); the run is days 0 to 55.** No seasons, no break, nothing repeats.
+The clock is global — every player is on the same day — and is served by
+`GET /day`.
+
+### Core loop
+
+1. **Mint a Bloodline** — 0.01 AVAX per Cultist, 1 to 20 Cultists, fixed at mint
+2. **Name it**, and name whoever brought you in (both optional, both settable
+   later from LINES on the menu)
+3. **Three daily duties**, in order: Light the Brazier, Purifying Pain, Holy
+   Ritual — 10 Devotion each, times the streak multiplier
+4. **Sleep** in the bed chambers to close and save the day
+5. **Miss a day** and the streak breaks; the Confessor mends it for a price
+   that rises with the week and scales with the line's Cultists
+
+### Decisions that hold
+
+- Everything is **Devotion**; there is no Legacy system
+- Level is uncapped; level 10 gives the maximum multiplier
+- **Streaks are per Bloodline**, not per wallet — one wallet holding three
+  lines has three independent streaks
+- Confession is priced by **week × Cultists**, and does not escalate with the
+  number of previous confessions
+- Price, supply and both payout addresses are **immutable on-chain**
+
+---
+
+## Technical shape
 
 | Component | Role |
-|-----------|------|
-| 2GB VPS | Full game server + SQLite + WebSockets |
-| Cloudflare Worker | Only signs Devotion on manual save |
-| Smart Contracts | Mint, Level Up, Final Communion, Souls, ETH wagers |
-| Static Frontend | Game client |
-
-**Assumption:** ≤ 25% concurrent players (~550 max). Architecture is intentionally lightweight so it runs smoothly on 2GB RAM.
+|---|---|
+| VPS (Node + Fastify + SQLite) | Duties, streaks, Devotion, confession, presence, chat |
+| Cloudflare Worker | Signs Devotion on manual save |
+| One ERC-721 contract | Mint only — Cultist count and the 80/20 money split |
+| Static frontend | The game client |
 
 ---
 
-## Current Economic Model (4 Seasons)
+## Economics
 
-- Season 1: 2,220 × 0.02 ETH = 44.4 ETH  
-- Seasons 2–4: 2,220 × 0.015 ETH = 33.3 ETH each  
-- **Total raised:** ~144.3 ETH  
-- Target player payout: ~25%  
-- Remaining Treasury after 4 seasons: ~108 ETH + optional Confession/wager revenue  
-
----
-
-## Next Steps (Recommended Order)
-
-1. Review and lock GDD v4.1  
-2. Deploy starter server on your existing VPS  
-3. Implement Cloudflare Worker signing  
-4. Update / rewrite smart contracts (see `04_Smart_Contracts`)  
-5. Build minimal frontend that talks to the VPS + contracts  
-6. Private test with small group  
-7. Public Season 1
+- **0.01 AVAX per Cultist**, uncapped supply
+- A full 20-Cultist Bloodline costs 0.2 AVAX
+- **80% treasury / 20% team**, enforced by the contract and callable by anyone
+- The in-game doctrine shows the split to players as Winners 80% / Treasury 20%
 
 ---
 
-## Contact / Ownership
+## Gaps
 
-Project owned and operated by the creator (Guru character in-game).  
-All admin functions (manual Devotion awards, ranks, yield unlock, etc.) are controlled by the project wallet.
+1. **Confession takes no payment.** The price is quoted and recorded; nothing
+   is collected, and the game says so. Needs the treasury address plus
+   server-side receipt verification.
+2. **The end of the run is undesigned.** There is no payout mechanism and no
+   ceremony — Final Communion was removed rather than replaced.
+3. **No wallet-signature auth.** `/bind` verifies NFT ownership on-chain, but
+   the session identity is an unsigned local id.
+4. **Mancala wagers move Devotion, not AVAX.**
+5. **Souls and Children** have no mechanics; the altar and nursery are scenery.
+
+---
+
+## Removed
+
+Seasons and the 56/14 cycle, Final Communion and the gold reveal, ERC-6551
+tokenbound accounts, Souls and the progressive Soul cap, Children and breeding,
+ETH pricing and the 2,220-per-season supply, per-use confession escalation, and
+the four-season economic model. See `docs/Throbbin_Abbey_GDD.md` §10.
+
+---
+
+## Ownership
+
+Owned and operated by the creator (the Abbot in-game). Admin functions are
+controlled by the project wallet.

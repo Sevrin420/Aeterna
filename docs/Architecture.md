@@ -14,7 +14,7 @@
 | Realtime           | Socket.io                           | Presence, movement, gifts, emojis, chat   |
 | Signing            | Cloudflare Worker                   | Devotion signature on manual save         |
 | Database           | SQLite (WAL mode)                   | All off-chain state                       |
-| Smart Contracts    | Solidity (ERC-721 + ERC-6551)       | Mint, Level Up, Communion, Souls, Wagers  |
+| Smart Contract     | Solidity (plain ERC-721)            | Mint only — one contract, no ERC-6551     |
 | Frontend           | Static (Cloudflare Pages / Vercel)  | Game client                               |
 | Process Manager    | PM2                                 | Keep server alive                         |
 
@@ -23,7 +23,8 @@
 **VPS**
 - Daily duties & streaks
 - Gift spawning, carrying, offering
-- Confession (escalating cost)
+- The abbey's clock: one 8-week run, day 0 = contract deployment (`GET /day`)
+- Confession — priced by week and Cultists (GDD §6); **quoting only, not collecting**
 - Live Devotion tracking
 - Leaderboards
 - Manual admin awards
@@ -35,12 +36,13 @@
 - Called only on manual save / Level Up preparation
 
 **On-chain**
-- Mint
-- Level Up (final state write)
-- Final Communion + gold reveal
-- Soul binding
-- ETH wagers (escrow + 5% rake)
-- Permanent Devotion storage after Level Up / Communion
+- Mint, and nothing else. The contract holds the Cultist count and the money
+  split; every other system listed above is server-side.
+- `ownerOf` / `cultistsOf` are read by the server to verify a bind, and
+  `pricePerCultist` to price a confession.
+
+**Not on-chain, and not built:** Level Up writes, Soul binding, AVAX wagers,
+end-of-run payouts. See docs/Contract_Changes.md.
 
 ## Performance Rules (Critical for 2GB)
 - Broadcast movement only to nearby / same-zone players

@@ -1,7 +1,5 @@
-// Core Devotion / streak rules from docs/Throbbin_Abbey_GDD_v4.1.md section 5-6.
-// Exact per-duty Devotion amounts aren't specified in the GDD (only gift and
-// confession amounts are), so DUTY_DEVOTION below is this server's concrete
-// choice for that gap, tuned to the documented multiplier curve.
+// Core Devotion / streak rules — see docs/Throbbin_Abbey_GDD.md sections 5-6,
+// which describes what this file implements rather than the other way round.
 
 // The three daily duties. These ids are what the database columns and the API
 // are keyed on; DUTY_NAMES carries what the abbey actually calls them, so the
@@ -105,9 +103,9 @@ export const CONFESSION_WEEK_PCT = [
   { throughWeek: 8, pct: 200 },
 ];
 
-// The percentage for a week. Week 8 is the last band and it is the FLOOR from
-// there on: the clock runs forever, so week 9 and week 90 both cost 200%. Not
-// a cap that lapses — nothing gets cheap again just because time passed.
+// The percentage for a week. Week 8 is the last band and the run ends with it,
+// but it is written as a FLOOR rather than a ceiling: if the clock is ever read
+// past the end, mending must not become cheap again just because time passed.
 export function confessionPct(week) {
   const last = CONFESSION_WEEK_PCT[CONFESSION_WEEK_PCT.length - 1];
   if (!week || week < 1) return CONFESSION_WEEK_PCT[0].pct;
@@ -145,18 +143,41 @@ export function weiToAvax(wei, dp = 4) {
 const DEPLOYED_AT = '2026-08-02T02:29:39Z';    // contracts/deployments/avalanche.json
 export const ABBEY_START = new Date(process.env.ABBEY_START || DEPLOYED_AT);
 
-// Day 1 is the day of deployment. Never null, never zero, and it keeps counting
-// past 56 — nothing ends.
+// ONE playthrough, eight weeks long. Not a season — nothing repeats after it
+// and nothing resets. Day 0 is the day the contract was deployed, so the run is
+// days 0 to 55 inclusive.
+export const PLAYTHROUGH_WEEKS = 8;
+export const PLAYTHROUGH_DAYS = PLAYTHROUGH_WEEKS * 7;      // 56, days 0..55
+
+// Day 0 is deployment day. Zero-based deliberately: the contract going out is
+// the starting gun, not the first day of play, and every other number here is
+// derived from it.
 export function abbeyDay(now = new Date()) {
   const elapsed = Math.floor((now.getTime() - ABBEY_START.getTime()) / 86400000);
-  return Math.max(1, elapsed + 1);
+  return Math.max(0, elapsed);
 }
 
-// Week 1 is days 1-7, and the count runs on without a ceiling. What a week
-// COSTS is capped at the week-8 rate — see confessionPct — but the week itself
-// is not, so the number the Confessor quotes stays true after day 56.
+// Week 1 is days 0-6, week 8 is days 49-55. Past the end it keeps counting
+// rather than clamping, so `ended` below is what says the run is over and the
+// week number never quietly lies about which week it is.
 export function abbeyWeek(now = new Date()) {
-  return Math.ceil(abbeyDay(now) / 7);
+  return Math.floor(abbeyDay(now) / 7) + 1;
+}
+
+// Everything about where the run stands, in one place.
+export function abbeyClock(now = new Date()) {
+  const day = abbeyDay(now);
+  const week = abbeyWeek(now);
+  const ended = day >= PLAYTHROUGH_DAYS;
+  return {
+    day,
+    week,
+    ended,
+    lastDay: PLAYTHROUGH_DAYS - 1,                            // 55
+    daysLeft: ended ? 0 : PLAYTHROUGH_DAYS - day,
+    weeks: PLAYTHROUGH_WEEKS,
+    since: ABBEY_START.toISOString(),
+  };
 }
 
 // Rolls a player's per-day duty flags/counters over to "today", logging a

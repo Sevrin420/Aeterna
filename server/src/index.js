@@ -11,7 +11,7 @@ import {
   DUTY_DEVOTION, DUTIES, DUTY_NAMES, X_DEVOTION, X_KINDS, REFERRAL_DEVOTION,
   X_COMMENT_DEVOTION, X_PHRASE, matchesPhrase,
   todayStr, streakMultiplier, ensureFreshDay, pendingConfession,
-  abbeyDay, abbeyWeek, confessionPct, confessionCostWei, weiToAvax, ABBEY_START,
+  abbeyWeek, abbeyClock, confessionPct, confessionCostWei, weiToAvax,
 } from './lib/gameLogic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -835,18 +835,16 @@ fastify.get('/bloodlines', async (req, reply) => {
   return rows;
 });
 
-// ========== SEASON (GDD section 2: 56 active days / 14 day break) ==========
-// The abbey's clock. There are no seasons any more, so there is no season
-// number, no break and no countdown to a Final Communion — just how long the
-// abbey has stood and what that means for the price of mending a streak.
+// ========== THE ABBEY'S CLOCK ==========
+// One eight-week playthrough, day 0 being the day the contract was deployed.
+// No seasons, no break, no Final Communion — just where the run stands and what
+// that means for the price of mending a streak.
 fastify.get('/day', async () => {
-  const now = new Date();
-  const day = abbeyDay(now);
-  const week = abbeyWeek(now);
-  return { day, week, confessionPct: confessionPct(week), since: ABBEY_START.toISOString() };
+  const clock = abbeyClock();
+  return { ...clock, confessionPct: confessionPct(clock.week) };
 });
 
-// ========== CATHEDRAL ROOMS (ownable alcoves, GDD section 11) ==========
+// ========== CATHEDRAL ROOMS (ownable alcoves, GDD section 9) ==========
 fastify.get('/cathedral', async () => {
   return db.prepare('SELECT id, owner_id, owner_name, claimed_at FROM cathedral_rooms ORDER BY id').all();
 });
