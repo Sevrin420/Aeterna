@@ -43,7 +43,8 @@ The clock is global — every player is on the same day — and is served by
 2. **Name it**, and name whoever brought you in (both optional, both settable
    later from LINES on the menu)
 3. **Three daily duties**, in order: Light the Brazier, Purifying Pain, Holy
-   Ritual — 10 Devotion each, times the streak multiplier
+   Ritual — 10 Devotion each in week 1, rising to 60 by week 8, times
+   the streak multiplier
 4. **Sleep** in the bed chambers to close and save the day
 5. **Miss a day** and the streak breaks; the Confessor mends it for a price
    that rises with the week and scales with the line's Cultists
@@ -51,7 +52,8 @@ The clock is global — every player is on the same day — and is served by
 ### Decisions that hold
 
 - Everything is **Devotion**; there is no Legacy system
-- Level is uncapped; level 10 gives the maximum multiplier
+- Level is uncapped, and it no longer feeds the streak multiplier: the
+  multiplier is the streak alone, 1.0x to 1.4x, and applies to duties only
 - **Streaks are per Bloodline**, not per wallet — one wallet holding three
   lines has three independent streaks
 - Confession is priced by **week × Cultists**, and does not escalate with the

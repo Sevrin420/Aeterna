@@ -9,8 +9,8 @@ import { Server } from 'socket.io';
 import db from './db/database.js';
 import {
   DUTY_DEVOTION, DUTIES, DUTY_NAMES, X_DEVOTION, X_KINDS, REFERRAL_DEVOTION,
-  X_COMMENT_DEVOTION, X_PHRASE, matchesPhrase,
-  todayStr, streakMultiplier, ensureFreshDay, pendingConfession,
+  REFERRAL_CAP, X_COMMENT_DEVOTION, X_DAILY_CLAIMS, X_PHRASE, matchesPhrase,
+  todayStr, streakMultiplier, taskAward, taskDevotionForWeek, ensureFreshDay, pendingConfession,
   abbeyWeek, abbeyClock, confessionPct, confessionCostWei, weiToAvax,
 } from './lib/gameLogic.js';
 
@@ -521,9 +521,29 @@ fastify.get('/me', async (req, reply) => {
   // kneels rather than after. Null when nothing is owed, and also null when the
   // chain could not be reached — the client must say "unknown", not "free".
   const price = pending ? await confessionPriceFor(fresh) : null;
+  // What the board behind the west stair reads out. All of it is derived, none
+  // of it is stored: the numbers cannot drift from the rules that produce them.
+  const clock = abbeyClock();
+  const mult = streakMultiplier(fresh.streak);
+  const perTask = taskDevotionForWeek(clock.week);
+  // Referral earnings, both directions. `devotion_each` is what was paid to
+  // each side at the time, so this stays true even if the rate ever changes.
+  const key = fresh.address || String(wallet).toLowerCase();
+  const broughtMe = db.prepare('SELECT devotion_each FROM referrals WHERE referee_wallet IN (?, ?)')
+    .get(String(wallet).toLowerCase(), key);
+  const broughtOthers = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(devotion_each), 0) d FROM referrals WHERE referrer_wallet IN (?, ?)')
+    .get(String(wallet).toLowerCase(), key);
   return {
     ...fresh,
-    multiplier: streakMultiplier(fresh.streak, fresh.level),
+    multiplier: mult,
+    taskDevotion: { base: perTask, award: taskAward(clock.week, fresh.streak), week: clock.week },
+    clock,
+    referralDevotion: {
+      asReferee: broughtMe ? broughtMe.devotion_each : 0,
+      broughtIn: broughtOthers.n,
+      fromBringing: broughtOthers.d,
+      total: (broughtMe ? broughtMe.devotion_each : 0) + broughtOthers.d,
+    },
     needsConfession: !!pending,
     confessionCost: price ? price.avax : null,
     confessionPrice: price,
@@ -736,9 +756,12 @@ fastify.post('/duty/:type', async (req, reply) => {
 
   db.prepare(`UPDATE players SET ${col} = 1 WHERE id = ?`).run(fresh.id);
 
-  const multiplier = streakMultiplier(fresh.streak, fresh.level);
-  const streakBonus = Math.round(DUTY_DEVOTION * (multiplier - 1));
-  const devotionGained = DUTY_DEVOTION + streakBonus;
+  // The week's base times this player's own multiplier. Both halves matter:
+  // the base is the calendar's and the same for everyone, the multiplier is
+  // theirs and earned by not missing a day.
+  const week = abbeyWeek();
+  const multiplier = streakMultiplier(fresh.streak);
+  const devotionGained = taskAward(week, fresh.streak);
 
   const allDone = DUTIES.every((d) => d === type || fresh[`${d}_today`]);
   let streakAdvanced = false;
@@ -758,11 +781,12 @@ fastify.post('/duty/:type', async (req, reply) => {
     duty: type,
     name: DUTY_NAMES[type],
     devotionGained,
-    base: DUTY_DEVOTION,
-    streakBonus,
+    base: taskDevotionForWeek(week),
+    week,
+    streakBonus: devotionGained - taskDevotionForWeek(week),
     streakAdvanced,
     streak: newStreak,
-    multiplier: streakMultiplier(newStreak, fresh.level),
+    multiplier: streakMultiplier(newStreak),
     remaining: DUTIES.filter((d) => d !== type && !fresh[`${d}_today`]).length,
   };
 });
@@ -896,6 +920,20 @@ fastify.post('/referral', async (req, reply) => {
   const referrer = db.prepare('SELECT * FROM players WHERE x_handle = ? COLLATE NOCASE AND token_id IS NOT NULL').get(handle);
   if (!referrer) return reply.code(404).send({ error: 'No Cultist here goes by that handle' });
 
+  // The referrer's cap. Counted under both identities for the same reason the
+  // "already referred" check is: rows written before players.address existed
+  // are keyed by browser id, and a cap that only sees half a player's rows is
+  // no cap. Refused rather than paid one-sided, because a referral row carries
+  // ONE devotion_each figure for both parties — there is nowhere in the shape
+  // of the row to record "paid the referee, not the referrer".
+  const broughtAlready = db.prepare('SELECT COUNT(*) n FROM referrals WHERE referrer_wallet IN (?, ?)')
+    .get(referrer.address || referrer.wallet, referrer.wallet).n;
+  if (broughtAlready >= REFERRAL_CAP) {
+    return reply.code(409).send({
+      error: `@${referrer.x_handle} has already brought in ${REFERRAL_CAP}, which is all anyone may. Name someone else.`,
+    });
+  }
+
   const sameWallet = refereeAddr && referrer.address && refereeAddr === referrer.address;
   const sameBrowserAndNoBetter = (!refereeAddr || !referrer.address) && referrer.wallet === w;
   if (sameWallet || sameBrowserAndNoBetter) {
@@ -963,6 +1001,18 @@ fastify.post('/x/claim', async (req, reply) => {
     'SELECT 1 FROM x_interactions WHERE player_id = ? AND kind = ? AND post_id = ?'
   ).get(player.id, kind, String(postId));
   if (already) return { success: true, alreadyClaimed: true, devotionGained: 0 };
+
+  // Two a day. Checked BEFORE the trip to X, so a player who has already had
+  // their two is told so instead of waiting on a verification that cannot pay.
+  const todayClaims = db.prepare(
+    "SELECT COUNT(*) n FROM x_interactions WHERE player_id = ? AND substr(awarded_at, 1, 10) = ?"
+  ).get(player.id, todayStr()).n;
+  if (todayClaims >= X_DAILY_CLAIMS) {
+    return reply.code(429).send({
+      error: `The abbey hears you ${X_DAILY_CLAIMS} times a day, and has heard you twice. Come back tomorrow.`,
+      dailyCap: X_DAILY_CLAIMS,
+    });
+  }
 
   const check = await verifyXInteraction(player.x_handle, kind, String(postId));
   if (!check.ok) {

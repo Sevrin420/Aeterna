@@ -17,7 +17,7 @@ import { CHANT_PAIR } from '../config.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, ROOMS, BEDS, SPAWN_BEDS, SKULL_ROOM, SKULL_ALTAR, NAVE, TRANSEPT, NAVE_CX,
-  EXIT_ROW, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW, SKULL_SHRINE,
+  EXIT_ROW, STICKS, CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW, SKULL_SHRINE, BOARD,
 } from '../abbeyMap.js';
 import {
   FLOOR, WALL, EARTH, VOID, BLOOD, GOLD, WOOD, IRON, BONE, CLOTH, SOUL, MOSS,
@@ -72,6 +72,10 @@ const STATIONS = [
     id: `bed${i}`, kind: 'bed', label: 'Rest — Save & Exit',
     x: px(b.stand.col), y: px(b.stand.row), r: 12,
   })),
+  // The Reckoning, on the dead-end wall by the stair down to the cells. Read,
+  // not performed: it opens a box and does nothing else.
+  { id: 'board', kind: 'board', label: 'Read the Reckoning',
+    x: px(BOARD.col) + TILE, y: px(BOARD.row) + TILE / 2, r: 14 },
   // The braziers are deliberately NOT stations. A station opens a box and runs
   // a rite; a brazier is a container you put things in, and it has to behave
   // differently depending on what you are carrying. See _fireAction().
@@ -785,6 +789,68 @@ export class AbbeyScene {
   // The Abbot has three lines and the one he uses is decided by what you are
   // holding and whether he has already had you today. Every other station just
   // reads its own entry.
+  // THE RECKONING. Everything a player has to hold in their head otherwise:
+  // what their streak is worth, what a duty pays THIS week, how long is left,
+  // and what bringing people in has earned them.
+  //
+  // Laid out with DOT LEADERS rather than spaces, and that is not decoration.
+  // The box wraps by measuring words and rejoining them with ONE space, so a
+  // column aligned with a run of spaces arrives on screen collapsed to
+  // "Devotion 1234" — the table falls apart the moment it is drawn. Dots
+  // survive the trip, and a ledger of dotted rows is what a board of figures
+  // ought to look like anyway. Every row is built to exactly ROW_W characters,
+  // which is what fits a line at this font.
+  async _readBoard() {
+    let p = this.player;
+    try {
+      const fresh = await api.me();
+      if (fresh && typeof fresh.devotion === 'number') {
+        p = fresh;
+        this.player = fresh;
+        this.onPlayerUpdate(this.player);
+      }
+    } catch { /* show what we have rather than nothing */ }
+
+    const ROW_W = 22;
+    const row = (label, value) => {
+      const v = String(value);
+      const dots = Math.max(2, ROW_W - label.length - v.length - 2);
+      return `${label} ${'.'.repeat(dots)} ${v}`;
+    };
+    const streak = p.streak || 0;
+    const mult = p.multiplier || 1;
+    const task = p.taskDevotion || {};
+    const clock = p.clock || {};
+    const ref = p.referralDevotion || {};
+    const per = task.award != null ? task.award : 0;
+
+    const pages = [
+      {
+        speaker: 'The Reckoning',
+        text: row('Devotion', p.devotion || 0) + '\n'
+          + row('Streak', `${streak}d`) + '\n'
+          + row('Multiplier', `${mult}x`) + '\n\n'
+          + row('A duty pays', per) + '\n'
+          + row('All three', per * 3),
+      },
+      {
+        speaker: 'The Season',
+        text: row('Week', `${clock.week || 1} of ${clock.weeks || 8}`) + '\n'
+          + row('Base a duty', task.base != null ? task.base : 0) + '\n'
+          + row('Days left', clock.daysLeft != null ? clock.daysLeft : '?') + '\n\n'
+          + 'The base rises each\nweek, for everyone.',
+      },
+      {
+        speaker: 'Those You Brought',
+        text: row('Brought you', ref.asReferee ? `+${ref.asReferee}` : 'none') + '\n'
+          + row('You brought', ref.broughtIn || 0) + '\n'
+          + row('Earned', `+${ref.fromBringing || 0}`) + '\n\n'
+          + row('In all', `+${ref.total || 0}`),
+      },
+    ];
+    this.dialogue.show(pages, boxOpts());
+  }
+
   _introFor(s) {
     if (s.id === 'guru') {
       if (this.carrying && this.carrying.kind === 'stick') {
@@ -1003,7 +1069,13 @@ export class AbbeyScene {
         // took a switch from the bundle
       } else if (this._fireAction()) {
         // handled by the fire rite
-            } else if (this._activeStation) {
+      } else if (this._activeStation && this._activeStation.kind === 'board') {
+        // The board is READ, not performed, and it is the one station whose
+        // whole point is that its numbers are current. So it re-reads the row
+        // rather than showing whatever was true when the player walked in —
+        // the same staleness that once hid a referral's Devotion.
+        this._readBoard();
+      } else if (this._activeStation) {
         // Every station introduces itself before it acts. The box closes into
         // the rite, so reading is never a detour — it is the way in.
         const st = this._activeStation;
@@ -1734,6 +1806,26 @@ export class AbbeyScene {
         ctx.fillStyle = GOLD.o; ctx.fillRect(x - 2.6, y + 3, 5.2, 1.8); // brass foot
         ctx.fillStyle = GOLD.d; ctx.fillRect(x - 2.4, y + 3, 4.8, 0.9);
         candleFlame(ctx, x, y - 6, this.t, p.col * 2.3 + p.row);
+        break;
+      }
+      case 'board-block': break;   // covered by the board draw above it
+      case 'board': {
+        // A slate on the wall, tall enough to read across the corridor. Gold
+        // frame because gold is what the abbey uses for anything it wants
+        // looked at, and ruled lines so it reads as a board of figures rather
+        // than a door.
+        const bx = x - 6, by = y - 5, bw = 12, bh = 22;
+        this._dropShadow(ctx, x + 1, y + 16, 7, 2.2);
+        ctx.fillStyle = '#0f0b14'; ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);   // shadow gap
+        ctx.fillStyle = '#9a7018'; ctx.fillRect(bx, by, bw, bh);                    // gold frame
+        ctx.fillStyle = '#1b1622'; ctx.fillRect(bx + 1, by + 1, bw - 2, bh - 2);    // slate
+        ctx.fillStyle = 'rgba(247,221,147,0.30)';                                   // ruled figures
+        for (let i = 0; i < 7; i++) {
+          const w = 4 + (h2(p.col + i, p.row) % 5);
+          ctx.fillRect(bx + 2, by + 3 + i * 2.6, w, 1);
+        }
+        ctx.fillStyle = 'rgba(247,221,147,0.75)';                                   // a heading rule
+        ctx.fillRect(bx + 2, by + 2, bw - 4, 1);
         break;
       }
       case 'stair-down': {

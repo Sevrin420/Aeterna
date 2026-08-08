@@ -103,32 +103,64 @@ says which.
 2. **Purifying Pain** — take up the switch and put it in the Abbot's hands
 3. **Holy Ritual** — stand on the blood-red tile at the shrine
 
-Each pays **10 Devotion**, multiplied by the streak multiplier as it is earned
-— so a player on a long streak sees the larger number land three times, not
-once at the end.
+**What a duty pays rises with the calendar week** — the same figure for
+everybody, whenever they joined:
+
+| Week | Per duty | All three | A perfect week |
+|---|---|---|---|
+| 1 | 10 | 30 | 210 |
+| 2 | 12 | 36 | 252 |
+| 3 | 15 | 45 | 315 |
+| 4 | 20 | 60 | 420 |
+| 5 | 28 | 84 | 588 |
+| 6 | 38 | 114 | 798 |
+| 7 | 50 | 150 | 1,050 |
+| 8 | 60 | 180 | 1,260 |
+
+This is the mechanism that keeps a late joiner in the running: their days are
+worth more than the early player's days were. A perfect player arriving in
+week 3 finishes about 15% behind a perfect day-one player on duties, not 60%.
 
 Sleeping in the bed chambers closes and saves the day.
 
 **Streak multipliers**
 
+The multiplier applies to **duties only** — never to X, never to referrals —
+and it is not retroactive: it changes what the NEXT duty pays.
+
+A full week of all three duties unlocks 1.1×. After that it rises another 0.1×
+for every further two weeks of unbroken streak.
+
 | Streak | Multiplier |
 |---|---|
-| 7 days | 1.5× |
-| 14 days | 2.0× |
-| 21 days | 2.5× |
-| 28 days | 3.0× (max) |
+| 0–6 days | 1.0× |
+| 7–20 days | 1.1× |
+| 21–34 days | 1.2× |
+| 35–48 days | 1.3× |
+| 49 days + | 1.4× |
 
-Level 10 also grants the maximum multiplier; levels above 10 are for ranking.
+For a player who never misses, that is 1.0× in week 1, 1.1× in weeks 2–3,
+1.2× in weeks 4–5, 1.3× in weeks 6–7 and 1.4× in week 8 — a perfect run of
+duties totalling **6,216 Devotion**.
+
+Level no longer touches the multiplier. It is for ranking and for show.
 
 **Streaks are per Bloodline, not per wallet.** One wallet holding three lines
 has three independent streaks, three multipliers and three confession counts.
 
-**Other Devotion**
+**Other Devotion** — neither of these takes the streak multiplier.
 - **Referral** — 10 to both sides, once. The person you name must already have
-  set their X handle in the abbey.
-- **X engagement** — 10 for commenting the phrase *"Eternal Throb, Eternal
-  Life"* on a post, claimable once per post. The old motto is still honoured.
-  Likes and reposts pay nothing: they are free to manufacture.
+  set their X handle in the abbey. Capped at **10 successful referrals** per
+  Bloodline: it is the one earner with no daily ceiling and no work in it.
+- **X engagement** — 5 for commenting the phrase *"Eternal Throb, Eternal
+  Life"* on a post, claimable once per post and **twice a day** — 10 a day,
+  560 across the run. The old motto is still honoured. Likes and reposts pay
+  nothing: they are free to manufacture.
+
+**The board.** None of this has to be remembered. A board on the dead-end wall
+of the west warren, beside the stair down to the cells, reads back the
+Bloodline's Devotion, streak, multiplier, what a duty pays today, the week,
+the days left, and what its referrals have earned.
 
 ---
 
@@ -184,7 +216,7 @@ Any one failing means the streak stays broken and nothing is taken.
 
 ## 7. Levels & progression
 
-- Level has **no cap**; level 10 is the maximum multiplier
+- Level has **no cap**, and it no longer feeds the streak multiplier
 - All actions earn **Devotion only**
 - No gold is paid or shown during the run
 
@@ -256,7 +288,7 @@ Nothing spawns, carries or offers — no route, no socket event, no scene code.
 | Players see each other, live | Built |
 | One clean run with an end | Clock built; the ending is not designed |
 | Devotion-only progression | Built |
-| Uncapped level, max multiplier at 10 | Built |
+| Uncapped level, ranking only | Built |
 | Streaks per Bloodline | Built |
 | Confession priced by week and holding | Built, and collecting |
 | Real payouts | Not built |

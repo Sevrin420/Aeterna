@@ -416,6 +416,13 @@ for (const a of ALCOVES) {
 
 // --- WEST WARREN (six open cells, a bed in each) ---
 prop('stair-up', WEST_CORRIDOR.x0 + 2, 106, false, { dest: { col: TRANSEPT.x0 + 2, row: TRANSEPT.y0 + 8 } });
+// THE RECKONING — a board on the dead-end wall two tiles west of the stair, so
+// it faces you as you come down to the cells and again as you leave them.
+// Everyone passes this spot twice a day; it is the one wall in the abbey with a
+// guaranteed audience. Two tiles tall so it reads as a board and not a notice.
+export const BOARD = { col: WEST_CORRIDOR.x0, row: 106 };
+prop('board', BOARD.col, BOARD.row);
+prop('board-block', BOARD.col, BOARD.row + 1);
 for (const b of BEDS) prop('bed', b.col, b.row);
 
 // --- EAST SKULL CHAMBER (chant to the skulls; also holds the ritual games) ---

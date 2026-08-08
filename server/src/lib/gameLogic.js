@@ -11,11 +11,25 @@ export const DUTY_NAMES = {
   garden: 'Skull Chant',
 };
 
-// Ten a task, and the streak multiplier is applied to each task as it is
-// completed rather than being paid once when the set is finished. A player on
-// a 28-day streak therefore sees 30 land three separate times instead of 10,
-// 10, 40 — the reward arrives with the act that earned it.
-export const DUTY_DEVOTION = 10;
+// ── WHAT A DUTY PAYS ────────────────────────────────────────────────────────
+//
+// The base rises with the CALENDAR week — the same for everybody, whenever they
+// joined — so that a player arriving in week five is not hopelessly behind a
+// player who arrived on day one. It is why a late joiner can still compete:
+// their days are worth more than the early player's days were.
+//
+// Weeks 1-8. Past the end of the run it holds at the week-8 value rather than
+// falling off a cliff or wrapping round.
+export const WEEK_TASK_DEVOTION = [10, 12, 15, 20, 28, 38, 50, 60];
+
+export function taskDevotionForWeek(week) {
+  const i = Math.max(1, Math.floor(week || 1)) - 1;
+  return WEEK_TASK_DEVOTION[Math.min(i, WEEK_TASK_DEVOTION.length - 1)];
+}
+
+// Kept as the week-1 value, because a few places still want "what a duty is
+// worth" as a constant and week 1 is the honest answer to that.
+export const DUTY_DEVOTION = WEEK_TASK_DEVOTION[0];
 
 // Devotion for engagement on X. These are per interaction, and each one is
 // credited exactly once — the ledger is keyed on (player, kind, post), so
@@ -24,9 +38,15 @@ export const DUTY_DEVOTION = 10;
 // no longer pay anything — they are free to manufacture and were worth 2 and 5
 // against a comment's 3, which paid most for what costs least.
 //
-// A flat 10 puts a comment level with a day's duty. It is claimable once per
-// post per player, so the ceiling is the number of posts the abbey makes.
-export const X_COMMENT_DEVOTION = 10;
+// Five apiece, two a day: ten a day, 560 across the run. That is deliberately
+// a fraction of what the duties pay — X is meant to be worth doing, not worth
+// doing INSTEAD, and a comment costs a player nothing but the typing.
+//
+// Two guards, and they do different jobs. The per-post ledger stops the same
+// post being claimed twice; X_DAILY_CLAIMS stops a player clearing a backlog of
+// twenty old posts in one sitting. Neither alone is enough.
+export const X_COMMENT_DEVOTION = 5;
+export const X_DAILY_CLAIMS = 2;
 export const X_DEVOTION = { comment: X_COMMENT_DEVOTION };
 
 // What has to be in the comment, word for word in meaning if not in spacing.
@@ -57,6 +77,11 @@ export function matchesPhrase(text) {
 // Paid to BOTH sides of a referral, once. Deliberately the same as a duty:
 // bringing someone into the abbey is worth a day's work, not a fortune.
 export const REFERRAL_DEVOTION = 10;
+// And no more than this many, ever, per Bloodline. Uncapped, referrals are the
+// one earner with no daily ceiling and no work in them — a player with a
+// following could out-earn eight weeks of duties in an afternoon. Ten is the
+// top of the range the design document asks for; it is one number to change.
+export const REFERRAL_CAP = 10;
 export const X_KINDS = Object.keys(X_DEVOTION);
 
 export function todayStr(d = new Date()) {
@@ -69,14 +94,35 @@ export function yesterdayStr(d = new Date()) {
   return todayStr(y);
 }
 
-// Level 10+ always gets the max multiplier; below that it scales with streak length.
-export function streakMultiplier(streak, level) {
-  if (level >= 10) return 3.0;
-  if (streak >= 28) return 3.0;
-  if (streak >= 21) return 2.5;
-  if (streak >= 14) return 2.0;
-  if (streak >= 7) return 1.5;
-  return 1.0;
+// ── THE STREAK MULTIPLIER ───────────────────────────────────────────────────
+//
+// Earned by keeping a streak, and it is the PLAYER'S OWN run of days that sets
+// it — not the calendar. A player who starts in week three and never misses is
+// on 1.0x in their first week exactly like everyone else was in theirs.
+//
+// The rule: a full week of all three duties unlocks 1.1x, and every further
+// TWO weeks of unbroken streak adds another 0.1x.
+//
+//   days 0-6   1.0x      days 21-34  1.2x      days 49+   1.4x
+//   days 7-20  1.1x      days 35-48  1.3x
+//
+// This is not the old curve (1.5x at a week, 3.0x at four, and a free 3.0x at
+// level 10). It is much flatter, which is the point: it rewards turning up
+// without letting an early player run away with the season on multiplier alone.
+//
+// TASKS ONLY. X interactions and referrals are paid flat — see the callers.
+export function streakMultiplier(streak) {
+  const days = Math.max(0, Math.floor(Number(streak) || 0));
+  if (days < 7) return 1.0;
+  return Math.round((1.1 + 0.1 * Math.floor((days - 7) / 14)) * 10) / 10;
+}
+
+// What one duty pays this player, right now: the week's base times their own
+// multiplier. Rounded, because devotion is an integer column — the design
+// document's totals assume exact arithmetic, so a run of these lands within a
+// point or two of its figures rather than exactly on them.
+export function taskAward(week, streak) {
+  return Math.round(taskDevotionForWeek(week) * streakMultiplier(streak));
 }
 
 // ── WHAT A CONFESSION COSTS ─────────────────────────────────────────────────
