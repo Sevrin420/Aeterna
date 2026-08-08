@@ -695,8 +695,11 @@ async function bindBloodline(bl, menu, bloodlineName, { afterMint = false } = {}
   if (isDemoMode()) {
     boundToken = bl.id;
     chosenCultist = bl;
-    if (menu) { menu.sel = 1; menu.setWallet(shortAddr(connectedAddr), bl.cultists, connectedAddr); }
+    if (menu) menu.setWallet(shortAddr(connectedAddr), bl.cultists, connectedAddr);
     showToast(`${bloodlineName || bl.name} walks — Bloodline #${bl.id}, ${bl.cultists} Cultists. (demo)`);
+    // The same exit the real path takes, so demo and live leave the player
+    // looking at the same screen — and so this can be tested without a wallet.
+    returnToMenu(menu);
     return;
   }
   try {
@@ -734,6 +737,12 @@ async function bindBloodline(bl, menu, bloodlineName, { afterMint = false } = {}
     }
     showToast(`${called} walks — Bloodline #${bl.id}, ${bl.cultists} Cultists, ${full.devotion || 0} Devotion.`);
     await offerXHandleAndReferral(full, { afterMint });
+    // Every question has been put. Back to the menu, deliberately and in one
+    // place: the rites hand the overlay round between them — the mint slider,
+    // the picker, the naming box, the handle, the referrer — and each used to
+    // leave its own bit of dress behind. The last one out closes the screen
+    // properly rather than merely hiding it.
+    returnToMenu(menu);
   } catch (e) {
     // A failed bind leaves a paid-for Bloodline that the game cannot see, so
     // it must say so plainly and say how to retry. Pressing WALLET re-reads the
@@ -837,6 +846,30 @@ function openBloodlinePicker(menu) {
     },
   };
   _picker.paint();
+}
+
+// The way out of every rite that borrows the entrance overlay: the mint slider,
+// the picker, and the three questions after a bind. Each of those dresses the
+// same handful of elements and each used to undo only its own share, so what
+// the player was left looking at depended on which one happened to finish last.
+// This puts the screen back the way the menu expects to find it, whatever ran.
+function returnToMenu(menu) {
+  if (_mintTeardown) _mintTeardown();
+  _lines = null;
+  _picker = null;
+  walletOverlay.hidden = true;
+  walletOverlay.classList.remove('asking', 'picking', 'minting', 'lines');
+  walletInput.hidden = true;
+  walletSubmitBtn.hidden = true;
+  walletSkipBtn.hidden = true;
+  cultistSlider.hidden = true;
+  cultistGrid.hidden = true;
+  cultistGrid.className = 'cultist-grid';
+  cultistGrid.innerHTML = '';
+  if (menu) { menu.status = null; menu.sel = 1; }   // land on PLAY
+  // The A that dismissed the last question is still in the queue. Unflushed,
+  // the menu reads it on the very next frame and fires whatever it lands on.
+  input.flush();
 }
 
 function closeBloodlinePicker() {
@@ -1036,6 +1069,11 @@ function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = '
     // other's listeners. That is the naming "glitch". It re-opens itself when
     // the prompt resolves.
     _lines = null;
+    // And the picker, for the same reason. It closes itself before binding
+    // today, so this changes nothing now — it is here so a future path that
+    // opens a question over a live picker cannot leave it eating input behind
+    // a hidden overlay.
+    _picker = null;
     walletOverlay.classList.remove('picking', 'lines', 'minting');
     // Naming, the X handle and the referral are all one short question with a
     // way out. They get their own dress — see the `.asking` block in
@@ -1139,37 +1177,44 @@ async function offerXHandleAndReferral(player, { afterMint = false } = {}) {
     && !_askedThisSession.has(`ref:${key}`);
   if (askRef) {
     _askedThisSession.add(`ref:${key}`);
-    const who = await askOverlay({
-      title: 'Who brought you here?',
-      message: `Name the X handle of the Cultist who brought you in. You are both `
-        + `granted ${REFERRAL_DEVOTION} Devotion — once. `
-        + `<em>They must already have set that handle in the abbey.</em>`,
-      placeholder: '@theirhandle',
-      confirm: 'Speak the name',
-      skip: 'Nobody',
-    });
-    if (who) {
+    // Asked until it is SETTLED — a name that lands, or a deliberate "Later" —
+    // rather than once and gone. A refused handle used to end the rite here,
+    // which meant one typo, or naming someone who had not carved their own
+    // handle yet, and the box was closed with nothing set. Now the refusal is
+    // shown and the question comes straight back with the way out beside it.
+    for (;;) {
+      const who = await askOverlay({
+        title: 'Who brought you here?',
+        message: `Name the X handle of the Cultist who brought you in. You are both `
+          + `granted ${REFERRAL_DEVOTION} Devotion — once. `
+          + `<em>They must already have set that handle in the abbey.</em>`,
+        placeholder: '@theirhandle',
+        confirm: 'Speak the name',
+        // Not "Nobody" — that was an answer, and it read as a final one. This
+        // is a deferral, and the message below says where to go back to.
+        skip: 'Later',
+      });
+      if (!who) {
+        // Recorded so the question stops arriving on every reconnect. It does
+        // NOT close the matter: `referred` is still unset, LINES still offers
+        // the row, and the next mint asks again.
+        player.referralAsked = true;
+        try { await api.declineReferral(); } catch { /* it will be asked once more at worst */ }
+        showToast('No one named. You can name them later — LINES, on the menu.', { size: 't-mid' });
+        break;
+      }
       try {
         const r = await api.referral(who);
         showToast(`@${r.referrer} brought you in. ${r.devotionGained} Devotion to you both.`, { size: 't-mid' });
         player.referred = r.referrer;
+        break;
       } catch (e) {
-        // A REJECTED handle does not close the question. It used to: the
-        // decline below fired on any outcome that was not a credit, so one
-        // typo — or naming someone who simply had not carved their own handle
-        // yet — spent the only chance the player had. Nothing is recorded here,
-        // so the next mint asks again and LINES can still set it.
         showToast(e.message || 'That name is not known here.', { size: 't-mid' });
         sfx.error();
+        // and round again: Later is always there to leave by.
       }
-    } else {
-      // Waved away deliberately. THAT is worth remembering, so the question
-      // stops arriving on every connect — and it still leaves LINES open.
-      player.referralAsked = true;
-      try { await api.declineReferral(); } catch { /* it will be asked once more at worst */ }
     }
   }
-  walletOverlay.hidden = true;
 }
 
 // The mint rite. The Doctrine is read first (the dialogue box above), then this

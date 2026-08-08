@@ -549,15 +549,15 @@ body.powered .mute-toggle {
     -2px 0 0 #1a1006, 2px 0 0 #1a1006, 0 -2px 0 #1a1006, 0 2px 0 #1a1006,
     -2px -2px 0 #1a1006, 2px -2px 0 #1a1006, -2px 2px 0 #1a1006, 2px 2px 0 #1a1006,
     0 0 14px rgba(247, 221, 147, 0.5);
-  /* A slow pulse, not a flicker. At one second it read as an alarm, and this
-     legend is up for a wait that can run a minute or more — the beat has to be
-     something you can sit next to. Lit for two thirds of it, so the screen is
-     mostly showing the words rather than the gap between them. */
-  animation: wait-blink 2s steps(1, end) infinite;
+  /* The title card's PRESS A, to the frame. That blink is `this.blink += dt`
+     stepped at 0.5 in boot.js — a one second cycle, half on and half off, hard
+     step with no fade. Matched here rather than guessed at, so the two legends
+     keep the same beat: they are the same voice saying two different things. */
+  animation: wait-blink 1s steps(1, end) infinite;
 }
 @keyframes wait-blink {
-  0%, 66% { opacity: 1; }
-  66.01%, 100% { opacity: 0; }
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
 }
 
 
