@@ -4,6 +4,9 @@ CREATE TABLE IF NOT EXISTS players (
   id            TEXT PRIMARY KEY,
   wallet        TEXT NOT NULL UNIQUE,
   token_id      INTEGER UNIQUE,
+  -- The on-chain holder, lowercased, verified against ownerOf() at bind.
+  -- NOT the same as `wallet`, which is a per-BROWSER pseudo-id.
+  address       TEXT,
   name          TEXT NOT NULL,
   prefix        TEXT NOT NULL DEFAULT 'Brother',  -- Brother | Sister | Deacon | Bishop | Cardinal
   sex           TEXT NOT NULL,                    -- male | female

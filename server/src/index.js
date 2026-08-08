@@ -369,12 +369,18 @@ fastify.post('/bind', async (req, reply) => {
   }
 
   const w = String(wallet).toLowerCase();
+  const addr = String(address).toLowerCase();
 
   // Already bound? Refresh the cached Cultist count and hand the row back.
   const bound = db.prepare('SELECT * FROM players WHERE wallet = ? AND token_id = ?').get(w, tid);
   if (bound) {
     if (bound.cultists !== onChain.cultists) {
       db.prepare('UPDATE players SET cultists = ? WHERE id = ?').run(onChain.cultists, bound.id);
+    }
+    // Kept current: the token can change hands, and this row follows the
+    // holder. It is also how rows bound before the column existed acquire one.
+    if (bound.address !== addr) {
+      db.prepare('UPDATE players SET address = ? WHERE id = ?').run(addr, bound.id);
     }
     // Named ONCE, but not necessarily at creation. A line that is still
     // unnamed may take a name at any time — the entrance offers it at the mint
@@ -398,11 +404,11 @@ fastify.post('/bind', async (req, reply) => {
   const ghost = db.prepare('SELECT * FROM players WHERE wallet = ? AND token_id IS NULL').get(w);
   if (ghost) {
     db.prepare(`UPDATE players SET
-        token_id = ?, cultists = ?, bloodline_name = ?,
+        token_id = ?, cultists = ?, bloodline_name = ?, address = ?,
         devotion = 0, streak = 0, level = 1, last_duty_date = NULL, confession_count = 0,
         flags_date = ?, pray_today = 0, garden_today = 0, candles_today = 0,
         scourge_today = 0, gifts_given_today = 0, gifts_received_today = 0
-      WHERE id = ?`).run(tid, onChain.cultists, cleanName || null, todayStr(), ghost.id);
+      WHERE id = ?`).run(tid, onChain.cultists, cleanName || null, addr, todayStr(), ghost.id);
     return ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE id = ?').get(ghost.id));
   }
 
@@ -412,6 +418,7 @@ fastify.post('/bind', async (req, reply) => {
   const player = {
     id: randomUUID(),
     wallet: w,
+    address: addr,
     token_id: tid,
     cultists: onChain.cultists,
     bloodline_name: cleanName || null,
@@ -436,8 +443,8 @@ fastify.post('/bind', async (req, reply) => {
   // it says which Bloodline and what went wrong.
   try {
     db.prepare(`
-      INSERT INTO players (id, wallet, token_id, cultists, bloodline_name, name, prefix, sex, x_handle, created_at, flags_date)
-      VALUES (@id, @wallet, @token_id, @cultists, @bloodline_name, @name, @prefix, @sex, @x_handle, @created_at, @flags_date)
+      INSERT INTO players (id, wallet, address, token_id, cultists, bloodline_name, name, prefix, sex, x_handle, created_at, flags_date)
+      VALUES (@id, @wallet, @address, @token_id, @cultists, @bloodline_name, @name, @prefix, @sex, @x_handle, @created_at, @flags_date)
     `).run(player);
   } catch (e) {
     req.log.error({ err: e, tokenId: tid, wallet: w }, 'bind: could not create the Bloodline row');
@@ -494,16 +501,22 @@ fastify.get('/me', async (req, reply) => {
 
   const fresh = ensureFreshDay(db, player);
   const pending = pendingConfession(db, fresh.id);
-  // Whether this wallet has already been brought in by someone. The client
-  // uses it to know not to ask again; it is keyed to the wallet because that
-  // is what the referrals table is unique on.
-  const referral = db.prepare('SELECT referrer_handle FROM referrals WHERE referee_wallet = ?')
-    .get(String(wallet).toLowerCase());
+  // Whether this holder has already been brought in by someone. Asked of BOTH
+  // identities, for the same reason /referral writes by address: new rows are
+  // keyed to the on-chain address and older ones to the browser's pseudo-id,
+  // and looking under only one of them would tell a referred player they had
+  // never been referred — and then ask them again.
+  const wid = String(wallet).toLowerCase();
+  const referral = db.prepare('SELECT referrer_handle FROM referrals WHERE referee_wallet IN (?, ?)')
+    .get(wid, fresh.address || wid);
   // Asked and declined counts as answered. Without this the client only knew
   // about referrals that SUCCEEDED, so anyone who said "not now" was asked
   // again on every connect, for good.
-  const declined = db.prepare('SELECT 1 FROM referral_declines WHERE wallet = ?')
-    .get(String(wallet).toLowerCase());
+  //
+  // Still keyed to the browser: a decline is "do not nag me here", which is a
+  // property of the session rather than of the wallet, and it does not pay
+  // anything so there is nothing to double-claim.
+  const declined = db.prepare('SELECT 1 FROM referral_declines WHERE wallet = ?').get(wid);
   // The price of mending, so the Confessor can name it before the player
   // kneels rather than after. Null when nothing is owed, and also null when the
   // chain could not be reached — the client must say "unknown", not "free".
@@ -854,8 +867,26 @@ fastify.post('/referral', async (req, reply) => {
     return reply.code(400).send({ error: 'An X handle is 1-15 letters, numbers or underscores' });
   }
 
+  // WHO YOU ARE, for a referral, is the on-chain address — not `wallet`.
+  //
+  // `wallet` is a pseudo-id generated per BROWSER and kept in localStorage, so
+  // two different wallets used in the same browser carry the same one. That is
+  // the bug this replaced: connect wallet A, carve a handle on its Bloodline,
+  // switch to wallet B in the same browser, name A as your referrer — and the
+  // server compared browser ids, found them equal, and answered "you cannot
+  // bring yourself into the abbey" to two genuinely different people.
+  //
+  // Rows bound before players.address existed have none, so both checks fall
+  // back to the browser id for those. That is the old behaviour, kept only
+  // where there is nothing better to go on.
   const w = String(wallet).toLowerCase();
-  const already = db.prepare('SELECT * FROM referrals WHERE referee_wallet = ?').get(w);
+  const refereeAddr = referee.address || null;
+
+  // Already referred? Asked of BOTH identities on purpose. New rows are keyed
+  // by address, older ones by browser id, and a player must not be able to
+  // collect the referral twice by having been written under each.
+  const already = db.prepare('SELECT * FROM referrals WHERE referee_wallet IN (?, ?)')
+    .get(w, refereeAddr || w);
   if (already) {
     return reply.code(409).send({ error: `You were already brought in by @${already.referrer_handle}` });
   }
@@ -864,10 +895,19 @@ fastify.post('/referral', async (req, reply) => {
   // onto a ghost row that is not allowed to earn any.
   const referrer = db.prepare('SELECT * FROM players WHERE x_handle = ? COLLATE NOCASE AND token_id IS NOT NULL').get(handle);
   if (!referrer) return reply.code(404).send({ error: 'No Cultist here goes by that handle' });
-  if (referrer.wallet === w) {
+
+  const sameWallet = refereeAddr && referrer.address && refereeAddr === referrer.address;
+  const sameBrowserAndNoBetter = (!refereeAddr || !referrer.address) && referrer.wallet === w;
+  if (sameWallet || sameBrowserAndNoBetter) {
     return reply.code(400).send({ error: 'You cannot bring yourself into the abbey' });
   }
-  const mutual = db.prepare('SELECT 1 FROM referrals WHERE referee_wallet = ? AND referrer_wallet = ?').get(referrer.wallet, w);
+
+  // Keyed by address where we have one, so the row means "this wallet was
+  // brought in" rather than "this browser was".
+  const refereeKey = refereeAddr || w;
+  const referrerKey = referrer.address || referrer.wallet;
+  const mutual = db.prepare('SELECT 1 FROM referrals WHERE referee_wallet = ? AND referrer_wallet = ?')
+    .get(referrerKey, refereeKey);
   if (mutual) return reply.code(409).send({ error: 'You already brought them in' });
 
   const amount = REFERRAL_DEVOTION;
@@ -877,7 +917,7 @@ fastify.post('/referral', async (req, reply) => {
       db.prepare(`INSERT INTO referrals
         (referee_wallet, referee_player_id, referrer_wallet, referrer_player_id, referrer_handle, devotion_each, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .run(w, referee.id, referrer.wallet, referrer.id, referrer.x_handle, amount, now);
+        .run(refereeKey, referee.id, referrerKey, referrer.id, referrer.x_handle, amount, now);
       db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(amount, referee.id);
       db.prepare('UPDATE players SET devotion = devotion + ? WHERE id = ?').run(amount, referrer.id);
     })();

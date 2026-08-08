@@ -40,6 +40,12 @@ for (const ddl of [
   // `name`, which is the monk's own given name and is auto-generated: a
   // Bloodline is the line, not the person currently keeping it.
   'ALTER TABLE players ADD COLUMN bloodline_name TEXT',
+  // The ON-CHAIN address that holds this Bloodline, lowercased, written at bind
+  // where it has already been verified against ownerOf(). `wallet` is NOT this:
+  // it is a pseudo-id generated per BROWSER and kept in localStorage, so two
+  // different wallets used in one browser share it. Anything that asks "is this
+  // the same person" has to ask this column — see /referral.
+  'ALTER TABLE players ADD COLUMN address TEXT',
 ]) {
   try {
     db.exec(ddl);
