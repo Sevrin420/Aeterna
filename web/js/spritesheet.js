@@ -18,7 +18,7 @@ import { makeCharacterHD, traitsForSeed, traitsForGuru, traitsForConfessor, trai
    booth bay is fifteen logical px wide and he already draws exactly fifteen
    wide, the menu sizes its backdrop and its count off CULT_H, and the scourge
    composes its own shot. Those would overflow their frames rather than read
-   bigger. See the call sites in courtyard.js.
+   bigger. See the call sites in abbey.js.
 
    Rides the same switch as everything else, so BIRDS=false restores the human
    cast at its original size and not at a size tuned for birds. */

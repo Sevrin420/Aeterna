@@ -25,7 +25,7 @@ export const GAME_NAME = NEW_NAME ? 'Throbbin Abbey' : 'Vita Aeterna';
 export const PAGE_TITLE = NEW_NAME ? 'Throbbin Abbey — Eternal Life' : 'Aeterna — Vita Aeterna';
 
 // The mantra every rite is performed to. ONE definition — the shrine, the fire
-// vigil and the courtyard duties all read this, so the whole day has one voice
+// vigil and the abbey duties all read this, so the whole day has one voice
 // and a change to it cannot land at two altars out of three.
 export const CHANT_PAIR = NEW_CHANT
   ? ['Eternal Throb', 'Eternal Life']

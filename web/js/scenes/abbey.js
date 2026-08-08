@@ -88,7 +88,7 @@ const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
 // would be a toll with no rite behind it.
 function boxOpts() { return {}; }
 
-export class CourtyardScene {
+export class AbbeyScene {
   constructor({ player, onPlayerUpdate, onToast, socket, onSaveExit, onChatOpen, onConfessionPay, crowd }) {
     this.player = player;
     this.crowd = this._spawnCrowd(crowd || 0); // demo NPC cultists wandering the sanctuary

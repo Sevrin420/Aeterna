@@ -5,7 +5,7 @@
 // private rooms with doors; the EAST stair to a chamber walled with skulls.
 //
 // Everything is drawn in Aeterna's own procedural pixel style in
-// web/js/scenes/courtyard.js from the tile grid + prop list below.
+// web/js/scenes/abbey.js from the tile grid + prop list below.
 
 export const TILE = 10;
 export const COLS = 116;
@@ -40,7 +40,7 @@ function wallRing(grid, x0, y0, x1, y1) {
   }
 }
 
-// ---- landmark coordinates (single source of truth, shared with courtyard) ----
+// ---- landmark coordinates (single source of truth, shared with the scene) ----
 // The church, pulled in by about a third on both long axes. It was 70 tiles
 // from altar to door and 66 across the crossbar, which made crossing it a
 // commute rather than a walk — most of a minute of holding one direction with
@@ -410,7 +410,7 @@ for (const a of ALCOVES) {
   prop('brazier', a.brazier.col, a.brazier.row, false, { side: a.side, cy: a.cy });
   // The wood stack and the wall torch are NOT props any more — they are
   // carryable objects the scene owns, because a prop is scenery and these have
-  // to be picked up, moved, consumed and respawned. See courtyard.js.
+  // to be picked up, moved, consumed and respawned. See abbey.js.
   // No arch prop: the niche's own tapered floor plan is the point.
 }
 

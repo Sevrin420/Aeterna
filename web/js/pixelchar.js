@@ -1211,7 +1211,7 @@ const AETERNA_IRIS = ['#241a12', '#1a2436', MOSS.o, SOUL.o];
 // their peers never get. One slot in four is left bare so a tonsure or a plain
 // head still turns up in a crowd.
 // Hooded three times in four, bare-headed the fourth — the same mix the human
-// cast had, so a courtyard still reads as mostly cowls with a few uncovered
+// cast had, so a crowd still reads as mostly cowls with a few uncovered
 // heads among them. Sex no longer changes the head: a green bird is a green
 // bird, and the difference was only ever hair.
 // No hoods anywhere. The cowl was the human cast's silhouette; on a bird it

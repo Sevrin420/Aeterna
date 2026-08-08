@@ -4,7 +4,7 @@ import { MenuScene } from './scenes/menu.js';
 import { DialogueBox, THEMES } from './dialogue.js';
 import { EmojiWheel } from './emojiwheel.js';
 import { LORE } from './lore.js';
-import { CourtyardScene } from './scenes/courtyard.js';
+import { AbbeyScene } from './scenes/abbey.js';
 import { api, setTokenId, getTokenId } from './api.js';
 import { sfx, AUDIO_MASTER } from './sfx.js';
 import { PAGE_TITLE } from './config.js';
@@ -58,7 +58,7 @@ emojiToggle.addEventListener('click', (ev) => {
 });
 
 // Two looping hymns. Created fresh inside their respective user-gesture
-// handlers (powerOn / enterCourtyard) so mobile browsers always allow
+// handlers (powerOn / enterAbbey) so mobile browsers always allow
 // playback — pre-creating Audio elements on page load can silently fail.
 let _bgm = null;
 let _gameBgm = null;
@@ -402,7 +402,7 @@ chatInput.addEventListener('keydown', (e) => {
 
 const CROWD = parseInt(new URLSearchParams(location.search).get('crowd') || '0', 10) || 0;
 
-function enterCourtyard(player) {
+function enterAbbey(player) {
   updateHud(player);
   // Entering the game: auto-unmute, create fresh game bgm, pause title bgm.
   sfx.setMuted(false);
@@ -415,7 +415,7 @@ function enterCourtyard(player) {
   _gameBgm.muted = false;
   _want = _gameBgm;
   tryPlay(_gameBgm, 'game-hymn');
-  scene = new CourtyardScene({
+  scene = new AbbeyScene({
     player,
     onPlayerUpdate: updateHud,
     onToast: showToast,
@@ -517,8 +517,8 @@ const REFERRAL_DEVOTION = 10;
 // Save & Exit from the game returns to the entry lobby (not power off). Devotion
 // was already saved by the scene before this runs.
 // Leaving the abbey means walking out of its SOUTH door, so the player comes
-// back into the courtyard at its north end — under the arch they went in by.
-// Arriving fresh (or after a reload) starts them in the middle of the yard.
+// back in at the nave's north end — under the arch they went in by. Arriving
+// fresh (or after a reload) starts them in the middle of the nave.
 // Ending the day drops you back to the title menu, which is the only screen
 // outside the abbey now that the entrance courtyard is gone.
 function returnToEntrance() {
@@ -719,7 +719,7 @@ async function bindBloodline(bl, menu, bloodlineName, { afterMint = false } = {}
     // number — and withNames() fills the real one in from the server. On a
     // FRESH mint there is nothing to fill in from: the name is being carried in
     // this very call and the server only learns it on the line above. So `bl`
-    // kept its chain label, and since chosenCultist IS bl, the courtyard's
+    // kept its chain label, and since chosenCultist IS bl, the abbey's
     // "You enter as ..." read out the number the player had just replaced.
     if (called && !/^Bloodline #/.test(called)) {
       bl.name = called;
@@ -1433,7 +1433,7 @@ function proceedIntoGame() {
   if (scene && scene.exit) scene.exit();
   const chosen = chosenCultist;
   revealTransition(() => {
-    enterCourtyard(entrancePlayer);
+    enterAbbey(entrancePlayer);
     if (chosen) showToast(`You enter as ${chosen.name}.`);
   });
 }
@@ -1501,7 +1501,7 @@ function powerOn() {
       (dt) => {
         // FIRST, because it covers everything. The message box is near
         // fullscreen and waits for A, so whatever is underneath it — the
-        // courtyard, the menu, LINES, a naming prompt — is not readable and
+        // abbey, the menu, LINES, a naming prompt — is not readable and
         // must not be taking presses meant for the box on top. It used to sit
         // LAST here, which was right while it was a small notice that timed
         // itself out; at this size and with no timer, a screen below it that

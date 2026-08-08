@@ -81,7 +81,7 @@ html, body {
   image-rendering: crisp-edges;
 }
 
-/* Black veil the boot sequence lifts to reveal the courtyard underneath. */
+/* Black veil the boot sequence lifts to reveal the abbey underneath. */
 .boot-veil {
   position: absolute;
   inset: 0;
@@ -437,7 +437,7 @@ body.powered .mute-toggle {
    status bar goes and not where a reward goes: the one moment the game pays you
    for a day's work read like a tooltip. It is now large gold letters across the
    middle of the screen, with no panel behind them — the heavy dark outline is
-   what keeps them readable over a lit courtyard, the same way the sprites carry
+   what keeps them readable over the lit abbey, the same way the sprites carry
    their own outline.
 
    THE SIZE IS SET FROM THE MESSAGE, in showToast(). This one element carries
