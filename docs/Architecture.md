@@ -24,7 +24,7 @@
 - Daily duties & streaks
 - Gift spawning, carrying, offering
 - The abbey's clock: one 8-week run, day 0 = contract deployment (`GET /day`)
-- Confession — priced by week and Cultists (GDD §6); **quoting only, not collecting**
+- Confession — priced by week and Cultists, and collected: the payment is a plain AVAX transfer to the treasury, verified on-chain before the streak is mended (GDD §6)
 - Live Devotion tracking
 - Leaderboards
 - Manual admin awards

@@ -31,22 +31,18 @@ chain with `team()` and `treasury()` — they are simply not restated here.
 Everything below is off-chain, in the game server, by design:
 
 - **Devotion, streaks, levels** — server-side, in SQLite
-- **Confession** — priced by the server (see the GDD §6); no on-chain function
+- **Confession** — priced by the server and paid as a plain AVAX transfer to
+  the treasury; the server verifies the transaction before mending a streak.
+  There is no confession function on the contract (see the GDD §6).
 - **Gifts, Mancala wagers, Cathedral rooms** — server-side; the Mancala wager
   moves Devotion, not AVAX
 - **Payouts at the end of the run** — not built, and not designed
 
 ## Left to do
 
-1. **Confession payment.** The price is computed and quoted; nothing is
-   collected. Needs the treasury address in the client, and server-side
-   verification of the transaction: receipt fetched, status success, `to` is
-   the treasury, `value` at least the quoted wei, and the same hash not already
-   spent on another confession. Until all five hold, a stored `txHash` is a
-   note and not a receipt.
-2. **End-of-run payout.** 80% of the mint is the players' pot. How it is
+1. **End-of-run payout.** 80% of the mint is the players' pot. How it is
    divided is undesigned, and there is no contract function for it.
-3. **Wallet-signature auth.** `/bind` verifies NFT ownership on-chain before
+2. **Wallet-signature auth.** `/bind` verifies NFT ownership on-chain before
    writing a row, but the session identity itself is an unsigned
    locally-generated id.
 

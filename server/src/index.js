@@ -196,13 +196,16 @@ const BLOODLINE_ADDRESS = process.env.BLOODLINE_ADDRESS
 class ChainDown extends Error {}
 class NoSuchToken extends Error {}
 
-async function chainCall(data) {
+// Any JSON-RPC method. Verifying a payment needs eth_getTransactionByHash and
+// eth_getTransactionReceipt, which are not eth_call — chainCall below stays as
+// the contract-read shorthand it always was and now sits on top of this.
+async function rpc(method, params) {
   let body;
   try {
     const res = await fetch(AVAX_RPC, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: BLOODLINE_ADDRESS, data }, 'latest'] }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) throw new ChainDown(`RPC HTTP ${res.status}`);
@@ -210,11 +213,16 @@ async function chainCall(data) {
   } catch (e) {
     throw new ChainDown(e.message);
   }
+  if (body.error) throw new NoSuchToken(body.error.message || 'reverted');
+  return body.result;
+}
+
+async function chainCall(data) {
+  const result = await rpc('eth_call', [{ to: BLOODLINE_ADDRESS, data }, 'latest']);
   // ownerOf() reverts on an unminted id, and a bare '0x' is the same answer
   // from a node that would rather not say so.
-  if (body.error) throw new NoSuchToken(body.error.message || 'reverted');
-  if (!body.result || body.result === '0x') throw new NoSuchToken('empty result');
-  return body.result;
+  if (!result || result === '0x') throw new NoSuchToken('empty result');
+  return result;
 }
 
 const padUint256 = (n) => BigInt(n).toString(16).padStart(64, '0');
@@ -257,6 +265,48 @@ async function confessionPriceFor(player, now = new Date()) {
     wei: wei.toString(),
     avax: weiToAvax(wei),
   };
+}
+
+// ── WHERE THE MONEY GOES ────────────────────────────────────────────────────
+//
+// The treasury address is READ FROM THE CONTRACT, not configured. `treasury` is
+// an immutable public on the deployed contract, so the chain is the authority
+// on where its money goes and there is no way for a wrong value in a file, or a
+// wrong value pasted into a chat, to send a player's AVAX somewhere else.
+//
+// CONFESSION_TREASURY is a cross-check, not the source: if the chain disagrees
+// with it the server refuses to take money at all and says so in the log. A
+// mismatch means one of the two is wrong and neither is safe to act on.
+const CONFESSION_TREASURY = String(
+  process.env.CONFESSION_TREASURY || '0xda74c09ec68a291287e92e7e0e68a17b824d6b0e',
+).toLowerCase();
+
+let _treasury = null;
+async function treasuryFromChain() {
+  if (_treasury !== null) return _treasury;
+  try {
+    const hex = await chainCall('0x61d027b3');                 // treasury()
+    const addr = '0x' + String(hex).replace(/^0x/, '').slice(-40).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(addr) || addr === `0x${'0'.repeat(40)}`) return null;
+    _treasury = addr;
+    return addr;
+  } catch {
+    return null;                                               // not cached: retry
+  }
+}
+
+// The treasury to send to, or null if it cannot be established with confidence.
+async function payableTreasury(log) {
+  const onChain = await treasuryFromChain();
+  if (!onChain) return null;
+  if (onChain !== CONFESSION_TREASURY) {
+    if (log) {
+      log.error({ onChain, configured: CONFESSION_TREASURY },
+        'treasury MISMATCH — the chain and the configured address disagree, refusing to collect');
+    }
+    return null;
+  }
+  return onChain;
 }
 
 // ownerOf(uint256) and cultistsOf(uint256)
@@ -503,14 +553,25 @@ fastify.post('/save', async (req, reply) => {
 // one, 50% weeks 2-4, 100% weeks 5-7, 200% in week 8 — times its Cultists. See
 // confessionCostWei in gameLogic.js.
 //
-// !! STILL NOT COLLECTING. The price is computed, quoted and recorded, and the
-// streak is forgiven WITHOUT anything being paid. `txHash` is accepted and
-// stored exactly as it arrives and is NOT verified against the chain, so it is
-// a note, not a receipt. Before this charges anyone, /confession must: fetch
-// the receipt, check it succeeded, check `to` is the treasury, check `value` >=
-// the wei quoted here, and check the same hash has not already been spent on
-// another confession. Until then a stored hash proves nothing and must not be
-// shown to anyone as if it did.
+// IT COLLECTS. Nothing is forgiven until a real payment has been found on the
+// chain and checked five ways. A `txHash` is not a receipt because the client
+// says so — the client is the party with the motive — so every one of these is
+// verified server-side against the node, and any one of them failing means the
+// streak stays broken:
+//
+//   1. the transaction exists and its receipt says status 0x1 (it succeeded)
+//   2. `to` is the treasury, read from the contract, not from a config file
+//   3. `value` is at least the wei quoted for THIS player, this week
+//   4. the sender still owns the Bloodline being mended
+//   5. that hash has not already been spent on a confession
+//
+// (4) is what stops one payment mending a stranger's line, and (5) is what
+// stops the same payment mending the same line twice. The UNIQUE index on
+// streak_logs.tx_hash is the real guard for (5): the check below is the polite
+// version, and the index is what holds when two requests race.
+//
+// Called with no txHash it answers 402 with the quote, so the client's first
+// move is always "ask what it costs" and never a guess.
 fastify.post('/confession', async (req, reply) => {
   const { wallet, tokenId, txHash } = req.body || {};
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
@@ -531,12 +592,89 @@ fastify.post('/confession', async (req, reply) => {
     return reply.code(503).send({ error: 'The abbey cannot read its own ledger. Try again in a moment.' });
   }
 
-  const now = new Date().toISOString();
+  const treasury = await payableTreasury(req.log);
+  if (!treasury) {
+    return reply.code(503).send({ error: 'The abbey cannot say where its own coffer is. Nothing was taken.' });
+  }
 
-  db.prepare(`
-    UPDATE streak_logs SET confessed = 1, confessed_at = ?, cost_eth = ?, tx_hash = ?
-    WHERE id = ?
-  `).run(now, price.avax, txHash || null, pending.id);
+  // No payment yet: quote, and say where to send it.
+  if (!txHash) {
+    return reply.code(402).send({
+      error: `The mending costs ${price.avax} AVAX.`,
+      price,
+      payTo: treasury,
+    });
+  }
+
+  if (!/^0x[0-9a-fA-F]{64}$/.test(String(txHash))) {
+    return reply.code(400).send({ error: 'That is not a transaction hash.' });
+  }
+  const hash = String(txHash).toLowerCase();
+
+  // (5), the polite half. The index is the half that holds under a race.
+  const spent = db.prepare('SELECT 1 FROM streak_logs WHERE tx_hash = ?').get(hash);
+  if (spent) return reply.code(409).send({ error: 'That payment has already been spent on a confession.' });
+
+  let tx;
+  let receipt;
+  try {
+    tx = await rpc('eth_getTransactionByHash', [hash]);
+    receipt = await rpc('eth_getTransactionReceipt', [hash]);
+  } catch (e) {
+    req.log.error({ err: e, hash }, 'confession: could not read the payment');
+    return reply.code(503).send({ error: 'The chain could not be reached to check that payment. Nothing was taken.' });
+  }
+
+  if (!tx) return reply.code(404).send({ error: 'No such transaction. If it was just sent, wait a moment and try again.' });
+  if (!receipt) return reply.code(425).send({ error: 'That payment has not been sealed yet. Try again in a moment.' });
+  if (String(receipt.status) !== '0x1') {
+    return reply.code(400).send({ error: 'That transaction failed on the chain.' });
+  }
+
+  const to = String(tx.to || '').toLowerCase();
+  if (to !== treasury) {
+    req.log.warn({ hash, to, treasury }, 'confession: payment sent somewhere other than the treasury');
+    return reply.code(400).send({ error: 'That payment did not go to the abbey.' });
+  }
+
+  const paid = BigInt(tx.value || '0x0');
+  const owed = BigInt(price.wei);
+  if (paid < owed) {
+    return reply.code(402).send({
+      error: `That is not enough. The mending costs ${price.avax} AVAX.`,
+      price,
+      payTo: treasury,
+    });
+  }
+
+  // (4). The payer must still hold the line being mended — otherwise a
+  // stranger's payment, or an old one from a wallet that has since sold up,
+  // would mend somebody else's streak.
+  const from = String(tx.from || '').toLowerCase();
+  try {
+    const onChain = await readTokenFromChain(fresh.token_id);
+    if (onChain.owner !== from) {
+      return reply.code(403).send({ error: 'That payment did not come from the wallet holding this Bloodline.' });
+    }
+  } catch (e) {
+    req.log.error({ err: e, tokenId: fresh.token_id }, 'confession: could not verify the holder');
+    return reply.code(503).send({ error: 'The chain could not be reached to check that Bloodline. Nothing was taken.' });
+  }
+
+  const now = new Date().toISOString();
+  try {
+    db.prepare(`
+      UPDATE streak_logs SET confessed = 1, confessed_at = ?, cost_eth = ?, tx_hash = ?
+      WHERE id = ?
+    `).run(now, price.avax, hash, pending.id);
+  } catch (e) {
+    // The UNIQUE index firing here means another request banked this same hash
+    // between the check above and now. That is the race the index exists for.
+    if (e && typeof e.code === 'string' && e.code.startsWith('SQLITE_CONSTRAINT_UNIQUE')) {
+      return reply.code(409).send({ error: 'That payment has already been spent on a confession.' });
+    }
+    throw e;
+  }
 
   // Forgive the break: restore the streak the player had going into it, and
   // back-date last_duty_date to "yesterday" so today's duties continue it.
@@ -550,11 +688,10 @@ fastify.post('/confession', async (req, reply) => {
     success: true,
     costPaid: price.avax,
     price,
+    txHash: hash,
     confessionCount: fresh.confession_count + 1,
     restoredStreak: pending.streak_before,
-    // Said plainly in the response, because a client reading `costPaid` could
-    // reasonably assume it was.
-    collected: false,
+    collected: true,
   };
 });
 

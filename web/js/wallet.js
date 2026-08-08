@@ -368,3 +368,30 @@ export async function mintBloodline(address, cultists) {
     }],
   });
 }
+
+// Pay for a confession: a plain AVAX transfer to the abbey's treasury.
+//
+// `to` and `wei` are BOTH the server's, quoted by /confession, and neither is
+// computed here. The treasury the server quotes is read from the contract's own
+// immutable `treasury()` — so the address a player's money goes to is the
+// contract's answer, not a constant in this file that could drift or be edited.
+// The amount is likewise the server's arithmetic; the client's job is to sign
+// what it was quoted, and the server checks the chain again before it forgives
+// anything.
+export async function payConfession(address, to, wei) {
+  const p = activeProvider();
+  if (!p) throw new Error('NO_WALLET');
+  if (!/^0x[0-9a-fA-F]{40}$/.test(String(to || ''))) throw new Error('NO_TREASURY');
+  const value = BigInt(wei || 0);
+  if (value <= 0n) throw new Error('BAD_AMOUNT');
+  await ensureChain();
+  beginWait();
+  try {
+    return await p.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: address, to, value: '0x' + value.toString(16) }],
+    });
+  } finally {
+    endWait();
+  }
+}

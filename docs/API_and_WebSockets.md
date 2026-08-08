@@ -27,7 +27,7 @@
 
 ### Confession
 - POST /confession            ← price is a % of the line's mint cost by week (25% wk1, 50% wk2-4, 100% wk5-7, 200% wk8) x its Cultists.
-                                NOT YET COLLECTING: `txHash` is stored unverified and the streak is forgiven without payment (`collected: false`).
+                                Call with no txHash -> 402 {price, payTo}. Pay, then call with txHash: the payment is verified on-chain (receipt succeeded, to == treasury, value >= quoted, sender holds the token, hash unspent) before the streak is mended.
 
 ### Social
 - GET  /leaderboard

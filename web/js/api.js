@@ -65,7 +65,16 @@ async function req(path, opts = {}) {
       ...opts,
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || `Request failed: ${res.status}`);
+    if (!res.ok) {
+      // The body comes with the error, not instead of it. A 402 from
+      // /confession carries the price and the address to send it to, and that
+      // payload is the whole point of the refusal — thrown away, the caller
+      // would have to guess what to pay and where.
+      const err = new Error(body.error || `Request failed: ${res.status}`);
+      err.status = res.status;
+      err.body = body;
+      throw err;
+    }
     return body;
   } finally {
     endWait();
@@ -101,8 +110,11 @@ export const api = {
   duty(type) {
     return req(`/duty/${type}`, { method: 'POST', body: who() });
   },
-  confession() {
-    return req('/confession', { method: 'POST', body: who() });
+  // Two calls, always. The first has no hash and comes back 402 with the price
+  // and the treasury to send it to; the second carries the transaction hash and
+  // is the one that mends the streak. The client never decides what it owes.
+  confession(txHash) {
+    return req('/confession', { method: 'POST', body: who(txHash ? { txHash } : {}) });
   },
   // Engagement on X. Refuses with 503 until X verification is configured on
   // the server — see verifyXInteraction() there.

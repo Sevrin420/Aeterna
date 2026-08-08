@@ -10,7 +10,7 @@ import { sfx, AUDIO_MASTER } from './sfx.js';
 import { PAGE_TITLE } from './config.js';
 import { beginWait, endWait, clearWait } from './wait.js';
 import {
-  connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen,
+  connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen, payConfession,
   fetchPricePerCultist, formatAvax, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
   ensureChain, currentChainId, disconnectWallet,
 } from './wallet.js';
@@ -422,6 +422,7 @@ function enterCourtyard(player) {
     socket: ensureSocket(),
     onSaveExit: returnToEntrance,
     onChatOpen: openChat,
+    onConfessionPay: payForConfession,
     crowd: CROWD,
   });
   scene.enter();
@@ -1406,6 +1407,26 @@ async function openMintPicker(menu) {
 // Cultist per token) and would have quietly disagreed with the menu about how
 // many Cultists somebody had. The overlay itself is still used, by the
 // Bloodline picker and the mint rite above.
+
+// Sign the confession payment. The scene asks for it; only this file knows the
+// connected address. Both the destination and the amount come from the server's
+// quote and neither is computed here — see payConfession in wallet.js.
+async function payForConfession(payTo, wei, avax) {
+  if (!connectedAddr) { showToast('No wallet is connected.', { size: 't-mid' }); return null; }
+  showToast(`Confirm ${avax} AVAX in your wallet to mend the streak.`, { size: 't-mid' });
+  try {
+    return await payConfession(connectedAddr, payTo, wei);
+  } catch (e) {
+    const why = {
+      NO_WALLET: 'No wallet connected.',
+      NO_TREASURY: 'The abbey did not say where to send it. Nothing was paid.',
+      BAD_AMOUNT: 'The abbey quoted nothing to pay.',
+      WRONG_CHAIN: 'Switch your wallet to Avalanche and try again.',
+    }[e && e.message] || (e && e.message) || 'The payment was not sent.';
+    showToast(why, { size: 't-mid' });
+    return null;
+  }
+}
 
 function proceedIntoGame() {
   walletOverlay.hidden = true;

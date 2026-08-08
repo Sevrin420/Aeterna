@@ -82,18 +82,15 @@ The clock is global — every player is on the same day — and is served by
 
 ## Gaps
 
-1. **Confession takes no payment.** The price is quoted and recorded; nothing
-   is collected, and the game says so. Needs the treasury address plus
-   server-side receipt verification.
-2. **The end of the run is undesigned.** There is no payout mechanism and no
+1. **The end of the run is undesigned.** There is no payout mechanism and no
    ceremony — Final Communion was removed rather than replaced.
-3. **No wallet-signature auth.** `/bind` verifies NFT ownership on-chain, but
+2. **No wallet-signature auth.** `/bind` verifies NFT ownership on-chain, but
    the session identity is an unsigned local id.
-4. **Gifts are parked.** The design and the database scaffolding are kept
+3. **Gifts are parked.** The design and the database scaffolding are kept
    (`gifts` table, `held_gift_id`, the daily counters) but nothing spawns,
    carries or offers one. See the GDD §10.
-5. **Mancala wagers move Devotion, not AVAX.**
-6. **Souls and Children** have no mechanics; the altar and nursery are scenery.
+4. **Mancala wagers move Devotion, not AVAX.**
+5. **Souls and Children** have no mechanics; the altar and nursery are scenery.
 
 ---
 

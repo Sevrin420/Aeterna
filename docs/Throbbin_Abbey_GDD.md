@@ -164,11 +164,21 @@ Confessor names the figure before you kneel. It does **not** escalate with the
 number of previous confessions — the price is the week and the Cultists and
 nothing else, so a player can work it out.
 
-> **Not yet collecting.** The streak is currently forgiven with nothing paid.
-> `/confession` quotes and records the price and returns `collected: false`,
-> and the game says so on screen. Wiring it up needs the treasury address and
-> server-side verification of the transaction — recipient, value, and that the
-> same hash has not already been spent. See §12.
+**Paying.** Three steps, and the client decides none of them. `/confession`
+with no transaction hash answers **402** with the price and the treasury address
+to send it to; the wallet signs that exact transfer; the hash goes back up and
+the server checks it against the chain before forgiving anything:
+
+1. the transaction exists and its receipt says it succeeded
+2. `to` is the treasury — read from the contract's immutable `treasury()`,
+   never from a config file
+3. `value` is at least the wei quoted for this player, this week
+4. the sender still holds the Bloodline being mended
+5. that hash has not already been spent on a confession
+
+(4) stops one payment mending a stranger's line; (5) stops the same payment
+mending twice, backed by a UNIQUE index so it holds when two requests race.
+Any one failing means the streak stays broken and nothing is taken.
 
 ---
 
@@ -248,19 +258,17 @@ Nothing spawns, carries or offers — no route, no socket event, no scene code.
 | Devotion-only progression | Built |
 | Uncapped level, max multiplier at 10 | Built |
 | Streaks per Bloodline | Built |
-| Confession priced by week and holding | Built, **not collecting** |
+| Confession priced by week and holding | Built, and collecting |
 | Real payouts | Not built |
 
 ---
 
 ## 12. Known gaps
 
-1. **Confession takes no payment.** §6. Needs the treasury address and
-   server-side receipt verification.
-2. **The end of the run is undesigned.** §8.
-3. **Gifts are parked**, not built — §10.
-4. **No wallet-signature auth.** Player identity is a locally generated
+1. **The end of the run is undesigned.** §8.
+2. **Gifts are parked**, not built — §10.
+3. **No wallet-signature auth.** Player identity is a locally generated
    pseudo-id in `localStorage`; `/bind` does verify NFT ownership on-chain
    before it will write a row, but the session itself is not signed.
-5. **Mancala wagers move Devotion, not money.**
-6. **Souls and Children have no mechanics.**
+4. **Mancala wagers move Devotion, not money.**
+5. **Souls and Children have no mechanics.**

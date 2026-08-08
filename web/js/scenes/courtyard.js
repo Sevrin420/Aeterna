@@ -89,13 +89,16 @@ const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
 function boxOpts() { return {}; }
 
 export class CourtyardScene {
-  constructor({ player, onPlayerUpdate, onToast, socket, onSaveExit, onChatOpen, crowd }) {
+  constructor({ player, onPlayerUpdate, onToast, socket, onSaveExit, onChatOpen, onConfessionPay, crowd }) {
     this.player = player;
     this.crowd = this._spawnCrowd(crowd || 0); // demo NPC cultists wandering the sanctuary
     this.onPlayerUpdate = onPlayerUpdate || (() => {});
     this.onToast = onToast || (() => {});
     this.onSaveExit = onSaveExit || (() => {});
     this.onChatOpen = onChatOpen || (() => {});
+    // Signing lives in main.js, which is the only place that knows the connected
+    // address. Returns the transaction hash, or null if the player refused.
+    this.onConfessionPay = onConfessionPay || (async () => null);
     this.socket = socket || null;
 
     this.t = 0;
@@ -812,27 +815,56 @@ export class CourtyardScene {
     return LORE.stations[s.id] || LORE.stations[s.kind];
   }
 
+  // Ask, pay, then confess. Three steps and the client decides none of them:
+  // the server quotes the price and names the address, the wallet signs that
+  // exact transfer, and the server checks the chain itself before it forgives
+  // anything. The only thing carried back up is the hash.
   async _handleConfession() {
     if (!this.player.needsConfession) { this.onToast('No confession needed.'); return; }
+    if (this._confessing) return;               // one rite at a time; this spends money
+    this._confessing = true;
     try {
-      const res = await api.confession();
-      this.player.needsConfession = false;
-      this.player.confessionCost = null;
-      this.player.confessionPrice = null;
-      this.player.streak = res.restoredStreak;
-      this.onPlayerUpdate(this.player);
-      sfx.confession();
-      // Says what was actually charged, which is nothing. The abbey is not
-      // taking payment yet — see the note on /confession in the server — and a
-      // message that read "Confession accepted" over a quoted price would let
-      // a player believe they had paid it.
-      this.onToast(res.collected === false
-        ? `Streak restored to ${res.restoredStreak}. Nothing was taken — the abbey is not yet collecting.`
-        : `Confession accepted. Streak restored to ${res.restoredStreak}.`);
+      // 1. What does it cost, and where does it go? A 402 IS the answer here,
+      //    not a failure — anything else means something is wrong.
+      let quote = null;
+      try {
+        const already = await api.confession();
+        // The abbey mended it without asking for money. Only possible on a
+        // build that is not collecting; take it and say so.
+        this._afterConfession(already);
+        return;
+      } catch (e) {
+        if (e.status !== 402 || !e.body || !e.body.payTo) throw e;
+        quote = e.body;
+      }
+
+      // 2. Sign the transfer the server quoted.
+      const hash = await this.onConfessionPay(quote.payTo, quote.price.wei, quote.price.avax);
+      if (!hash) { this.onToast('Nothing was paid, so nothing was mended.'); return; }
+
+      // 3. Hand up the hash. The server verifies it against the chain.
+      this._afterConfession(await api.confession(hash));
     } catch (e) {
       sfx.error();
-      this.onToast(e.message);
+      this.onToast(e.message || 'The confession failed.');
+    } finally {
+      this._confessing = false;
     }
+  }
+
+  _afterConfession(res) {
+    this.player.needsConfession = false;
+    this.player.confessionCost = null;
+    this.player.confessionPrice = null;
+    this.player.streak = res.restoredStreak;
+    this.onPlayerUpdate(this.player);
+    sfx.confession();
+    // Says what was actually charged. A message reading "Confession accepted"
+    // over a quoted price on a build that took nothing would let a player
+    // believe they had paid it.
+    this.onToast(res.collected
+      ? `Paid ${res.costPaid} AVAX. Streak restored to ${res.restoredStreak}.`
+      : `Streak restored to ${res.restoredStreak}. Nothing was taken.`);
   }
 
   async _handleSaveExit() {

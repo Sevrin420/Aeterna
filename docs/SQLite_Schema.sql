@@ -65,6 +65,15 @@ CREATE TABLE IF NOT EXISTS streak_logs (
   tx_hash       TEXT
 );
 
+-- One payment mends one broken streak, ever. This is what actually stops a
+-- transaction hash being spent twice: /confession checks for a duplicate before
+-- it writes, but two requests arriving together would both pass that check and
+-- both bank the same payment. The index is the half that holds under a race.
+-- Partial, so the rows with no hash (a break that has not been confessed) do
+-- not collide with each other on NULL.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_streak_logs_tx
+  ON streak_logs(tx_hash) WHERE tx_hash IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS admin_awards (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   player_id   TEXT NOT NULL,
