@@ -526,8 +526,8 @@ body.powered .mute-toggle {
    mint to show up in the holdings — and a player with no feedback presses the
    button again, which is how one of them minted twice.
 
-   Deliberately the title card's blinking PRESS A: same face, same gold, same
-   beat, so it reads as the machine's own voice rather than a web page's. Above
+   The title card's face and gold, so it reads as the machine's own voice
+   rather than a web page's — but steady, not blinking: see below. Above
    everything, because most of the waiting happens with an overlay up. */
 .please-wait[hidden] { display: none; }
 .please-wait {
@@ -549,15 +549,11 @@ body.powered .mute-toggle {
     -2px 0 0 #1a1006, 2px 0 0 #1a1006, 0 -2px 0 #1a1006, 0 2px 0 #1a1006,
     -2px -2px 0 #1a1006, 2px -2px 0 #1a1006, -2px 2px 0 #1a1006, 2px 2px 0 #1a1006,
     0 0 14px rgba(247, 221, 147, 0.5);
-  /* The title card's PRESS A, to the frame. That blink is `this.blink += dt`
-     stepped at 0.5 in boot.js — a one second cycle, half on and half off, hard
-     step with no fade. Matched here rather than guessed at, so the two legends
-     keep the same beat: they are the same voice saying two different things. */
-  animation: wait-blink 1s steps(1, end) infinite;
-}
-@keyframes wait-blink {
-  0%, 50% { opacity: 1; }
-  50.01%, 100% { opacity: 0; }
+  /* It does NOT blink. It used to keep the title card's PRESS A beat, which
+     was the wrong borrowing: PRESS A blinks to ask for a press, and this asks
+     for nothing — it reports that the abbey is busy. A legend that comes and
+     goes while you wait reads as something you might be missing between the
+     flashes. It appears, it stays, it goes when the work is done. */
 }
 
 
