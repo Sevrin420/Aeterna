@@ -1605,7 +1605,7 @@ powerSwitch.addEventListener('pointermove', (e) => {
 // Whatever overlay is open, B (the console button or the keyboard B keys)
 // closes the topmost one. We listen in the capture phase, ABOVE the button /
 // window, so this runs before the engine's own B handling and can swallow the
-// press — the scene underneath never sees it, so B won't also drop a gift etc.
+// press — the scene underneath never sees it, so B won't also act in the world.
 const backableOverlays = () => [walletOverlay, chatForm];
 function anyOverlayOpen() { return backableOverlays().some((o) => o && !o.hidden); }
 // The overlay screens that run their own input loop each have a B of their own,

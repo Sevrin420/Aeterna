@@ -129,8 +129,6 @@ has three independent streaks, three multipliers and three confession counts.
 - **X engagement** — 10 for commenting the phrase *"Eternal Throb, Eternal
   Life"* on a post, claimable once per post. The old motto is still honoured.
   Likes and reposts pay nothing: they are free to manufacture.
-- **Gifts** — designed (giver +10, receiver +5, Guru offering +50, with daily
-  limits) and present in the world. Not part of the daily three.
 
 ---
 
@@ -222,6 +220,21 @@ Recorded so nobody reintroduces them by reading an old draft:
 - **Souls** (§9 of v4.1) and **Bloodline/Children** (§8 of v4.1) — the altar
   and nursery are still physically in the abbey as scenery, but there are no
   mechanics behind them and they are not part of this run.
+- **Gifts** — giver +10, receiver +5, an offering to the Abbot +50, with daily
+  limits. Not in this run. The design is recorded below and the database
+  scaffolding is kept, so it can come back without a migration.
+
+### Gifts, parked
+
+Kept here so the design is not lost. A gift spawns in the world; a player picks
+it up and carries it visibly; walking it to another Cultist and offering it
+pays the giver 10 Devotion and the receiver 5, with the giver limited to one a
+day and the receiver to ten; offering it to the Abbot instead pays 50, once a
+day.
+
+What survives in the code: the `gifts` table, `players.held_gift_id`, and the
+`gifts_given_today` / `gifts_received_today` counters with their daily reset.
+Nothing spawns, carries or offers — no route, no socket event, no scene code.
 
 ---
 
@@ -245,8 +258,9 @@ Recorded so nobody reintroduces them by reading an old draft:
 1. **Confession takes no payment.** §6. Needs the treasury address and
    server-side receipt verification.
 2. **The end of the run is undesigned.** §8.
-3. **No wallet-signature auth.** Player identity is a locally generated
+3. **Gifts are parked**, not built — §10.
+4. **No wallet-signature auth.** Player identity is a locally generated
    pseudo-id in `localStorage`; `/bind` does verify NFT ownership on-chain
    before it will write a row, but the session itself is not signed.
-4. **Mancala wagers move Devotion, not money.**
-5. **Souls and Children have no mechanics.**
+5. **Mancala wagers move Devotion, not money.**
+6. **Souls and Children have no mechanics.**

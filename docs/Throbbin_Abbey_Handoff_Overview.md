@@ -89,15 +89,18 @@ The clock is global — every player is on the same day — and is served by
    ceremony — Final Communion was removed rather than replaced.
 3. **No wallet-signature auth.** `/bind` verifies NFT ownership on-chain, but
    the session identity is an unsigned local id.
-4. **Mancala wagers move Devotion, not AVAX.**
-5. **Souls and Children** have no mechanics; the altar and nursery are scenery.
+4. **Gifts are parked.** The design and the database scaffolding are kept
+   (`gifts` table, `held_gift_id`, the daily counters) but nothing spawns,
+   carries or offers one. See the GDD §10.
+5. **Mancala wagers move Devotion, not AVAX.**
+6. **Souls and Children** have no mechanics; the altar and nursery are scenery.
 
 ---
 
 ## Removed
 
 Seasons and the 56/14 cycle, Final Communion and the gold reveal, ERC-6551
-tokenbound accounts, Souls and the progressive Soul cap, Children and breeding,
+tokenbound accounts, Souls and the progressive Soul cap, Children and breeding, gifts,
 ETH pricing and the 2,220-per-season supply, per-use confession escalation, and
 the four-season economic model. See `docs/Throbbin_Abbey_GDD.md` §10.
 

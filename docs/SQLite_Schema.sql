@@ -16,16 +16,22 @@ CREATE TABLE IF NOT EXISTS players (
   pray_today    INTEGER DEFAULT 0,
   garden_today  INTEGER DEFAULT 0,
   candles_today INTEGER DEFAULT 0,
+  -- GIFTS ARE DORMANT. The mechanic is not in the game: nothing spawns,
+  -- carries or offers a gift, and no route or socket event touches these. The
+  -- columns, the gifts table and held_gift_id below are kept ON PURPOSE so the
+  -- system can be switched back on without a migration. Do not remove them in
+  -- a cleanup — they are not leftovers, they are a parked feature.
   gifts_given_today    INTEGER DEFAULT 0,
   gifts_received_today INTEGER DEFAULT 0,
-  confession_count     INTEGER DEFAULT 0,         -- for escalating cost
-  held_gift_id  TEXT,
+  confession_count     INTEGER DEFAULT 0,         -- kept; the price no longer uses it
+  held_gift_id  TEXT,                             -- dormant, see above
   has_child     INTEGER DEFAULT 0,
   parent_id     TEXT,
   last_save     TEXT,
   created_at    TEXT NOT NULL
 );
 
+-- Dormant. See the note on gifts_given_today above.
 CREATE TABLE IF NOT EXISTS gifts (
   id            TEXT PRIMARY KEY,
   spawned_at    TEXT NOT NULL,
