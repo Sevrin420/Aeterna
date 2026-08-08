@@ -35,6 +35,7 @@ const hudDevotion = document.getElementById('hudDevotion');
 const hudStreak = document.getElementById('hudStreak');
 const pipDay = document.getElementById('pipDay');
 const toastEl = document.getElementById('toast');
+const toastTextEl = document.getElementById('toastText');
 const bootVeil = document.getElementById('bootVeil');
 const powerKnob = powerSwitch.querySelector('.power-knob');
 const muteToggle = document.getElementById('muteToggle');
@@ -209,7 +210,6 @@ const RES = 2;
 let powered = false;
 let scene = null;
 let stopLoop = null;
-let toastTimer = null;
 let socket = null;
 
 // The beat between the title card's A press and the abbey fading up.
@@ -275,28 +275,27 @@ function drawOff() {
 // and "Saved. 1500 Devotion secured." are the same moment and land either side
 // of a tier boundary purely on the digit count. Anything that matters at a
 // fixed size should say so rather than hope its wording stays short.
-// Nothing sits on the middle of the screen for longer than this, whatever it
-// says and whoever asked. The box covers the courtyard, so a message that
-// overstays is in the way of the game rather than part of it — four seconds is
-// long enough to read the longest of them and short enough not to be a wait.
-// A caller that passes a longer dwell is clamped to it rather than obeyed.
-const TOAST_MAX_MS = 4000;
-
+// NO TIMER. A message stays until it is read and dismissed with A.
+//
+// Every timed version of this was wrong in one direction or the other — four
+// seconds is an age for "+50 Devotion" and not enough for a paragraph, and a
+// message that vanishes while it is being read cannot be got back. So the box
+// waits, and says so: the PRESS A under the text is the only way out of it.
+//
+// `dwell` is gone from the signature along with the timer. `size` stays: length
+// is a decent guess at how big a message should be but only a guess, and
+// "Saved. 150 Devotion secured." / "Saved. 1500 Devotion secured." are the same
+// moment landing either side of a tier boundary on the digit count alone.
 function hideToast() {
-  clearTimeout(toastTimer);
   toastEl.hidden = true;
 }
 
-function showToast(msg, { size = null, dwell = null } = {}) {
+function showToast(msg, { size = null } = {}) {
   const text = String(msg ?? '');
-  toastEl.textContent = text;
+  toastTextEl.textContent = text;
   const tier = size || (text.length <= 28 ? 't-big' : text.length <= 64 ? 't-mid' : 't-small');
   toastEl.className = `toast ${tier}`;
   toastEl.hidden = false;
-  clearTimeout(toastTimer);
-  // ~14 characters a second on top of a fixed beat, and never past the ceiling.
-  const ms = Math.min(TOAST_MAX_MS, dwell ?? (1500 + text.length * 40));
-  toastTimer = setTimeout(() => { toastEl.hidden = true; }, ms);
 }
 
 // Character level is derived from total Devotion (Devotion *is* the XP). Each
@@ -721,6 +720,18 @@ async function bindBloodline(bl, menu, bloodlineName, { afterMint = false } = {}
     // The line's own name is what the abbey calls it. The token number is kept
     // in the toast so a holder of several can still tell two alike names apart.
     const called = full.bloodline_name || row.bloodline_name || `Bloodline #${bl.id}`;
+    // Onto the held object too, and this is the whole of the "it says Bloodline
+    // #7" bug. `bl` comes from the chain, where a line has no name — only a
+    // number — and withNames() fills the real one in from the server. On a
+    // FRESH mint there is nothing to fill in from: the name is being carried in
+    // this very call and the server only learns it on the line above. So `bl`
+    // kept its chain label, and since chosenCultist IS bl, the courtyard's
+    // "You enter as ..." read out the number the player had just replaced.
+    if (called && !/^Bloodline #/.test(called)) {
+      bl.name = called;
+      const held = heldBloodlines.find((h) => h && h.id === bl.id);
+      if (held) held.name = called;
+    }
     showToast(`${called} walks — Bloodline #${bl.id}, ${bl.cultists} Cultists, ${full.devotion || 0} Devotion.`);
     await offerXHandleAndReferral(full, { afterMint });
   } catch (e) {
@@ -882,15 +893,6 @@ async function openLinesScreen(menu) {
   try { me = await api.me(); } catch { /* the referrer row simply reads unknown */ }
 
   const rows = [];
-  // The referrer is a property of the WALLET, not of one line — the referrals
-  // table is unique on the referee — so it is one row above the list rather
-  // than repeated against every Bloodline.
-  rows.push({
-    kind: 'referrer',
-    label: 'Brought here by',
-    value: me && me.referred ? `@${me.referred}` : null,
-    empty: 'not set — press A',
-  });
   for (const bl of heldBloodlines) {
     rows.push({
       kind: 'name',
@@ -901,13 +903,25 @@ async function openLinesScreen(menu) {
       sub: `Bloodline #${bl.id}${bl.x_handle ? `  ·  @${bl.x_handle}` : ''}`,
     });
   }
+  // LAST, and ruled off from the list above it. The referrer is a property of
+  // the WALLET, not of one line — the referrals table is unique on the referee
+  // — so it does not belong among the Bloodlines at all, and sitting at the top
+  // of them it read as one.
+  rows.push({
+    kind: 'referrer',
+    label: 'Brought here by',
+    value: me && me.referred ? `@${me.referred}` : null,
+    empty: 'not set — press A',
+    divide: true,
+  });
 
   const paint = () => {
     cultistGrid.innerHTML = '';
     rows.forEach((r, i) => {
       const card = document.createElement('button');
       card.type = 'button';
-      card.className = 'cultist-card' + (i === _lines.index ? ' sel' : '') + (r.value ? '' : ' unset');
+      card.className = 'cultist-card' + (i === _lines.index ? ' sel' : '') + (r.value ? '' : ' unset')
+        + (r.divide ? ' ruled' : '');
       const n = document.createElement('span');
       n.className = 'bl-name';
       n.textContent = r.kind === 'referrer'
@@ -956,7 +970,7 @@ async function openLinesScreen(menu) {
             // Loud, and it stays on screen: the row is about to come back
             // reading "not set", and a quiet flash was leaving people thinking
             // the name had been taken when it had been refused.
-            showToast((e && e.message) || 'That name was not accepted.', { size: 't-mid', dwell: 4000 });
+            showToast((e && e.message) || 'That name was not accepted.', { size: 't-mid' });
             sfx.error();
           }
         }
@@ -1429,6 +1443,24 @@ function powerOn() {
   if (!stopLoop) {
     stopLoop = makeLoop(
       (dt) => {
+        // FIRST, because it covers everything. The message box is near
+        // fullscreen and waits for A, so whatever is underneath it — the
+        // courtyard, the menu, LINES, a naming prompt — is not readable and
+        // must not be taking presses meant for the box on top. It used to sit
+        // LAST here, which was right while it was a small notice that timed
+        // itself out; at this size and with no timer, a screen below it that
+        // owned A would leave the message with no way out at all.
+        //
+        // B works as well as A. The hint says A because one instruction is
+        // better than two, but a player who has learned B means "away" is not
+        // wrong here.
+        if (!toastEl.hidden) {
+          if (input.consumeAPress() || input.consumeBPress()) { hideToast(); sfx.click(); }
+          // Everything else is swallowed rather than passed down: the d-pad
+          // would otherwise walk a player they cannot see.
+          if (input.consumeDir) { while (input.consumeDir()) { /* drain */ } }
+          return;
+        }
         // The ring owns the controls while it is up, so a d-pad press turns it
         // instead of also walking the player underneath.
         if (emojiWheel.open) { emojiWheel.handleInput(input); return; }
@@ -1448,16 +1480,6 @@ function powerOn() {
         if (_mintInput) { _mintInput.handleInput(input); return; }
         // LINES likewise: d-pad to move, A to set what is unset, B out.
         if (_lines) { _lines.handleInput(input); return; }
-        // A message can be read and dismissed rather than waited out. Last in
-        // the order deliberately: every screen above owns its own B and has
-        // somewhere to go back TO, and a toast riding over one of them must not
-        // eat the press that closes it. Down here there is no such screen, so B
-        // means the only thing on top of the courtyard — the message.
-        //
-        // The press is consumed, so the scene underneath does not also act on
-        // it. The frame is not returned early: the abbey should keep moving
-        // while a message is waved away.
-        if (!toastEl.hidden && input.consumeBPress()) { hideToast(); sfx.click(); }
         if (scene) scene.update(dt, input);
       },
       () => {
@@ -1561,7 +1583,11 @@ function anyOverlayOpen() { return backableOverlays().some((o) => o && !o.hidden
 // so on a naming prompt it left the prompt's promise unresolved, its dress
 // still on the overlay and the screen simply gone. That was the other half of
 // the naming "glitch": B did not back out of the question, it deleted it.
-function screenOwnsB() { return !!(_asking || _picker || _mintInput || _lines); }
+// The message box counts too, and comes first: it covers the overlays, it has
+// no timer, and B is one of the two presses that closes it. Left out, this
+// hatch would answer B by hiding the panel UNDERNEATH the message and leaving
+// the message itself sitting there.
+function screenOwnsB() { return !toastEl.hidden || !!(_asking || _picker || _mintInput || _lines); }
 function backOut() {
   if (!communionOverlay.hidden) { communionOverlay.hidden = true; return true; }
   if (!walletOverlay.hidden) { closeBloodlinePicker(); if (scene && scene.resume) scene.resume(); return true; }

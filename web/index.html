@@ -61,7 +61,13 @@
         </div>
 
         <!-- Toast -->
-        <div class="toast" id="toast" hidden></div>
+        <!-- The message box. Near-fullscreen and it waits: it holds the screen
+             until A is pressed, so the hint under the text is not decoration,
+             it is the only way out. -->
+        <div class="toast" id="toast" hidden>
+          <span class="toast-text" id="toastText"></span>
+          <span class="toast-hint">PRESS A</span>
+        </div>
 
         <!-- Shown whenever the game is waiting on the server or reading the
              chain. It sits above the overlays on purpose: most of the waiting

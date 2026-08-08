@@ -832,9 +832,9 @@ export class CourtyardScene {
       // Explicitly the largest size: this is the last thing the game says
       // before the console goes off, and left to the by-length default it
       // CHANGED SIZE with the Devotion — 150 came up a tier bigger than 1500,
-      // purely because the number was shorter. The dwell is the ceiling and no
-      // more; it asked for seven seconds once and seven seconds is a wait.
-      this.onToast(`Saved. ${res.devotion} Devotion secured.`, { size: 't-huge', dwell: 4000 });
+      // purely because the number was shorter. There is no dwell to set any
+      // more: the box waits for A, which is what this one always wanted.
+      this.onToast(`Saved. ${res.devotion} Devotion secured.`, { size: 't-huge' });
       this.onSaveExit();
     } catch (e) {
       sfx.error();
