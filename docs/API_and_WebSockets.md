@@ -9,6 +9,7 @@
 
 ### Player
 - GET  /me                      ← includes computed `multiplier`, `needsConfession`, `confessionCost` (AVAX) and `confessionPrice` ({week, pct, cultists, wei, avax}); both null when nothing is owed AND when the chain cannot be read
+- GET  /day                     ← the abbey's clock: {day, week, confessionPct, since}. Day 1 is the contract's deployment day. Replaces /season — there are no seasons, no break and no Final Communion.
 - POST /save                  ← triggers Cloudflare Worker signature
 
 ### Duties
@@ -24,7 +25,7 @@
 - POST /gifts/drop                ← returns a held gift to the ground at the given tile
 
 ### Confession
-- POST /confession            ← price is a % of the line's mint cost by season week (25% wk1, 50% wk2-4, 100% wk5-7, 200% wk8) x its Cultists.
+- POST /confession            ← price is a % of the line's mint cost by abbey week (25% wk1, 50% wk2-4, 100% wk5-7, 200% wk8 and after) x its Cultists.
                                 NOT YET COLLECTING: `txHash` is stored unverified and the streak is forgiven without payment (`collected: false`).
 
 ### Social

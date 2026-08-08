@@ -83,10 +83,10 @@ export function streakMultiplier(streak, level) {
 
 // ── WHAT A CONFESSION COSTS ─────────────────────────────────────────────────
 //
-// A fraction of what the Bloodline cost to raise, rising as the season runs on.
-// The point is that mending a streak should hurt more the deeper into a season
-// you are — a break in week one is a stumble, a break in week eight is most of
-// the season thrown away — and that it should scale with what the line is
+// A fraction of what the Bloodline cost to raise, rising over the abbey's first
+// eight weeks. Mending a streak should hurt more the longer the abbey has been
+// standing — a break in week one is a stumble, a break in week eight is two
+// months of keeping thrown away — and it should scale with what the line is
 // worth, so a twenty-Cultist holder does not mend for the same price as a
 // one-Cultist holder.
 //
@@ -95,7 +95,7 @@ export function streakMultiplier(streak, level) {
 // raise; week 8 costs double it.
 //
 // This replaces a flat 0.005 + 0.001 per previous confession. That escalated
-// with the number of confessions rather than with the season or the holding,
+// with the number of confessions rather than with the calendar or the holding,
 // and is deliberately NOT kept as an extra factor here — the price is the
 // week and the Cultists, and nothing else, so a player can work it out.
 export const CONFESSION_WEEK_PCT = [
@@ -105,22 +105,14 @@ export const CONFESSION_WEEK_PCT = [
   { throughWeek: 8, pct: 200 },
 ];
 
-// Which week of the active season a given day falls in, 1-8. Days are 1-56, so
-// week = ceil(day / 7). Null during the break, when there is no season week to
-// be in — see confessionPct for what that means for the price.
-export function seasonWeek(day) {
-  if (!day || day < 1) return null;
-  return Math.min(Math.ceil(day / 7), Math.ceil(SEASON_ACTIVE_DAYS / 7));
-}
-
-// The percentage for a week. During the break (week null) it holds at the
-// week-8 rate rather than falling back to week 1: the break follows week 8, and
-// a streak broken at the end of a season must not become cheap to mend simply
-// because the season stopped.
+// The percentage for a week. Week 8 is the last band and it is the FLOOR from
+// there on: the clock runs forever, so week 9 and week 90 both cost 200%. Not
+// a cap that lapses — nothing gets cheap again just because time passed.
 export function confessionPct(week) {
-  if (!week) return CONFESSION_WEEK_PCT[CONFESSION_WEEK_PCT.length - 1].pct;
+  const last = CONFESSION_WEEK_PCT[CONFESSION_WEEK_PCT.length - 1];
+  if (!week || week < 1) return CONFESSION_WEEK_PCT[0].pct;
   for (const band of CONFESSION_WEEK_PCT) if (week <= band.throughWeek) return band.pct;
-  return CONFESSION_WEEK_PCT[CONFESSION_WEEK_PCT.length - 1].pct;
+  return last.pct;
 }
 
 // In wei, and in BigInt throughout. The price of a Bloodline is a chain value
@@ -138,29 +130,33 @@ export function weiToAvax(wei, dp = 4) {
   return Number((Number(BigInt(wei || 0)) / 1e18).toFixed(dp));
 }
 
-// Season structure from docs/Throbbin_Abbey_GDD_v4.1.md section 2: 56 days active
-// play, then a 14-day break, repeating. SEASON_START is this server's
-// concrete choice for a start date (the GDD doesn't pin one) — override with
-// the SEASON_START env var to rebase it.
-export const SEASON_ACTIVE_DAYS = 56;
-export const SEASON_BREAK_DAYS = 14;
-const SEASON_CYCLE_DAYS = SEASON_ACTIVE_DAYS + SEASON_BREAK_DAYS;
-const SEASON_START = new Date(process.env.SEASON_START || '2026-06-01T00:00:00Z');
+// ── THE ABBEY'S CLOCK ───────────────────────────────────────────────────────
+//
+// One clock, running forward from the day the collection was deployed. There
+// are no seasons: no 56-day cycle, no 14-day break, no season number, and no
+// Final Communion at the end of one. It used to be all of those, anchored to a
+// date somebody picked by hand — which had drifted so far that six days after
+// the contract went live the abbey believed the season was over and sitting in
+// its break, and quoted every confession at the week-8 rate because of it.
+//
+// The anchor is now the deployment itself, read from the deployments file the
+// contract writes, so it cannot drift from the thing it is meant to track. The
+// env var still wins, for a test server that wants to sit in a chosen week.
+const DEPLOYED_AT = '2026-08-02T02:29:39Z';    // contracts/deployments/avalanche.json
+export const ABBEY_START = new Date(process.env.ABBEY_START || DEPLOYED_AT);
 
-export function getSeasonInfo(now = new Date()) {
-  const elapsedDays = Math.floor((now.getTime() - SEASON_START.getTime()) / 86400000);
-  const cycle = Math.floor(elapsedDays / SEASON_CYCLE_DAYS);
-  const season = cycle + 1;
-  const dayInCycle = ((elapsedDays % SEASON_CYCLE_DAYS) + SEASON_CYCLE_DAYS) % SEASON_CYCLE_DAYS;
-  const inBreak = dayInCycle >= SEASON_ACTIVE_DAYS;
-  const day = inBreak ? null : dayInCycle + 1;
-  return {
-    season,
-    day,
-    inBreak,
-    daysUntilCommunion: inBreak ? null : SEASON_ACTIVE_DAYS - day,
-    isFinalCommunion: day === SEASON_ACTIVE_DAYS,
-  };
+// Day 1 is the day of deployment. Never null, never zero, and it keeps counting
+// past 56 — nothing ends.
+export function abbeyDay(now = new Date()) {
+  const elapsed = Math.floor((now.getTime() - ABBEY_START.getTime()) / 86400000);
+  return Math.max(1, elapsed + 1);
+}
+
+// Week 1 is days 1-7, and the count runs on without a ceiling. What a week
+// COSTS is capped at the week-8 rate — see confessionPct — but the week itself
+// is not, so the number the Confessor quotes stays true after day 56.
+export function abbeyWeek(now = new Date()) {
+  return Math.ceil(abbeyDay(now) / 7);
 }
 
 // Rolls a player's per-day duty flags/counters over to "today", logging a

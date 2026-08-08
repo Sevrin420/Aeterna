@@ -2,7 +2,7 @@
 
 *Eternal Life*
 
-An invitation-only, multi-generational NFT cult RPG on Avalanche. Players mint Cultist NFTs, perform daily duties in a shared top-down pixel abbey, build streaks, level up, and at the end of each season perform Final Communion. Value accrual is expressed through **Devotion**; Souls carry Devotion across generations.
+An invitation-only, multi-generational NFT cult RPG on Avalanche. Players mint Cultist NFTs, perform daily duties in a shared top-down pixel abbey, build streaks and level up. Value accrual is expressed through **Devotion**; Souls carry Devotion across generations.
 
 ## Layout
 
@@ -46,9 +46,9 @@ The abbey (`web/js/abbeyMap.js` for the floor plan, rendered by `web/js/scenes/c
 
 ## World systems (GDD §2, §7, §9-11)
 
-- **Season/day bulletin**, near the gate: reads live off `GET /season`, computed from a 56-active/14-break cycle (`server/src/lib/gameLogic.js` `getSeasonInfo`, `SEASON_START` overridable via env). On Day 56 it also triggers a full-screen **Final Communion** cinematic — an announcement stub, since gold reveal and the Leave/Tithe choice (GDD §7) aren't implemented yet.
+- **The abbey's clock**: `GET /day` returns the day and week since the collection was deployed (`server/src/lib/gameLogic.js` `abbeyDay`/`abbeyWeek`, `ABBEY_START` overridable via env). It sets what a confession costs — 25% of the line's mint cost in week 1, 50% weeks 2-4, 100% weeks 5-7, 200% from week 8 on. There are no seasons, no break and no Final Communion.
 - **Cathedral Rooms**, four claimable alcoves in the transept (GDD §11 "ownable"): first Cultist to press A on an unowned alcove holds it, persisted in the `cathedral_rooms` table (`GET /cathedral`, `POST /cathedral/:id/claim`). No cost to claim — there's no Cathedral Room pricing in the GDD to implement against.
-- **Soul altar** and **Bloodline nursery**, in the dorms: physically present but inert placeholders, since Souls (GDD §9, season-gated to 0 in Season 1) and Bloodline/Children (§8) have no server-side mechanics yet.
+- **Soul altar** and **Bloodline nursery**, in the dorms: physically present but inert placeholders, since Souls (GDD §9) and Bloodline/Children (§8) have no server-side mechanics yet.
 - **Mancala wager table** (GDD §10), in the kitchen: a real, server-authoritative 2-player Kalah implementation over Socket.io (`mancala_sit`/`mancala_move`/`mancala_leave`), 5% house rake on a win. **The "wager" moves Devotion, not ETH** — same dev-mode stand-in as everything below, not a new category of gap.
 
 ## Status

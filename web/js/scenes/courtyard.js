@@ -89,22 +89,19 @@ const EMOJI_KEYS = { Digit1: '🙏', Digit2: '✨', Digit3: '🕯️' };
 function boxOpts() { return {}; }
 
 export class CourtyardScene {
-  constructor({ player, onPlayerUpdate, onToast, socket, onSaveExit, onChatOpen, onFinalCommunion, crowd }) {
+  constructor({ player, onPlayerUpdate, onToast, socket, onSaveExit, onChatOpen, crowd }) {
     this.player = player;
     this.crowd = this._spawnCrowd(crowd || 0); // demo NPC cultists wandering the sanctuary
     this.onPlayerUpdate = onPlayerUpdate || (() => {});
     this.onToast = onToast || (() => {});
     this.onSaveExit = onSaveExit || (() => {});
     this.onChatOpen = onChatOpen || (() => {});
-    this.onFinalCommunion = onFinalCommunion || (() => {});
     this.socket = socket || null;
 
     this.t = 0;
     this.localEmoji = null; // { emoji, t }
     this.localChat = null; // { text, t }
-    this.seasonInfo = null; // { season, day, inBreak, daysUntilCommunion, isFinalCommunion }
     this.cathedralRooms = new Map(); // roomId -> { owner_id, owner_name }
-    this.finalCommunionShown = false;
 
     // Keyed by network id (uint16 assigned by the server). Each entry carries
     // the peer's identity (id=tokenId, name, prefix), its latest server target
@@ -193,7 +190,6 @@ export class CourtyardScene {
 
   enter() {
     this.mySheet = getCultistSprite(getWalletId(), this.player.sex);
-    this._refreshSeason();
     this._refreshCathedral();
     this._bindSocket();
     this._emitJoin();
@@ -324,18 +320,6 @@ export class CourtyardScene {
       x: this.pc.x,
       y: this.pc.y,
     });
-  }
-
-  async _refreshSeason() {
-    try {
-      this.seasonInfo = await api.season();
-      if (this.seasonInfo.isFinalCommunion && !this.finalCommunionShown) {
-        this.finalCommunionShown = true;
-        this.onFinalCommunion(this.seasonInfo);
-      }
-    } catch {
-      // non-fatal — Final Communion just won't announce itself
-    }
   }
 
   async _refreshCathedral() {

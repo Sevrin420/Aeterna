@@ -10,8 +10,8 @@ import db from './db/database.js';
 import {
   DUTY_DEVOTION, DUTIES, DUTY_NAMES, X_DEVOTION, X_KINDS, REFERRAL_DEVOTION,
   X_COMMENT_DEVOTION, X_PHRASE, matchesPhrase,
-  todayStr, streakMultiplier, ensureFreshDay, pendingConfession, getSeasonInfo,
-  seasonWeek, confessionPct, confessionCostWei, weiToAvax,
+  todayStr, streakMultiplier, ensureFreshDay, pendingConfession,
+  abbeyDay, abbeyWeek, confessionPct, confessionCostWei, weiToAvax, ABBEY_START,
 } from './lib/gameLogic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -50,7 +50,7 @@ fastify.get('/health', async () => ({ status: 'ok', service: 'aeterna' }));
 //
 // Cultists come from the chain and never change; Devotion comes from play and
 // only ever rises. The two are separate on purpose: Cultists multiply the
-// end-of-season payout and have no effect on what an act of Devotion is worth.
+// final payout and have no effect on what an act of Devotion is worth.
 fastify.get('/nft/:tokenId', async (req, reply) => {
   const tokenId = Number(req.params.tokenId);
   if (!Number.isInteger(tokenId) || tokenId < 1) return reply.code(400).send({ error: 'bad token' });
@@ -172,7 +172,7 @@ function requireBloodline(player, reply) {
 //
 // Ownership is checked against the chain, not taken from the request. Without
 // that check the cultists field is simply whatever the client claims, and since
-// cultists is the end-of-season payout multiplier, anyone could name someone
+// cultists is the final payout multiplier, anyone could name someone
 // else's 20-Cultist Bloodline and be paid on it. The read FAILS CLOSED: if the
 // RPC cannot be reached the bind is refused rather than trusted.
 //
@@ -243,12 +243,12 @@ async function pricePerCultistWei() {
 }
 
 // What mending this player's streak costs, right now. Both inputs are the
-// abbey's own: the week from the season clock, the Cultists from the row that
+// abbey's own: the week from the abbey's clock, the Cultists from the row that
 // /bind verified against the chain.
 async function confessionPriceFor(player, now = new Date()) {
   const price = await pricePerCultistWei();
   if (price === null) return null;
-  const week = seasonWeek(getSeasonInfo(now).day);
+  const week = abbeyWeek(now);
   const wei = confessionCostWei(price, player.cultists || 0, week);
   return {
     week,
@@ -451,7 +451,7 @@ fastify.get('/me', async (req, reply) => {
     .get(String(wallet).toLowerCase());
   // Asked and declined counts as answered. Without this the client only knew
   // about referrals that SUCCEEDED, so anyone who said "not now" was asked
-  // again on every connect for the rest of the season.
+  // again on every connect, for good.
   const declined = db.prepare('SELECT 1 FROM referral_declines WHERE wallet = ?')
     .get(String(wallet).toLowerCase());
   // The price of mending, so the Confessor can name it before the player
@@ -836,7 +836,15 @@ fastify.get('/bloodlines', async (req, reply) => {
 });
 
 // ========== SEASON (GDD section 2: 56 active days / 14 day break) ==========
-fastify.get('/season', async () => getSeasonInfo());
+// The abbey's clock. There are no seasons any more, so there is no season
+// number, no break and no countdown to a Final Communion — just how long the
+// abbey has stood and what that means for the price of mending a streak.
+fastify.get('/day', async () => {
+  const now = new Date();
+  const day = abbeyDay(now);
+  const week = abbeyWeek(now);
+  return { day, week, confessionPct: confessionPct(week), since: ABBEY_START.toISOString() };
+});
 
 // ========== CATHEDRAL ROOMS (ownable alcoves, GDD section 11) ==========
 fastify.get('/cathedral', async () => {

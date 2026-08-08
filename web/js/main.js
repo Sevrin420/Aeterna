@@ -39,9 +39,6 @@ const toastTextEl = document.getElementById('toastText');
 const bootVeil = document.getElementById('bootVeil');
 const powerKnob = powerSwitch.querySelector('.power-knob');
 const muteToggle = document.getElementById('muteToggle');
-const communionOverlay = document.getElementById('communionOverlay');
-const communionBody = document.getElementById('communionBody');
-const communionClose = document.getElementById('communionClose');
 const emojiToggle = document.getElementById('emojiToggle');
 const emojiWheelEl = document.getElementById('emojiWheel');
 
@@ -387,12 +384,6 @@ function ensureSocket() {
 }
 
 // The drawn board owns every pit, every stone and every click on them. It is
-function showFinalCommunion(info) {
-  communionBody.textContent = `Season ${info.season}, Day ${info.day} has arrived. The abbey gathers for Final Communion — gold reveal and the choice to Leave or Tithe are not yet available in this build; the Abbot will announce next steps.`;
-  communionOverlay.hidden = false;
-}
-communionClose.addEventListener('click', () => { communionOverlay.hidden = true; });
-
 function openChat() {
   chatForm.hidden = false;
   chatInput.value = '';
@@ -431,7 +422,6 @@ function enterCourtyard(player) {
     socket: ensureSocket(),
     onSaveExit: returnToEntrance,
     onChatOpen: openChat,
-    onFinalCommunion: showFinalCommunion,
     crowd: CROWD,
   });
   scene.enter();
@@ -1577,7 +1567,6 @@ function powerOff() {
   chatForm.hidden = true;
   hud.hidden = true;
   toastEl.hidden = true;
-  communionOverlay.hidden = true;
   walletOverlay.hidden = true;
   // A wait in flight when the switch is thrown would otherwise go on blinking
   // over a dead screen, and its refcount would never come back to zero.
@@ -1617,10 +1606,7 @@ powerSwitch.addEventListener('pointermove', (e) => {
 // closes the topmost one. We listen in the capture phase, ABOVE the button /
 // window, so this runs before the engine's own B handling and can swallow the
 // press — the scene underneath never sees it, so B won't also drop a gift etc.
-const backableOverlays = () => [
-  communionOverlay,
-  walletOverlay, chatForm,
-];
+const backableOverlays = () => [walletOverlay, chatForm];
 function anyOverlayOpen() { return backableOverlays().some((o) => o && !o.hidden); }
 // The overlay screens that run their own input loop each have a B of their own,
 // and theirs knows what to undo. This escape hatch predates all of them and
@@ -1634,7 +1620,6 @@ function anyOverlayOpen() { return backableOverlays().some((o) => o && !o.hidden
 // the message itself sitting there.
 function screenOwnsB() { return !toastEl.hidden || !!(_asking || _picker || _mintInput || _lines); }
 function backOut() {
-  if (!communionOverlay.hidden) { communionOverlay.hidden = true; return true; }
   if (!walletOverlay.hidden) { closeBloodlinePicker(); if (scene && scene.resume) scene.resume(); return true; }
   if (!chatForm.hidden) { chatForm.hidden = true; return true; }
   return false;

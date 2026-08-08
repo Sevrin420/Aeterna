@@ -134,8 +134,10 @@ export const api = {
     if (!ids.length) return Promise.resolve([]);
     return req(`/bloodlines?tokens=${ids.join(',')}`);
   },
-  season() {
-    return req('/season');
+  // How long the abbey has stood, and which week that puts the confession
+  // price in. There are no seasons any more — no number, no break, no end.
+  day() {
+    return req('/day');
   },
   cathedralList() {
     return req('/cathedral');

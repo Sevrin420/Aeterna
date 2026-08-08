@@ -252,7 +252,7 @@ body.powered .mute-toggle {
 .btn-b { left: 52.6%; top: 79.9%; width: 15.34%; height: 9.88%; }
 
 /* ===== Shared overlay title/input/button styles (used by chat,
-   Final Communion) ===== */
+   the questions) ===== */
 .naming-title {
   margin: 0;
   color: #e9c468;
@@ -561,42 +561,6 @@ body.powered .mute-toggle {
 }
 
 
-
-/* ===== Final Communion cinematic ===== */
-.communion-overlay[hidden] { display: none; }
-.communion-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 9;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(6px, 2.4cqw, 14px);
-  background: radial-gradient(ellipse at center, rgba(40, 30, 8, 0.96), rgba(2, 1, 0, 0.98));
-  text-align: center;
-  padding: 10%;
-  animation: communion-in 1.2s ease-out;
-}
-@keyframes communion-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.communion-title {
-  margin: 0;
-  color: #f5d76e;
-  font-family: 'Press Start 2P', 'Courier New', monospace;
-  font-size: clamp(10px, 3.4cqw, 16px);
-  letter-spacing: 0.06em;
-  text-shadow: 0 0 12px rgba(245, 215, 110, 0.6);
-}
-.communion-body {
-  margin: 0;
-  color: #e9c468;
-  font-size: clamp(6px, 2cqw, 10px);
-  line-height: 1.7;
-  max-width: 90%;
-}
 
 /* ===== Chat ===== */
 .chat-overlay[hidden] { display: none; }
