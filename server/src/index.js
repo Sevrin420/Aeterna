@@ -682,7 +682,19 @@ fastify.post('/referral', async (req, reply) => {
   } catch (e) {
     // The UNIQUE on referee_wallet is the real guard against two requests
     // racing; losing that race is "already referred", not a server fault.
-    return reply.code(409).send({ error: 'You have already been brought in' });
+    //
+    // But it has to actually BE that. This used to answer every failure in the
+    // transaction with "already brought in", so a constraint error of any other
+    // kind — a malformed player row, a NOT NULL on referee_player_id — told the
+    // player they were already referred while nothing had been written. Nothing
+    // ever locked in, the message said it had, and the server log said nothing
+    // at all. Anything that is not the duplicate is now reported as the fault
+    // it is, and logged.
+    if (e && typeof e.code === 'string' && e.code.startsWith('SQLITE_CONSTRAINT_UNIQUE')) {
+      return reply.code(409).send({ error: 'You have already been brought in' });
+    }
+    req.log.error({ err: e, wallet: w, handle }, 'referral: could not be recorded');
+    return reply.code(500).send({ error: 'The abbey could not record that. Try again in a moment.' });
   }
 
   const fresh = db.prepare('SELECT * FROM players WHERE id = ?').get(referee.id);

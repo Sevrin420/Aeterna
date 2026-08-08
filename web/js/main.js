@@ -681,7 +681,7 @@ async function withNames(list) {
 
 // Tell the server which Bloodline this player is. Everything that touches
 // Devotion afterwards is keyed to it.
-async function bindBloodline(bl, menu, bloodlineName) {
+async function bindBloodline(bl, menu, bloodlineName, { afterMint = false } = {}) {
   if (isDemoMode()) {
     boundToken = bl.id;
     chosenCultist = bl;
@@ -711,7 +711,7 @@ async function bindBloodline(bl, menu, bloodlineName) {
     // in the toast so a holder of several can still tell two alike names apart.
     const called = full.bloodline_name || row.bloodline_name || `Bloodline #${bl.id}`;
     showToast(`${called} walks — Bloodline #${bl.id}, ${bl.cultists} Cultists, ${full.devotion || 0} Devotion.`);
-    await offerXHandleAndReferral(full);
+    await offerXHandleAndReferral(full, { afterMint });
   } catch (e) {
     // A failed bind leaves a paid-for Bloodline that the game cannot see, so
     // it must say so plainly and say how to retry. Pressing WALLET re-reads the
@@ -925,16 +925,29 @@ async function openLinesScreen(menu) {
       if (r.kind === 'referrer') {
         const who = await askOverlay({
           title: 'Who brought you here?',
-          message: `Name the X handle of the Cultist who brought you in. You are both granted ${REFERRAL_DEVOTION} Devotion — once.`,
+          message: `Name the X handle of the Cultist who brought you in. You are both granted ${REFERRAL_DEVOTION} Devotion — once. `
+            + `<em>They must already have set that handle in the abbey.</em>`,
           placeholder: '@theirhandle',
           confirm: 'Speak the name',
         });
         if (who) {
           try {
             const res = await api.referral(who);
-            r.value = `@${String(who).replace(/^@/, '')}`;
-            showToast(res && res.credited ? 'Named. You are both counted.' : 'Named.');
-          } catch (e) { showToast((e && e.message) || 'That name was not accepted.'); }
+            // Read what the server ACTUALLY returns. This used to test
+            // `res.credited`, a field /referral has never sent, so a referral
+            // that had just been recorded and paid announced itself with a bare
+            // "Named." — indistinguishable from nothing much happening. The
+            // row itself is not set from here either: openLinesScreen below
+            // re-reads /me, and `referred` there is the only thing that decides
+            // whether this locks in.
+            showToast(`@${res.referrer} brought you in. ${res.devotionGained} Devotion to you both.`, { size: 't-mid' });
+          } catch (e) {
+            // Loud, and it stays on screen: the row is about to come back
+            // reading "not set", and a quiet flash was leaving people thinking
+            // the name had been taken when it had been refused.
+            showToast((e && e.message) || 'That name was not accepted.', { size: 't-mid', dwell: 5200 });
+            sfx.error();
+          }
         }
       } else {
         const given = await askOverlay({
@@ -1056,12 +1069,18 @@ function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = '
 }
 
 // After a bind: offer to put an X handle on the Bloodline, then to name whoever
-// brought them in. Both are optional and each is asked ONCE — a player who
-// skips is not nagged on every connect, and a player who already has a handle
-// or has already been referred is never asked at all.
+// brought them in. Both are optional, and on an ordinary connect each is asked
+// ONCE — a player who skips is not nagged every time they come back.
+//
+// `afterMint` lifts that on the one occasion it gets in the way. Raising a
+// Bloodline is a deliberate act, not a reconnect, and a player who mistyped a
+// handle months ago should still be given the box. Without it the gate below
+// was permanently false for anyone who had ever skipped or fumbled the
+// question, and the mint rite silently offered no space to name a referrer at
+// all — which is exactly what was reported.
 const _askedThisSession = new Set();
 
-async function offerXHandleAndReferral(player) {
+async function offerXHandleAndReferral(player, { afterMint = false } = {}) {
   if (isDemoMode() || !player) return;
   const key = String(player.token_id || player.id);
 
@@ -1086,38 +1105,41 @@ async function offerXHandleAndReferral(player) {
     }
   }
 
-  // Asked ONCE, for good. `referralAsked` is the server's record that the
-  // question has already been put — whether it was answered with a handle or
-  // waved away — so it survives a reload, a new browser and a second Bloodline.
-  // The in-memory Set stays only to stop a double-ask inside one session,
-  // before the server has been told.
-  if (!player.referred && !player.referralAsked && !_askedThisSession.has(`ref:${key}`)) {
+  // `referralAsked` is the server's record that the question has been put, so a
+  // player who waved it away is not nagged on every reconnect. It is NOT a
+  // record that the matter is settled: `referred` is. A fresh mint therefore
+  // ignores it and asks again, and LINES offers the row regardless.
+  const askRef = !player.referred
+    && (afterMint || !player.referralAsked)
+    && !_askedThisSession.has(`ref:${key}`);
+  if (askRef) {
     _askedThisSession.add(`ref:${key}`);
     const who = await askOverlay({
       title: 'Who brought you here?',
       message: `Name the X handle of the Cultist who brought you in. You are both `
-        + `granted ${REFERRAL_DEVOTION} Devotion — once, and only once. `
-        + `<em>You are asked this once.</em>`,
+        + `granted ${REFERRAL_DEVOTION} Devotion — once. `
+        + `<em>They must already have set that handle in the abbey.</em>`,
       placeholder: '@theirhandle',
       confirm: 'Speak the name',
       skip: 'Nobody',
     });
-    let credited = false;
     if (who) {
       try {
         const r = await api.referral(who);
-        showToast(`@${r.referrer} brought you in. ${r.devotionGained} Devotion to you both.`);
-        credited = true;
+        showToast(`@${r.referrer} brought you in. ${r.devotionGained} Devotion to you both.`, { size: 't-mid' });
         player.referred = r.referrer;
       } catch (e) {
-        showToast(e.message || 'That name is not known here.');
+        // A REJECTED handle does not close the question. It used to: the
+        // decline below fired on any outcome that was not a credit, so one
+        // typo — or naming someone who simply had not carved their own handle
+        // yet — spent the only chance the player had. Nothing is recorded here,
+        // so the next mint asks again and LINES can still set it.
+        showToast(e.message || 'That name is not known here.', { size: 't-mid' });
         sfx.error();
       }
-    }
-    // Nothing was credited, so the question is closed rather than left to come
-    // back on the next connect. A failed handle counts: they were asked, they
-    // answered, and being nagged after a typo is the same nuisance.
-    if (!credited) {
+    } else {
+      // Waved away deliberately. THAT is worth remembering, so the question
+      // stops arriving on every connect — and it still leaves LINES open.
       player.referralAsked = true;
       try { await api.declineReferral(); } catch { /* it will be asked once more at worst */ }
     }
@@ -1291,7 +1313,10 @@ async function openMintPicker(menu) {
           skip: 'Leave it unnamed',
         });
       }
-      if (fresh) await bindBloodline(fresh, menu, given);
+      // afterMint: a Bloodline was just raised, so the referrer question is put
+      // again even if it was skipped or fumbled before. It is the one moment
+      // where asking is not nagging.
+      if (fresh) await bindBloodline(fresh, menu, given, { afterMint: true });
     } catch (e) {
       const why = {
         MINT_CLOSED: 'The mint is not open yet.',
