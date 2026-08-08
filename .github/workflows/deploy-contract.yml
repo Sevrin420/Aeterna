@@ -18,13 +18,13 @@ on:
         type: choice
         options: [fuji, avalanche]
       action:
-        description: 'deploy = new contract | open-mint = start selling on the one already deployed'
+        description: 'deploy = new contract | open-mint = start selling | withdraw = sweep the balance to team + treasury'
         required: true
         default: deploy
         type: choice
-        options: [deploy, open-mint]
+        options: [deploy, open-mint, withdraw]
       confirm:
-        description: 'For avalanche (mainnet) ONLY: type DEPLOY to confirm. Ignored on fuji.'
+        description: 'For avalanche (mainnet) ONLY: type DEPLOY to confirm — for every action, including withdraw. Ignored on fuji.'
         required: false
         default: ''
       max_supply:
@@ -109,6 +109,20 @@ jobs:
             exit 1
           fi
           npx hardhat run scripts/openMint.js --network ${{ inputs.network }}
+
+      # Sweeps the contract's balance 20/80 to the immutable team and treasury
+      # addresses. It takes no recipient and no amount — there is nothing here
+      # to point at the wrong place. See scripts/withdraw.js.
+      - name: Withdraw
+        if: inputs.action == 'withdraw'
+        working-directory: contracts
+        run: |
+          mkdir -p deployments
+          if [ ! -f "deployments/${{ inputs.network }}.json" ]; then
+            echo "::error::No deployments/${{ inputs.network }}.json in the repo. Nothing to withdraw from."
+            exit 1
+          fi
+          npx hardhat run scripts/withdraw.js --network ${{ inputs.network }}
 
       # The deploy records the address in deployments/<network>.json. Keep it:
       # openMint and every later script read it, and it is the only durable
