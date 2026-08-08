@@ -275,6 +275,18 @@ function drawOff() {
 // and "Saved. 1500 Devotion secured." are the same moment and land either side
 // of a tier boundary purely on the digit count. Anything that matters at a
 // fixed size should say so rather than hope its wording stays short.
+// Nothing sits on the middle of the screen for longer than this, whatever it
+// says and whoever asked. The box covers the courtyard, so a message that
+// overstays is in the way of the game rather than part of it — four seconds is
+// long enough to read the longest of them and short enough not to be a wait.
+// A caller that passes a longer dwell is clamped to it rather than obeyed.
+const TOAST_MAX_MS = 4000;
+
+function hideToast() {
+  clearTimeout(toastTimer);
+  toastEl.hidden = true;
+}
+
 function showToast(msg, { size = null, dwell = null } = {}) {
   const text = String(msg ?? '');
   toastEl.textContent = text;
@@ -282,9 +294,8 @@ function showToast(msg, { size = null, dwell = null } = {}) {
   toastEl.className = `toast ${tier}`;
   toastEl.hidden = false;
   clearTimeout(toastTimer);
-  // ~14 characters a second on top of a fixed beat, capped so nothing camps on
-  // the middle of the screen.
-  const ms = dwell ?? Math.min(5200, 1700 + text.length * 45);
+  // ~14 characters a second on top of a fixed beat, and never past the ceiling.
+  const ms = Math.min(TOAST_MAX_MS, dwell ?? (1500 + text.length * 40));
   toastTimer = setTimeout(() => { toastEl.hidden = true; }, ms);
 }
 
@@ -945,7 +956,7 @@ async function openLinesScreen(menu) {
             // Loud, and it stays on screen: the row is about to come back
             // reading "not set", and a quiet flash was leaving people thinking
             // the name had been taken when it had been refused.
-            showToast((e && e.message) || 'That name was not accepted.', { size: 't-mid', dwell: 5200 });
+            showToast((e && e.message) || 'That name was not accepted.', { size: 't-mid', dwell: 4000 });
             sfx.error();
           }
         }
@@ -1437,6 +1448,16 @@ function powerOn() {
         if (_mintInput) { _mintInput.handleInput(input); return; }
         // LINES likewise: d-pad to move, A to set what is unset, B out.
         if (_lines) { _lines.handleInput(input); return; }
+        // A message can be read and dismissed rather than waited out. Last in
+        // the order deliberately: every screen above owns its own B and has
+        // somewhere to go back TO, and a toast riding over one of them must not
+        // eat the press that closes it. Down here there is no such screen, so B
+        // means the only thing on top of the courtyard — the message.
+        //
+        // The press is consumed, so the scene underneath does not also act on
+        // it. The frame is not returned early: the abbey should keep moving
+        // while a message is waved away.
+        if (!toastEl.hidden && input.consumeBPress()) { hideToast(); sfx.click(); }
         if (scene) scene.update(dt, input);
       },
       () => {

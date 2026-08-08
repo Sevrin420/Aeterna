@@ -829,11 +829,12 @@ export class CourtyardScene {
   async _handleSaveExit() {
     try {
       const res = await api.save();
-      // Explicitly the largest size and a long dwell: this is the last thing
-      // the game says before the console goes off, and left to the by-length
-      // default it CHANGED SIZE with the Devotion — 150 came up a tier bigger
-      // than 1500, purely because the number was shorter.
-      this.onToast(`Saved. ${res.devotion} Devotion secured.`, { size: 't-huge', dwell: 7000 });
+      // Explicitly the largest size: this is the last thing the game says
+      // before the console goes off, and left to the by-length default it
+      // CHANGED SIZE with the Devotion — 150 came up a tier bigger than 1500,
+      // purely because the number was shorter. The dwell is the ceiling and no
+      // more; it asked for seven seconds once and seven seconds is a wait.
+      this.onToast(`Saved. ${res.devotion} Devotion secured.`, { size: 't-huge', dwell: 4000 });
       this.onSaveExit();
     } catch (e) {
       sfx.error();
