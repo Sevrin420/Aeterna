@@ -8,7 +8,7 @@
 - POST /register                ← current dev-mode stand-in: upserts a Cultist by a local pseudo-wallet id
 
 ### Player
-- GET  /me                      ← includes computed `multiplier`, `needsConfession`, `confessionCost`
+- GET  /me                      ← includes computed `multiplier`, `needsConfession`, `confessionCost` (AVAX) and `confessionPrice` ({week, pct, cultists, wei, avax}); both null when nothing is owed AND when the chain cannot be read
 - POST /save                  ← triggers Cloudflare Worker signature
 
 ### Duties
@@ -24,7 +24,8 @@
 - POST /gifts/drop                ← returns a held gift to the ground at the given tile
 
 ### Confession
-- POST /confession            ← escalating cost
+- POST /confession            ← price is a % of the line's mint cost by season week (25% wk1, 50% wk2-4, 100% wk5-7, 200% wk8) x its Cultists.
+                                NOT YET COLLECTING: `txHash` is stored unverified and the streak is forgiven without payment (`collected: false`).
 
 ### Social
 - GET  /leaderboard

@@ -10,7 +10,8 @@ import db from './db/database.js';
 import {
   DUTY_DEVOTION, DUTIES, DUTY_NAMES, X_DEVOTION, X_KINDS, REFERRAL_DEVOTION,
   X_COMMENT_DEVOTION, X_PHRASE, matchesPhrase,
-  todayStr, streakMultiplier, confessionCost, ensureFreshDay, pendingConfession, getSeasonInfo,
+  todayStr, streakMultiplier, ensureFreshDay, pendingConfession, getSeasonInfo,
+  seasonWeek, confessionPct, confessionCostWei, weiToAvax,
 } from './lib/gameLogic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -218,6 +219,46 @@ async function chainCall(data) {
 
 const padUint256 = (n) => BigInt(n).toString(16).padStart(64, '0');
 
+// pricePerCultist(), cached for the life of the process.
+//
+// Safe to cache because it CANNOT change: the deploy workflow's own note says
+// price, supply and both payout addresses are immutable once the contract is
+// out, and there is no setter. So this is one RPC call per boot rather than one
+// per confession, and a confession is not held up by a slow node.
+//
+// Null when the chain cannot be reached. Callers must treat that as "the price
+// is unknown", never as "free" — see the refusal in /confession.
+let _pricePerCultistWei = null;
+async function pricePerCultistWei() {
+  if (_pricePerCultistWei !== null) return _pricePerCultistWei;
+  try {
+    const hex = await chainCall('0x9cb324c4');            // pricePerCultist()
+    const wei = BigInt(hex || '0x0');
+    if (wei <= 0n) return null;                            // nonsense, do not cache
+    _pricePerCultistWei = wei;
+    return wei;
+  } catch {
+    return null;                                           // not cached: retry next time
+  }
+}
+
+// What mending this player's streak costs, right now. Both inputs are the
+// abbey's own: the week from the season clock, the Cultists from the row that
+// /bind verified against the chain.
+async function confessionPriceFor(player, now = new Date()) {
+  const price = await pricePerCultistWei();
+  if (price === null) return null;
+  const week = seasonWeek(getSeasonInfo(now).day);
+  const wei = confessionCostWei(price, player.cultists || 0, week);
+  return {
+    week,
+    pct: confessionPct(week),
+    cultists: player.cultists || 0,
+    wei: wei.toString(),
+    avax: weiToAvax(wei),
+  };
+}
+
 // ownerOf(uint256) and cultistsOf(uint256)
 async function readTokenFromChain(tokenId) {
   const owner = await chainCall('0x6352211e' + padUint256(tokenId));
@@ -413,11 +454,16 @@ fastify.get('/me', async (req, reply) => {
   // again on every connect for the rest of the season.
   const declined = db.prepare('SELECT 1 FROM referral_declines WHERE wallet = ?')
     .get(String(wallet).toLowerCase());
+  // The price of mending, so the Confessor can name it before the player
+  // kneels rather than after. Null when nothing is owed, and also null when the
+  // chain could not be reached — the client must say "unknown", not "free".
+  const price = pending ? await confessionPriceFor(fresh) : null;
   return {
     ...fresh,
     multiplier: streakMultiplier(fresh.streak, fresh.level),
     needsConfession: !!pending,
-    confessionCost: pending ? confessionCost(fresh.confession_count) : null,
+    confessionCost: price ? price.avax : null,
+    confessionPrice: price,
     referred: referral ? referral.referrer_handle : null,
     referralAsked: !!(referral || declined),
   };
@@ -452,10 +498,19 @@ fastify.post('/save', async (req, reply) => {
   };
 });
 
-// ========== CONFESSION (escalating cost) ==========
-// NOTE: this is the same dev/testnet stand-in the server already had a TODO
-// for — it records the confession and forgives the break, but does not yet
-// verify an on-chain ETH payment for `cost` using txHash.
+// ========== CONFESSION ==========
+// The price is a percentage of what the Bloodline cost to raise — 25% in week
+// one, 50% weeks 2-4, 100% weeks 5-7, 200% in week 8 — times its Cultists. See
+// confessionCostWei in gameLogic.js.
+//
+// !! STILL NOT COLLECTING. The price is computed, quoted and recorded, and the
+// streak is forgiven WITHOUT anything being paid. `txHash` is accepted and
+// stored exactly as it arrives and is NOT verified against the chain, so it is
+// a note, not a receipt. Before this charges anyone, /confession must: fetch
+// the receipt, check it succeeded, check `to` is the treasury, check `value` >=
+// the wei quoted here, and check the same hash has not already been spent on
+// another confession. Until then a stored hash proves nothing and must not be
+// shown to anyone as if it did.
 fastify.post('/confession', async (req, reply) => {
   const { wallet, tokenId, txHash } = req.body || {};
   if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
@@ -468,13 +523,20 @@ fastify.post('/confession', async (req, reply) => {
   const pending = pendingConfession(db, fresh.id);
   if (!pending) return reply.code(400).send({ error: 'No broken streak to confess' });
 
-  const cost = confessionCost(fresh.confession_count);
+  // A price that cannot be worked out is not a price of zero. If the chain is
+  // unreachable the abbey does not know what to charge, and forgiving on the
+  // house is the wrong side to fail on for something that is meant to cost.
+  const price = await confessionPriceFor(fresh);
+  if (!price) {
+    return reply.code(503).send({ error: 'The abbey cannot read its own ledger. Try again in a moment.' });
+  }
+
   const now = new Date().toISOString();
 
   db.prepare(`
     UPDATE streak_logs SET confessed = 1, confessed_at = ?, cost_eth = ?, tx_hash = ?
     WHERE id = ?
-  `).run(now, cost, txHash || null, pending.id);
+  `).run(now, price.avax, txHash || null, pending.id);
 
   // Forgive the break: restore the streak the player had going into it, and
   // back-date last_duty_date to "yesterday" so today's duties continue it.
@@ -486,10 +548,13 @@ fastify.post('/confession', async (req, reply) => {
 
   return {
     success: true,
-    costPaid: cost,
-    nextCost: confessionCost(fresh.confession_count + 1),
+    costPaid: price.avax,
+    price,
     confessionCount: fresh.confession_count + 1,
     restoredStreak: pending.streak_before,
+    // Said plainly in the response, because a client reading `costPaid` could
+    // reasonably assume it was.
+    collected: false,
   };
 });
 

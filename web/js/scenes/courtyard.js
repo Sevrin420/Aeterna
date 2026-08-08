@@ -807,6 +807,24 @@ export class CourtyardScene {
       }
       return LORE.stations.guru;
     }
+    // The Confessor names his price. He has always said the mending costs
+    // something ("it keeps accounts") and never once said what — the server
+    // has sent the figure all along and nothing rendered it. It is worked out
+    // from the week and the line's Cultists, so it is different for every
+    // holder and every week, and a player deciding whether to kneel needs it
+    // in front of them.
+    if (s.id === 'confession') {
+      const p = this.player.confessionPrice;
+      const base = LORE.stations.confession;
+      if (!this.player.needsConfession || !p) return base;
+      return {
+        speaker: base.speaker,
+        text: '"You have broken something."\n\n'
+          + `"Week ${p.week}. ${p.pct}% of what the line cost to raise, `
+          + `across ${p.cultists} Cultist${p.cultists === 1 ? '' : 's'}."\n\n`
+          + `"${p.avax} AVAX. Kneel, or go."`,
+      };
+    }
     return LORE.stations[s.id] || LORE.stations[s.kind];
   }
 
@@ -816,10 +834,17 @@ export class CourtyardScene {
       const res = await api.confession();
       this.player.needsConfession = false;
       this.player.confessionCost = null;
+      this.player.confessionPrice = null;
       this.player.streak = res.restoredStreak;
       this.onPlayerUpdate(this.player);
       sfx.confession();
-      this.onToast(`Confession accepted. Streak restored to ${res.restoredStreak}.`);
+      // Says what was actually charged, which is nothing. The abbey is not
+      // taking payment yet — see the note on /confession in the server — and a
+      // message that read "Confession accepted" over a quoted price would let
+      // a player believe they had paid it.
+      this.onToast(res.collected === false
+        ? `Streak restored to ${res.restoredStreak}. Nothing was taken — the abbey is not yet collecting.`
+        : `Confession accepted. Streak restored to ${res.restoredStreak}.`);
     } catch (e) {
       sfx.error();
       this.onToast(e.message);

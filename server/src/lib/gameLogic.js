@@ -81,8 +81,61 @@ export function streakMultiplier(streak, level) {
   return 1.0;
 }
 
-export function confessionCost(confessionCount) {
-  return Number((0.005 + confessionCount * 0.001).toFixed(3));
+// ── WHAT A CONFESSION COSTS ─────────────────────────────────────────────────
+//
+// A fraction of what the Bloodline cost to raise, rising as the season runs on.
+// The point is that mending a streak should hurt more the deeper into a season
+// you are — a break in week one is a stumble, a break in week eight is most of
+// the season thrown away — and that it should scale with what the line is
+// worth, so a twenty-Cultist holder does not mend for the same price as a
+// one-Cultist holder.
+//
+// The multiplier is a percentage OF THE MINT PRICE of the whole Bloodline, i.e.
+// pricePerCultist x cultists. Week 1 costs a quarter of what the line cost to
+// raise; week 8 costs double it.
+//
+// This replaces a flat 0.005 + 0.001 per previous confession. That escalated
+// with the number of confessions rather than with the season or the holding,
+// and is deliberately NOT kept as an extra factor here — the price is the
+// week and the Cultists, and nothing else, so a player can work it out.
+export const CONFESSION_WEEK_PCT = [
+  { throughWeek: 1, pct: 25 },
+  { throughWeek: 4, pct: 50 },
+  { throughWeek: 7, pct: 100 },
+  { throughWeek: 8, pct: 200 },
+];
+
+// Which week of the active season a given day falls in, 1-8. Days are 1-56, so
+// week = ceil(day / 7). Null during the break, when there is no season week to
+// be in — see confessionPct for what that means for the price.
+export function seasonWeek(day) {
+  if (!day || day < 1) return null;
+  return Math.min(Math.ceil(day / 7), Math.ceil(SEASON_ACTIVE_DAYS / 7));
+}
+
+// The percentage for a week. During the break (week null) it holds at the
+// week-8 rate rather than falling back to week 1: the break follows week 8, and
+// a streak broken at the end of a season must not become cheap to mend simply
+// because the season stopped.
+export function confessionPct(week) {
+  if (!week) return CONFESSION_WEEK_PCT[CONFESSION_WEEK_PCT.length - 1].pct;
+  for (const band of CONFESSION_WEEK_PCT) if (week <= band.throughWeek) return band.pct;
+  return CONFESSION_WEEK_PCT[CONFESSION_WEEK_PCT.length - 1].pct;
+}
+
+// In wei, and in BigInt throughout. The price of a Bloodline is a chain value
+// and the percentages are exact hundredths, so there is no reason to let a
+// float near this — a rounding error here is somebody's money.
+export function confessionCostWei(pricePerCultistWei, cultists, week) {
+  const price = BigInt(pricePerCultistWei || 0);
+  const n = BigInt(Math.max(0, Math.floor(Number(cultists) || 0)));
+  return (price * n * BigInt(confessionPct(week))) / 100n;
+}
+
+// The same number as AVAX, for display and for the cost_eth column. Lossy by
+// nature — never charge from this, charge from the wei.
+export function weiToAvax(wei, dp = 4) {
+  return Number((Number(BigInt(wei || 0)) / 1e18).toFixed(dp));
 }
 
 // Season structure from docs/Throbbin_Abbey_GDD_v4.1.md section 2: 56 days active
@@ -118,10 +171,15 @@ export function ensureFreshDay(db, player) {
 
   const yesterday = yesterdayStr();
   if (player.streak > 0 && player.last_duty_date && player.last_duty_date !== yesterday && player.last_duty_date !== today) {
+    // cost_eth is left NULL here and filled in when the confession is actually
+    // made. It used to be stamped at the moment of the break, which was a
+    // guess: the price now depends on the week the player CONFESSES in, not
+    // the week they stumbled, so a figure written here would be wrong for
+    // anyone who came back later — and it is the figure they were charged.
     db.prepare(`
       INSERT INTO streak_logs (player_id, date, streak_before, broke, confessed, cost_eth)
-      VALUES (?, ?, ?, 1, 0, ?)
-    `).run(player.id, today, player.streak, confessionCost(player.confession_count));
+      VALUES (?, ?, ?, 1, 0, NULL)
+    `).run(player.id, today, player.streak);
     db.prepare('UPDATE players SET streak = 0 WHERE id = ?').run(player.id);
     player.streak = 0;
   }
