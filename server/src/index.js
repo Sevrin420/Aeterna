@@ -190,7 +190,7 @@ const AVAX_RPC = process.env.AVAX_RPC || 'https://api.avax.network/ext/bc/C/rpc'
 // mean /bind silently 503s on every server that was updated without someone
 // remembering to hand-edit a file on the box.
 const BLOODLINE_ADDRESS = process.env.BLOODLINE_ADDRESS
-  || '0xC5D08383B1e56297Adbfa4f15E87588996f4C343';
+  || '0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878';
 
 // Two failures live here and they are NOT the same thing, so they are thrown
 // apart. A dead RPC must fail closed (nobody gets bound on an unverified

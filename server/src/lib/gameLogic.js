@@ -186,7 +186,11 @@ export function weiToAvax(wei, dp = 4) {
 // The anchor is now the deployment itself, read from the deployments file the
 // contract writes, so it cannot drift from the thing it is meant to track. The
 // env var still wins, for a test server that wants to sit in a chosen week.
-const DEPLOYED_AT = '2026-08-02T02:29:39Z';    // contracts/deployments/avalanche.json
+// A REDEPLOY MOVES DAY 0. This is the ThrobbinAbbeyBloodline deploy, which
+// restarted the run from week 1 — the previous collection's 2026-08-02T02:29:39Z
+// anchor went with it. Change this and contracts/deployments/avalanche.json
+// together or the abbey's clock and the contract it is meant to track disagree.
+const DEPLOYED_AT = '2026-08-09T02:53:08Z';    // contracts/deployments/avalanche.json
 export const ABBEY_START = new Date(process.env.ABBEY_START || DEPLOYED_AT);
 
 // ONE playthrough, eight weeks long. Not a season — nothing repeats after it
