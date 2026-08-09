@@ -532,9 +532,16 @@ body.powered .mute-toggle {
 .please-wait[hidden] { display: none; }
 .please-wait {
   position: absolute;
-  top: 50%;
+  /* Along the BOTTOM of the screen, not across its middle. Waiting happens
+     with something already on screen — the entrance overlay, the mint slider,
+     a message box — and a legend struck through the centre of it covers the
+     very thing the player is waiting to be able to read. Down here it is still
+     unmissable and sits over nothing that matters.
+     Measured in cqw so it holds its distance from the edge at every console
+     size, exactly as the type size does. */
+  bottom: 4cqw;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   z-index: 12;
   width: 100%;
   text-align: center;
