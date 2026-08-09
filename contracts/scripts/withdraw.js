@@ -19,9 +19,17 @@ async function main() {
   const net = hre.network.name;
   const f = path.join(__dirname, '..', 'deployments', `${net}.json`);
   if (!fs.existsSync(f)) throw new Error(`No deployment recorded for ${net}. Deploy first.`);
-  const { address } = JSON.parse(fs.readFileSync(f, 'utf8'));
+  const { address: recorded } = JSON.parse(fs.readFileSync(f, 'utf8'));
+  // CONTRACT_ADDRESS lets this sweep a collection the deployments file no
+  // longer names — the one case that matters is the old collection after a
+  // redeploy, whose balance is still real money sitting at an address nothing
+  // else points at any more.
+  const address = process.env.CONTRACT_ADDRESS || recorded;
+  if (!hre.ethers.isAddress(address)) throw new Error(`Not an address: ${address}`);
 
-  const c = await hre.ethers.getContractAt('AeternaBloodline', address);
+  // The ABI for team/treasury/TEAM_BPS/withdraw is identical on the old
+  // collection, so the current artifact reads either one.
+  const c = await hre.ethers.getContractAt('ThrobbinAbbeyBloodline', address);
   const provider = hre.ethers.provider;
 
   // Read the destinations off the contract rather than from any file. They are

@@ -2,16 +2,22 @@ const { expect } = require('chai');
 const { ethers } = require('hardhat');
 
 const PRICE = ethers.parseEther('0.01');
+const ERC5192_ID = '0xb45a3c0e';   // bytes4(keccak256('locked(uint256)'))
 
-describe('AeternaBloodline', () => {
+describe('ThrobbinAbbeyBloodline', () => {
   let c, owner, alice, bob, team, treasury;
 
   beforeEach(async () => {
     [owner, alice, bob, team, treasury] = await ethers.getSigners();
-    const F = await ethers.getContractFactory('AeternaBloodline');
+    const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
     c = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/');
     await c.waitForDeployment();
     await c.setMintOpen(true);
+  });
+
+  it('is named for the abbey', async () => {
+    expect(await c.name()).to.equal('Throbbin Abbey Bloodline');
+    expect(await c.symbol()).to.equal('THROB');
   });
 
   it('costs 0.01 AVAX per cultist', async () => {
@@ -47,13 +53,13 @@ describe('AeternaBloodline', () => {
   });
 
   it('cannot be minted until the mint is opened', async () => {
-    const F = await ethers.getContractFactory('AeternaBloodline');
+    const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
     const shut = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/');
     await expect(shut.connect(alice).mint(1, { value: PRICE })).to.be.revertedWith('mint closed');
   });
 
   it('stops at max supply', async () => {
-    const F = await ethers.getContractFactory('AeternaBloodline');
+    const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
     const tiny = await F.deploy(PRICE, 2, team.address, treasury.address, 'https://x/nft/');
     await tiny.setMintOpen(true);
     await tiny.connect(alice).mint(1, { value: PRICE });
@@ -73,7 +79,7 @@ describe('AeternaBloodline', () => {
 
   it('mints past any plausible cap when supply is set uncapped', async () => {
     const MAX = 2n ** 256n - 1n;
-    const F = await ethers.getContractFactory('AeternaBloodline');
+    const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
     const open = await F.deploy(PRICE, MAX, team.address, treasury.address, 'https://x/nft/');
     await open.setMintOpen(true);
     expect(await open.maxSupply()).to.equal(MAX);
@@ -99,5 +105,64 @@ describe('AeternaBloodline', () => {
     const names = c.interface.fragments.filter((f) => f.type === 'function').map((f) => f.name);
     expect(names).to.not.include('setPrice');
     expect(names).to.not.include('setMaxSupply');
+  });
+
+  // ---- SOULBOUND ----
+  //
+  // These are the point of the redeploy. The old collection was a plain
+  // transferable ERC-721: every one of the four cases below SUCCEEDED on it.
+
+  describe('soulbound', () => {
+    beforeEach(async () => {
+      await c.connect(alice).mint(4, { value: PRICE * 4n });
+    });
+
+    it('refuses a plain transfer', async () => {
+      await expect(c.connect(alice).transferFrom(alice.address, bob.address, 1))
+        .to.be.revertedWithCustomError(c, 'Soulbound');
+    });
+
+    it('refuses both safeTransferFrom overloads', async () => {
+      await expect(
+        c.connect(alice)['safeTransferFrom(address,address,uint256)'](alice.address, bob.address, 1)
+      ).to.be.revertedWithCustomError(c, 'Soulbound');
+      await expect(
+        c.connect(alice)['safeTransferFrom(address,address,uint256,bytes)'](alice.address, bob.address, 1, '0x')
+      ).to.be.revertedWithCustomError(c, 'Soulbound');
+    });
+
+    it('refuses approvals, so nothing can be listed anywhere', async () => {
+      await expect(c.connect(alice).approve(bob.address, 1))
+        .to.be.revertedWithCustomError(c, 'Soulbound');
+      await expect(c.connect(alice).setApprovalForAll(bob.address, true))
+        .to.be.revertedWithCustomError(c, 'Soulbound');
+      expect(await c.getApproved(1)).to.equal(ethers.ZeroAddress);
+      expect(await c.isApprovedForAll(alice.address, bob.address)).to.equal(false);
+    });
+
+    it('the contract owner cannot move one either', async () => {
+      await expect(c.connect(owner).transferFrom(alice.address, bob.address, 1))
+        .to.be.revertedWithCustomError(c, 'Soulbound');
+      const names = c.interface.fragments.filter((f) => f.type === 'function').map((f) => f.name);
+      expect(names).to.not.include('burn');
+      expect(names).to.not.include('adminTransfer');
+    });
+
+    it('says so on chain, per ERC-5192', async () => {
+      expect(await c.locked(1)).to.equal(true);
+      expect(await c.supportsInterface(ERC5192_ID)).to.equal(true);
+      await expect(c.locked(999)).to.be.revertedWithCustomError(c, 'ERC721NonexistentToken');
+    });
+
+    it('emits Locked at mint so a marketplace hears about it', async () => {
+      await expect(c.connect(bob).mint(1, { value: PRICE }))
+        .to.emit(c, 'Locked').withArgs(2);
+    });
+
+    it('still lets the wallet that raised it keep playing it', async () => {
+      expect(await c.ownerOf(1)).to.equal(alice.address);
+      expect(await c.bloodlinesOf(alice.address)).to.deep.equal([1n]);
+      expect(await c.cultistsHeldBy(alice.address)).to.equal(4);
+    });
   });
 });

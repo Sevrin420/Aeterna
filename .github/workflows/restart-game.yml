@@ -1,0 +1,90 @@
+# Start the run over: archive the live player database and let the server
+# create a fresh one on boot.
+#
+# WHY THIS EXISTS, and why it is not optional after a contract redeploy.
+#
+# Every Bloodline row is keyed to a token id, and a new collection numbers its
+# tokens from 1 again. The old rows still hold 1, 2, 3… so without this the new
+# collection is not merely confusing, it is UNPLAYABLE: POST /bind refuses a
+# token that is already bound to another row, so the first person to mint the
+# new #1 is told "That Bloodline is already bound to another player" and cannot
+# get into the abbey at all. The same collision would serve the old line's
+# Devotion on the new token's marketplace card.
+#
+# Nothing is deleted. The database is MOVED aside, timestamped, and left on the
+# box — so a restart done in error can be undone by moving it back.
+#
+# Manual only, and it asks for the word in full.
+name: Restart the run
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RESTART to wipe every Bloodline, streak and Devotion total and begin again. The database is archived, not deleted.'
+        required: true
+        default: ''
+
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse an unconfirmed run
+        if: inputs.confirm != 'RESTART'
+        run: |
+          echo "::error::Not confirmed. Re-run and type RESTART in the confirm box."
+          exit 1
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<'EOF'
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking accept-new
+          EOF
+
+      - name: Archive the database and start a fresh one
+        run: |
+          ssh vps '
+            set -e
+            cd /opt/aeterna-server
+            STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+
+            echo "--- before ---"
+            if [ -f data/aeterna.db ]; then
+              sqlite3 data/aeterna.db "SELECT (SELECT COUNT(*) FROM players) || \" players, \" || (SELECT COUNT(*) FROM players WHERE token_id IS NOT NULL) || \" bound Bloodlines, \" || (SELECT COALESCE(SUM(devotion),0) FROM players) || \" Devotion in all\";" 2>/dev/null || echo "(could not read counts; archiving anyway)"
+            else
+              echo "no database yet — nothing to archive"
+            fi
+
+            systemctl stop aeterna-server
+
+            mkdir -p data/archive
+            for f in data/aeterna.db data/aeterna.db-wal data/aeterna.db-shm; do
+              [ -f "$f" ] && mv "$f" "data/archive/$(basename $f).$STAMP"
+            done
+            echo "archived as data/archive/aeterna.db.$STAMP"
+
+            systemctl start aeterna-server
+            sleep 2
+            systemctl --no-pager --lines=5 status aeterna-server
+
+            echo "--- after ---"
+            sqlite3 data/aeterna.db "SELECT (SELECT COUNT(*) FROM players) || \" players\";"
+            ls -la data/archive/ | tail -5
+          '
+
+      - name: Check the abbey answers
+        run: |
+          for i in 1 2 3 4 5; do
+            if curl -fsS --max-time 10 https://membersonly.cc/health; then echo; echo "✅ Live at https://membersonly.cc/"; exit 0; fi
+            echo "not up yet — retrying in $((i * 5))s"; sleep $((i * 5))
+          done
+          echo "::error::The abbey did not answer /health after the restart."
+          exit 1

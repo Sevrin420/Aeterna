@@ -1,5 +1,29 @@
 require('@nomicfoundation/hardhat-toolbox');
 require('dotenv').config();
+const { subtask } = require('hardhat/config');
+const { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } = require('hardhat/builtin-tasks/task-names');
+
+// Compile against a solc installed from npm instead of one downloaded from
+// binaries.soliditylang.org. Only used when SOLCJS_PATH is set, so CI and a
+// normal developer machine are untouched — it exists for sandboxes whose
+// network policy allows the npm registry and nothing else, where hardhat
+// otherwise cannot compile at all and the tests cannot be run before a deploy.
+//
+//   npm i --no-save solc@0.8.24
+//   SOLCJS_PATH=$PWD/node_modules/solc/soljson.js npx hardhat test
+if (process.env.SOLCJS_PATH) {
+  subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args, hre, runSuper) => {
+    if (args.solcVersion === '0.8.24') {
+      return {
+        compilerPath: process.env.SOLCJS_PATH,
+        isSolcJs: true,
+        version: args.solcVersion,
+        longVersion: `solc-js-${args.solcVersion}`,
+      };
+    }
+    return runSuper();
+  });
+}
 
 // The deployer key. Kept only in contracts/.env, which is gitignored — it is
 // never read from the game's server env, so a compromised web host cannot

@@ -45,12 +45,13 @@ async function main() {
     await new Promise((r) => setTimeout(r, 15000));
   }
 
-  const F = await hre.ethers.getContractFactory('AeternaBloodline');
+  const F = await hre.ethers.getContractFactory('ThrobbinAbbeyBloodline');
   const c = await F.deploy(price, maxSupply, team, treasury, baseURI);
   await c.waitForDeployment();
   const addr = await c.getAddress();
   console.log(`\ndeployed         ${addr}`);
-  console.log('mint is CLOSED. Open it with:  npm run open:' + net);
+  console.log('mint is CLOSED, and the OLD collection may still be open — close that first.');
+  console.log('Open this one with:  npm run open:' + net);
 
   const dir = path.join(__dirname, '..', 'deployments');
   fs.mkdirSync(dir, { recursive: true });

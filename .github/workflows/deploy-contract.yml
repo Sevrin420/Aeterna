@@ -1,4 +1,4 @@
-# Deploy the Aeterna Bloodline collection to Avalanche.
+# Deploy the Throbbin Abbey Bloodline collection to Avalanche.
 #
 # Manual only. A contract deploy must never ride along on a push — this fires
 # when you go to the Actions tab and press Run, and not otherwise.
@@ -18,11 +18,15 @@ on:
         type: choice
         options: [fuji, avalanche]
       action:
-        description: 'deploy = new contract | open-mint = start selling | withdraw = sweep the balance to team + treasury'
+        description: 'deploy = new contract | open-mint / close-mint = start or stop selling | withdraw = sweep the balance to team + treasury'
         required: true
         default: deploy
         type: choice
-        options: [deploy, open-mint, withdraw]
+        options: [deploy, open-mint, close-mint, withdraw]
+      contract_address:
+        description: 'Which contract for open-mint / close-mint / withdraw. Leave blank for the one in deployments/<network>.json. Fill it in to act on the PREVIOUS collection after a redeploy.'
+        required: false
+        default: ''
       confirm:
         description: 'For avalanche (mainnet) ONLY: type DEPLOY to confirm — for every action, including withdraw. Ignored on fuji.'
         required: false
@@ -99,16 +103,34 @@ jobs:
         working-directory: contracts
         run: npx hardhat run scripts/deploy.js --network ${{ inputs.network }}
 
+      # open-mint and close-mint are the same script. A redeploy needs both:
+      # close the old collection so it stops selling Bloodlines the abbey no
+      # longer reads, then open the new one.
       - name: Open the mint
         if: inputs.action == 'open-mint'
         working-directory: contracts
+        env:
+          MINT_OPEN: 'true'
+          CONTRACT_ADDRESS: ${{ inputs.contract_address }}
         run: |
-          mkdir -p deployments
-          if [ ! -f "deployments/${{ inputs.network }}.json" ]; then
-            echo "::error::No deployments/${{ inputs.network }}.json in the repo. Commit the file the deploy step produced, then re-run."
+          if [ -z "$CONTRACT_ADDRESS" ] && [ ! -f "deployments/${{ inputs.network }}.json" ]; then
+            echo "::error::No deployments/${{ inputs.network }}.json in the repo and no contract_address given."
             exit 1
           fi
-          npx hardhat run scripts/openMint.js --network ${{ inputs.network }}
+          npx hardhat run scripts/setMint.js --network ${{ inputs.network }}
+
+      - name: Close the mint
+        if: inputs.action == 'close-mint'
+        working-directory: contracts
+        env:
+          MINT_OPEN: 'false'
+          CONTRACT_ADDRESS: ${{ inputs.contract_address }}
+        run: |
+          if [ -z "$CONTRACT_ADDRESS" ] && [ ! -f "deployments/${{ inputs.network }}.json" ]; then
+            echo "::error::No deployments/${{ inputs.network }}.json in the repo and no contract_address given."
+            exit 1
+          fi
+          npx hardhat run scripts/setMint.js --network ${{ inputs.network }}
 
       # Sweeps the contract's balance 20/80 to the immutable team and treasury
       # addresses. It takes no recipient and no amount — there is nothing here
@@ -116,10 +138,11 @@ jobs:
       - name: Withdraw
         if: inputs.action == 'withdraw'
         working-directory: contracts
+        env:
+          CONTRACT_ADDRESS: ${{ inputs.contract_address }}
         run: |
-          mkdir -p deployments
-          if [ ! -f "deployments/${{ inputs.network }}.json" ]; then
-            echo "::error::No deployments/${{ inputs.network }}.json in the repo. Nothing to withdraw from."
+          if [ -z "$CONTRACT_ADDRESS" ] && [ ! -f "deployments/${{ inputs.network }}.json" ]; then
+            echo "::error::No deployments/${{ inputs.network }}.json in the repo and no contract_address given. Nothing to withdraw from."
             exit 1
           fi
           npx hardhat run scripts/withdraw.js --network ${{ inputs.network }}

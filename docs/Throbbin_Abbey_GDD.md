@@ -32,8 +32,10 @@ mechanically as **Devotion**, which you can only earn by turning up.
 
 **One playthrough. Eight weeks. No seasons, no break, no repeat.**
 
-- **Day 0 is the day the contract was deployed** — 2026-08-02, from
-  `contracts/deployments/avalanche.json`
+- **Day 0 is the day the contract was deployed**, read from
+  `contracts/deployments/avalanche.json` and mirrored in `DEPLOYED_AT` in
+  `server/src/lib/gameLogic.js`. **A redeploy resets it**: the new contract's
+  deploy timestamp becomes the new day 0, and the run starts over from week 1
 - The run is **days 0 to 55**, which is 56 days, which is 8 weeks
 - **Week 1 is days 0–6**, week 2 is days 7–13, … week 8 is days 49–55
 - The day rolls at **00:00 UTC**
@@ -50,16 +52,19 @@ Note the contrast with streaks, which are **per Bloodline** — see §5.
 
 ## 3. Mint & treasury
 
-**The contract** — `0xC5D08383B1e56297Adbfa4f15E87588996f4C343`, Avalanche
-C-Chain, deployed 2026-08-02.
+**The contract** — `ThrobbinAbbeyBloodline` on the Avalanche C-Chain. The
+address and deploy date live in `contracts/deployments/avalanche.json`, which is
+the one place they are recorded.
 
 | | |
 |---|---|
+| Collection | **Throbbin Abbey Bloodline** (`THROB`) |
 | Price | **0.01 AVAX per Cultist** |
 | Cultists per Bloodline | 1 to 20, chosen at mint |
 | Cost of a full Bloodline | 0.2 AVAX (20 Cultists) |
 | Supply | uncapped |
 | Split | **80% treasury, 20% team** |
+| Transferable | **No — soulbound** |
 
 Price, supply and both payout addresses are **immutable** — there are no
 setters, and the deploy tests assert it. Payment is exact: the contract reverts
@@ -76,7 +81,18 @@ end of the run is **not implemented** and not yet specified here.
 
 ## 4. The Bloodline NFT
 
-A plain ERC-721. Not a tokenbound account — the ERC-6551 design was dropped.
+An ERC-721, **soulbound**. Not a tokenbound account — the ERC-6551 design was
+dropped.
+
+**It cannot leave the wallet that raised it.** No sale, no gift, no transfer, no
+burn, no approval to a marketplace, and no privileged path for the contract
+owner. A leaderboard place cannot be bought, and a line cannot be flipped
+part-way through a run. It says so on chain: ERC-5192 `locked()` returns true
+and `Locked` is emitted at mint, so a marketplace shows it as locked instead of
+offering a Sell button that reverts.
+
+The price of that: no secondary market, and **a lost wallet is a lost Bloodline**
+— nobody can recover or reissue one.
 
 **Carries**
 - **Cultists** — 1 to 20, from the chain, fixed at mint. The payout multiplier.

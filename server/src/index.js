@@ -66,14 +66,16 @@ fastify.get('/nft/:tokenId', async (req, reply) => {
 
   reply.header('Cache-Control', 'public, max-age=60');
   return {
-    // The abbey's name as a marketplace shows it. NOT the on-chain collection
-    // name: that is baked into the deployed contract's constructor ("Aeterna
-    // Bloodline") and only a redeploy could change it. To roll this back,
-    // put "Aeterna" and "Vita Aeterna" back in the two lines below.
+    // The abbey's name as a marketplace shows it. This used to disagree with
+    // the on-chain collection name, which the first contract baked into its
+    // constructor as "Aeterna Bloodline" and could not change; the redeploy
+    // put both on "Throbbin Abbey Bloodline", so a card and the collection it
+    // belongs to finally say the same thing.
     name: given ? `${given} — Bloodline #${tokenId}` : `Throbbin Abbey Bloodline #${tokenId}`,
-    description: 'A bloodline of Throbbin Abbey. It holds a fixed '
-      + 'number of Cultists, set the day it was raised and never added to. Its '
-      + 'Devotion is earned, and rises for as long as the line is kept.',
+    description: 'A bloodline of Throbbin Abbey. It is soulbound — it cannot '
+      + 'be sold, sent or given away, and belongs to the wallet that raised it. '
+      + 'It holds a fixed number of Cultists, set that day and never added to. '
+      + 'Its Devotion is earned, and rises for as long as the line is kept.',
     external_url: `https://membersonly.cc/?bloodline=${tokenId}`,
     image: `https://membersonly.cc/nft/${tokenId}/image.svg`,
     attributes: [
@@ -81,6 +83,7 @@ fastify.get('/nft/:tokenId', async (req, reply) => {
       { trait_type: 'Devotion', value: devotion },
       { trait_type: 'Streak', value: streak },
       { trait_type: 'Payout Multiplier', value: `${cultists}x` },
+      { trait_type: 'Soulbound', value: 'Yes' },
       { trait_type: 'Awakened', value: row ? 'Yes' : 'Not yet' },
       // Only present once its holder has bound one — an absent trait reads
       // better on a marketplace than an empty one.

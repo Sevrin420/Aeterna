@@ -2,18 +2,30 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @title Aeterna Bloodline
+ * @title Throbbin Abbey Bloodline
  * @notice One NFT is a Bloodline. It is minted once, holding between 1 and 20
  *         Cultists, and that count is fixed for the life of the token — there
  *         is deliberately no function anywhere here that raises it. A wallet
  *         may hold several Bloodlines; the game makes you play one at a time.
  *
+ *         SOULBOUND. A Bloodline cannot be transferred, sold, given away or
+ *         burned. It belongs to the wallet that raised it, permanently. This is
+ *         not a policy the game enforces off-chain and hopes holds — the token
+ *         has no path out of the wallet that minted it, so a leaderboard place
+ *         cannot be bought and a played line cannot be flipped mid-run.
+ *
+ *         The consequence is worth stating plainly: there is no secondary
+ *         market, and a lost wallet is a lost Bloodline with no recovery of any
+ *         kind. Nobody — not the owner of this contract, not the deployer — can
+ *         move one.
+ *
  *         Cultists do not change how much Devotion an act is worth. They are a
- *         MULTIPLIER on the end-of-season payout, which is settled off-chain,
- *         so nothing in this contract needs to know what Devotion is.
+ *         MULTIPLIER on the end-of-run payout, which is settled off-chain, so
+ *         nothing in this contract needs to know what Devotion is.
  *
  *         Devotion itself lives on the server and is surfaced through
  *         tokenURI: the metadata a marketplace shows is served live, so a
@@ -21,7 +33,17 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *         transaction. That is the only sense in which it is upgradable, and it
  *         is the safe one — no owner anywhere can rewrite what a token holds.
  */
-contract AeternaBloodline is ERC721Enumerable, Ownable {
+
+/// ERC-5192, the minimal soulbound interface. Implemented so a marketplace can
+/// ASK whether a token is locked and show it as such, rather than offering a
+/// Sell button that reverts.
+interface IERC5192 {
+    /// @notice Emitted when a token is locked. Emitted at mint; never unlocked.
+    event Locked(uint256 tokenId);
+    function locked(uint256 tokenId) external view returns (bool);
+}
+
+contract ThrobbinAbbeyBloodline is ERC721Enumerable, Ownable, IERC5192 {
     /// Price of one Cultist. Immutable: the cost of a Bloodline can never be
     /// changed out from under someone who is mid-mint.
     uint256 public immutable pricePerCultist;
@@ -35,7 +57,7 @@ contract AeternaBloodline is ERC721Enumerable, Ownable {
     uint256 public immutable maxSupply;
 
     /// Where mint proceeds go. Both immutable, both set at deploy: a fifth to
-    /// the team, the rest to the treasury the season pays out of.
+    /// the team, the rest to the treasury the run pays out of.
     address public immutable team;
     address public immutable treasury;
     uint256 public constant TEAM_BPS = 2000; // 20.00%
@@ -49,6 +71,10 @@ contract AeternaBloodline is ERC721Enumerable, Ownable {
     string private _base;
     uint256 private _nextId = 1;
 
+    /// Thrown by every path that would move a token out of the wallet that
+    /// raised it, and by the approval calls that exist only to enable one.
+    error Soulbound();
+
     event Minted(address indexed to, uint256 indexed tokenId, uint256 cultists, uint256 paid);
     event Withdrawn(uint256 toTeam, uint256 toTreasury);
 
@@ -58,7 +84,7 @@ contract AeternaBloodline is ERC721Enumerable, Ownable {
         address _team,
         address _treasury,
         string memory baseURI_
-    ) ERC721("Aeterna Bloodline", "BLOOD") Ownable(msg.sender) {
+    ) ERC721("Throbbin Abbey Bloodline", "THROB") Ownable(msg.sender) {
         require(_team != address(0) && _treasury != address(0), "zero payout address");
         require(_maxSupply > 0, "zero supply");
         pricePerCultist = _pricePerCultist;
@@ -85,6 +111,54 @@ contract AeternaBloodline is ERC721Enumerable, Ownable {
         cultistsOf[tokenId] = cultists;
         _safeMint(msg.sender, tokenId);
         emit Minted(msg.sender, tokenId, cultists, msg.value);
+        emit Locked(tokenId);
+    }
+
+    // ---- soulbound ----
+
+    /**
+     * @dev The single chokepoint. Every mint, transfer and burn in ERC721 goes
+     *      through _update, so refusing here refuses all of them at once —
+     *      transferFrom, both safeTransferFrom overloads, and anything a future
+     *      extension might add. A token with an existing owner cannot be moved
+     *      to anyone, including address(0).
+     *
+     *      Only the mint (no previous owner) is allowed through.
+     */
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override(ERC721Enumerable)
+        returns (address)
+    {
+        if (_ownerOf(tokenId) != address(0)) revert Soulbound();
+        return super._update(to, tokenId, auth);
+    }
+
+    /// Approvals exist only to let somebody else move a token, and nobody can.
+    /// Refused rather than left working, so a holder cannot be talked into
+    /// signing one and cannot list a Bloodline anywhere that reverts on sale.
+    function approve(address, uint256) public pure override(ERC721, IERC721) {
+        revert Soulbound();
+    }
+
+    function setApprovalForAll(address, bool) public pure override(ERC721, IERC721) {
+        revert Soulbound();
+    }
+
+    /// ERC-5192. Every token is locked, from the block it is minted, forever.
+    /// Reverts for a token that does not exist, per the spec.
+    function locked(uint256 tokenId) external view returns (bool) {
+        _requireOwned(tokenId);
+        return true;
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721Enumerable)
+        returns (bool)
+    {
+        return interfaceId == type(IERC5192).interfaceId || super.supportsInterface(interfaceId);
     }
 
     /**
