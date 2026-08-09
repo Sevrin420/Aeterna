@@ -836,7 +836,7 @@ export class AbbeyScene {
       {
         speaker: 'The Season',
         text: row('Week', `${clock.week || 1} of ${clock.weeks || 8}`) + '\n'
-          + row('Base a duty', task.base != null ? task.base : 0) + '\n'
+          + row('Base per duty', task.base != null ? task.base : 0) + '\n'
           + row('Days left', clock.daysLeft != null ? clock.daysLeft : '?') + '\n\n'
           + 'The base rises each\nweek, for everyone.',
       },
