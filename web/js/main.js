@@ -12,7 +12,7 @@ import { beginWait, endWait, clearWait } from './wait.js';
 import {
   connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen, payConfession,
   fetchPricePerCultist, formatAvax, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
-  ensureChain, currentChainId, disconnectWallet,
+  ensureChain, currentChainId, disconnectWallet, BLOODLINE_ADDRESS,
 } from './wallet.js';
 
 // The tab follows the flag too, so ?oldName=1 rolls the rename back everywhere
@@ -583,11 +583,82 @@ function enterEntrance(player) {
 // The menu's Connect button. It does the connection itself and writes the
 // result straight back into the panel — the old HTML overlay is still there for
 // the Cultist picker, but binding a wallet no longer needs a detour through it.
+// IS THIS PAGE STILL THE CURRENT GAME?
+//
+// The collection address lives in a meta tag, so it is fixed the moment the
+// page loads. Redeploy the contract and every browser holding the old page —
+// cached, or simply left open — goes on reading the OLD collection while the
+// server reads the new one. What the player sees is not "your page is old",
+// it is a Bloodline of theirs being found and then refused: the client asks to
+// bind a token the new collection has never minted, and the server answers
+// "No such Bloodline has been raised". That happened, and it reads like the
+// game has lost their line rather than like a stale tab.
+//
+// So the page asks the server which collection it is reading and compares.
+// One automatic reload, because a cached page usually just needs fetching
+// again; and only one, guarded by sessionStorage, because a reload loop is a
+// worse failure than the one being fixed. If it survives the reload the cache
+// is not the problem and the player is told plainly.
+const RELOADED_KEY = 'aeterna_stale_reload';
+// Guarded, because the whole safety of the one-reload rule rests on this
+// flag surviving. Some browsers throw on sessionStorage rather than merely
+// failing (private modes have historically done exactly that), and a throw
+// swallowed into "no flag set" is an infinite reload loop — far worse than
+// the stale page it is trying to fix. If the flag cannot be kept, the reload
+// is not attempted at all and the player gets the message instead.
+const flag = {
+  get() { try { return sessionStorage.getItem(RELOADED_KEY); } catch { return 'unavailable'; } },
+  set() { try { sessionStorage.setItem(RELOADED_KEY, '1'); return sessionStorage.getItem(RELOADED_KEY) === '1'; } catch { return false; } },
+  clear() { try { sessionStorage.removeItem(RELOADED_KEY); } catch { /* nothing to clear */ } },
+};
+// The collection this browser last played. Kept so a redeploy can be noticed
+// and the remembered token id dropped with it.
+const COLLECTION_KEY = 'aeterna_collection';
+
+async function checkCollection() {
+  let live;
+  try { live = await api.collection(); } catch { return true; }   // offline: not our business
+  if (!live || !live.address) return true;
+  const same = String(live.address).toLowerCase() === String(BLOODLINE_ADDRESS || '').toLowerCase();
+
+  if (same) {
+    flag.clear();
+    // A token id only means anything within one collection. Carrying one
+    // across a redeploy is how a fresh #1 would inherit a dead line's row.
+    try {
+      const known = localStorage.getItem(COLLECTION_KEY);
+      if (known && known.toLowerCase() !== String(live.address).toLowerCase()) setTokenId(null);
+      localStorage.setItem(COLLECTION_KEY, live.address);
+    } catch { /* no storage: nothing remembered, nothing stale to drop */ }
+    return true;
+  }
+
+  // Reload only if the flag actually stuck — see `flag` above.
+  if (!flag.get() && flag.set()) {
+    showToast('The abbey has moved. Fetching the current game…');
+    setTimeout(() => location.reload(), 900);
+    return false;
+  }
+  showToast('This page is an old copy of the game and your browser keeps serving it. '
+    + 'Close the tab and open https://membersonly.cc/ again, or clear this site’s cache. '
+    + 'Nothing is wrong with your wallet.');
+  return false;
+}
+
 async function menuConnect(menu) {
   if (menu.busy) return;
   menu.busy = true;
-  menu.status = 'OPENING WALLET…';
+  menu.status = 'CHECKING THE ABBEY…';
   try {
+    // Before the wallet, before the chain: if this page is reading a
+    // superseded collection then everything after this point is wrong, and
+    // wrong in a way that looks like the player's fault.
+    if (!(await checkCollection())) {
+      menu.status = 'PAGE OUT OF DATE';
+      menu.busy = false;
+      return;
+    }
+    menu.status = 'OPENING WALLET…';
     const addr = await connectWallet();
     connectedAddr = addr;
     // Move the wallet to Avalanche before reading anything. On any other chain

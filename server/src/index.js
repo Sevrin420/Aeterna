@@ -1069,6 +1069,22 @@ fastify.get('/bloodlines', async (req, reply) => {
 // One eight-week playthrough, day 0 being the day the contract was deployed.
 // No seasons, no break, no Final Communion — just where the run stands and what
 // that means for the price of mending a streak.
+// WHICH COLLECTION THE ABBEY IS READING. The client holds the same address in
+// a meta tag, and the two must agree — this endpoint is what lets it check.
+//
+// It exists because of a real failure. After the redeploy, a browser still
+// running the cached page read the OLD collection, found the Bloodlines that
+// wallet held there, and asked to bind a token the NEW collection has never
+// minted. The server answered, correctly and uselessly, "No such Bloodline has
+// been raised" — a true statement that told the player nothing about what was
+// actually wrong or what to do about it.
+//
+// A stale page cannot know it is stale by looking at itself. It has to ask.
+fastify.get('/collection', async (req, reply) => {
+  reply.header('Cache-Control', 'no-store');
+  return { address: BLOODLINE_ADDRESS, chainId: 43114 };
+});
+
 fastify.get('/day', async () => {
   const clock = abbeyClock();
   return { ...clock, confessionPct: confessionPct(clock.week) };

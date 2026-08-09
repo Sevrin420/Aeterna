@@ -151,6 +151,12 @@ export const api = {
   day() {
     return req('/day');
   },
+  // Which collection the SERVER is reading. Compared against this page's own
+  // meta tag to catch a browser running a cached copy from before a redeploy —
+  // see checkCollection() in main.js.
+  collection() {
+    return req('/collection');
+  },
   cathedralList() {
     return req('/cathedral');
   },
