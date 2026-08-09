@@ -98,7 +98,7 @@ The price of that: no secondary market, and **a lost wallet is a lost Bloodline*
 - **Cultists** — 1 to 20, from the chain, fixed at mint. The payout multiplier.
 - **Devotion** — earned by play, held server-side, only ever rises
 - **Streak** — consecutive days with all three duties done
-- **A name** — given once, when the line is raised, or later from LINES
+- **A name** — given once, when the line is raised, or later from ACCOUNT
 - **An X handle** — optional; it is what others type to credit a referral
 
 The card a marketplace shows is built live from current Devotion
@@ -252,7 +252,7 @@ something that does not exist.
 
 ## 9. Social
 
-- **Referrals** — see §5. Set at mint or later from LINES on the menu.
+- **Referrals** — see §5. Set at mint or later from ACCOUNT on the menu.
 - **Cathedral Rooms** — four claimable alcoves in the transept; first to press
   A on an unowned alcove holds it. No cost to claim.
 - **Presence** — other players connected at the same time appear, move, chat

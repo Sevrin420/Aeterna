@@ -37,13 +37,17 @@ const TURN = 1.15;                               // seconds a facing is held
 const CULT_H = 44;
 
 // The grid, two columns wide, in reading order. It no longer has to be square:
-// LINES is a fifth entry and sits alone on the bottom row.
+// ACCOUNT is a fifth entry and sits alone on the bottom row.
 const BUTTONS = [
   { id: 'wallet', label: 'WALLET' },
   { id: 'play', label: 'PLAY' },
   { id: 'mint', label: 'MINT' },
   { id: 'docs', label: 'DOCS' },
-  { id: 'lines', label: 'LINES' },
+  // The id stays 'lines' — it is what main.js dispatches on and what the
+  // screen it opens is still called in the code. Only the word on the
+  // button changed: LINES meant nothing to anyone who had not already been
+  // told what it meant.
+  { id: 'lines', label: 'ACCOUNT' },
 ];
 const COLS = 2;
 const ROWS = Math.ceil(BUTTONS.length / COLS);

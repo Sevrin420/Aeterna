@@ -700,6 +700,17 @@ async function menuConnect(menu) {
   }
 }
 
+// HAS THIS LINE BEEN GIVEN A NAME?
+//
+// fetchBloodlines() labels every line "Bloodline #N" from the chain, because
+// the chain has no idea what its holder calls it — so a line with that label
+// is one the server had no name for, i.e. an unnamed one. Everything that
+// decides whether to show a token number asks this, rather than repeating the
+// test three times and disagreeing with itself on the fourth.
+function isNamed(bl) {
+  return !!(bl && bl.name && bl.name.trim() && !/^Bloodline #\d+$/.test(bl.name.trim()));
+}
+
 // The chain knows which Bloodlines a wallet holds and how many Cultists each
 // carries; it does not know what its holder called them. This fills that in, so
 // the picker offers "House Vane" rather than "Bloodline #1".
@@ -758,7 +769,7 @@ async function bindBloodline(bl, menu, bloodlineName, { afterMint = false } = {}
     boundToken = bl.id;
     chosenCultist = bl;
     if (menu) menu.setWallet(shortAddr(connectedAddr), bl.cultists, connectedAddr);
-    showToast(`${bloodlineName || bl.name} walks — Bloodline #${bl.id}, ${bl.cultists} Cultists. (demo)`);
+    showToast(`${bloodlineName || bl.name} walks — ${bl.cultists} Cultists. (demo)`);
     // The same exit the real path takes, so demo and live leave the player
     // looking at the same screen — and so this can be tested without a wallet.
     returnToMenu(menu);
@@ -782,8 +793,11 @@ async function bindBloodline(bl, menu, bloodlineName, { afterMint = false } = {}
       menu.status = null;
       menu.sel = 1;                     // move them on to PLAY
     }
-    // The line's own name is what the abbey calls it. The token number is kept
-    // in the toast so a holder of several can still tell two alike names apart.
+    // The line's own name is what the abbey calls it, and that is ALL the toast
+    // says. It used to carry "Bloodline #2" beside the name — the number is the
+    // chain's word for a line that has no name yet, and repeating it next to
+    // one that does is just clutter. `called` still falls back to it, so an
+    // unnamed line is announced by its number and a named one never is.
     const called = full.bloodline_name || row.bloodline_name || `Bloodline #${bl.id}`;
     // Onto the held object too, and this is the whole of the "it says Bloodline
     // #7" bug. `bl` comes from the chain, where a line has no name — only a
@@ -792,12 +806,12 @@ async function bindBloodline(bl, menu, bloodlineName, { afterMint = false } = {}
     // this very call and the server only learns it on the line above. So `bl`
     // kept its chain label, and since chosenCultist IS bl, the abbey's
     // "You enter as ..." read out the number the player had just replaced.
-    if (called && !/^Bloodline #/.test(called)) {
+    if (called && isNamed({ name: called })) {
       bl.name = called;
       const held = heldBloodlines.find((h) => h && h.id === bl.id);
       if (held) held.name = called;
     }
-    showToast(`${called} walks — Bloodline #${bl.id}, ${bl.cultists} Cultists, ${full.devotion || 0} Devotion.`);
+    showToast(`${called} walks — ${bl.cultists} Cultists, ${full.devotion || 0} Devotion.`);
     await offerXHandleAndReferral(full, { afterMint });
     // Every question has been put. Back to the menu, deliberately and in one
     // place: the rites hand the overlay round between them — the mint slider,
@@ -947,7 +961,7 @@ function closeBloodlinePicker() {
   walletOverlay.classList.remove('picking');
 }
 
-// ---- LINES: what you hold, and the two things you can still put on it ------
+// ---- ACCOUNT: what you hold, and the two things you can still put on it ----
 //
 // A playtester quit during the naming prompt and never got it back — the name
 // was offered once, at the mint, and nowhere else — so they finished a session
@@ -989,13 +1003,21 @@ async function openLinesScreen(menu) {
 
   const rows = [];
   for (const bl of heldBloodlines) {
+    const given = isNamed(bl) ? bl.name.trim() : null;
     rows.push({
       kind: 'name',
       bl,
-      label: bl.name && bl.name.trim() && !/^Bloodline #/.test(bl.name) ? bl.name : null,
-      value: bl.name && bl.name.trim() && !/^Bloodline #/.test(bl.name) ? bl.name : null,
-      empty: 'unnamed — press A',
-      sub: `Bloodline #${bl.id}${bl.x_handle ? `  ·  @${bl.x_handle}` : ''}`,
+      label: given,
+      value: given,
+      // The token number survives in exactly one place: a line with no name,
+      // where it is the only thing telling two of them apart. Everywhere else
+      // the name is the identity and the number is noise.
+      empty: `Bloodline #${bl.id} — press A`,
+      // Shown only for a NAMED line (the painter shows `empty` otherwise), so
+      // this is the row that used to read "Bloodline #2" beside a line called
+      // House Vane. Its Cultists are worth saying; its token number is not.
+      sub: [`${bl.cultists} Cultist${bl.cultists === 1 ? '' : 's'}`,
+        bl.x_handle ? `@${bl.x_handle}` : null].filter(Boolean).join('  ·  '),
     });
   }
   // LAST, and ruled off from the list above it. The referrer is a property of
@@ -1264,7 +1286,7 @@ async function offerXHandleAndReferral(player, { afterMint = false } = {}) {
         // the row, and the next mint asks again.
         player.referralAsked = true;
         try { await api.declineReferral(); } catch { /* it will be asked once more at worst */ }
-        showToast('No one named. You can name them later — LINES, on the menu.', { size: 't-mid' });
+        showToast('No one named. You can name them later — ACCOUNT, on the menu.', { size: 't-mid' });
         break;
       }
       try {
