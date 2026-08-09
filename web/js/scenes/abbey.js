@@ -814,7 +814,11 @@ export class AbbeyScene {
     const ROW_W = 22;
     const row = (label, value) => {
       const v = String(value);
-      const dots = Math.max(2, ROW_W - label.length - v.length - 2);
+      // One dot is the floor, not two: "Devotion per task" leaves room for
+      // exactly one, and a row a single character over the width does not
+      // overflow quietly — it has spaces in it, so the box breaks it and the
+      // figure lands on a line of its own.
+      const dots = Math.max(1, ROW_W - label.length - v.length - 2);
       return `${label} ${'.'.repeat(dots)} ${v}`;
     };
     const streak = p.streak || 0;
@@ -822,28 +826,28 @@ export class AbbeyScene {
     const task = p.taskDevotion || {};
     const clock = p.clock || {};
     const ref = p.referralDevotion || {};
-    const per = task.award != null ? task.award : 0;
 
     const pages = [
       {
         speaker: 'The Reckoning',
         text: row('Devotion', p.devotion || 0) + '\n'
           + row('Streak', `${streak}d`) + '\n'
-          + row('Multiplier', `${mult}x`) + '\n\n'
-          + row('A duty pays', per) + '\n'
-          + row('All three', per * 3),
+          + row('Multiplier', `${mult}x`),
       },
       {
         speaker: 'The Season',
         text: row('Week', `${clock.week || 1} of ${clock.weeks || 8}`) + '\n'
-          + row('Base per duty', task.base != null ? task.base : 0) + '\n'
+          + row('Devotion per task', task.base != null ? task.base : 0) + '\n'
           + row('Days left', clock.daysLeft != null ? clock.daysLeft : '?') + '\n\n'
           + 'The base rises each\nweek, for everyone.',
       },
       {
-        speaker: 'Those You Brought',
-        text: row('Brought you', ref.asReferee ? `+${ref.asReferee}` : 'none') + '\n'
-          + row('You brought', ref.broughtIn || 0) + '\n'
+        // "In all" is not the same figure as "Earned" and is not redundant
+        // with it: Earned is what BRINGING people in has paid, and In all adds
+        // the once-only Devotion for having been brought in yourself. For a
+        // player nobody referred the two do read the same, which is correct.
+        speaker: 'Referrals',
+        text: row('You brought', ref.broughtIn || 0) + '\n'
           + row('Earned', `+${ref.fromBringing || 0}`) + '\n\n'
           + row('In all', `+${ref.total || 0}`),
       },

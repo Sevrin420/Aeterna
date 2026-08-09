@@ -158,9 +158,9 @@ has three independent streaks, three multipliers and three confession counts.
   nothing: they are free to manufacture.
 
 **The board.** None of this has to be remembered. A board on the dead-end wall
-of the west warren, beside the stair down to the cells, reads back the
-Bloodline's Devotion, streak, multiplier, what a duty pays today, the week,
-the days left, and what its referrals have earned.
+of the west warren, beside the stair down to the cells, reads back three pages:
+the Bloodline's Devotion, streak and multiplier; the week, the Devotion a task
+pays and the days left; and what its referrals have earned.
 
 ---
 
