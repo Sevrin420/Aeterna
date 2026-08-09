@@ -1441,7 +1441,13 @@ async function openMintPicker(menu) {
       heldBloodlines = await withNames(list);
       heldCultists = totalCultists(heldBloodlines);
       const fresh = heldBloodlines[heldBloodlines.length - 1];
-      showToast(`The Bloodline is raised — ${n} Cultist${n === 1 ? '' : 's'}.`);
+      // NO "the Bloodline is raised" notice here. It sat between the mint
+      // landing and the naming prompt, and the message box is near-fullscreen
+      // and owns A until it is dismissed — so the player's first press after
+      // paying went into clearing a notice rather than into naming their line.
+      // The mint already says it landed, and the bind toast at the end names
+      // the line and its Cultists. Straight to the name.
+      //
       // Offered here, at the moment it is raised. No longer the ONLY chance:
       // skipping it leaves the line unnamed and LINES can name it later.
       let given = null;
