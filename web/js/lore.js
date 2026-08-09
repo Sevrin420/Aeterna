@@ -83,6 +83,15 @@ export const LORE = {
         + 'Miss a day and it is gone. The Confessor mends it, for a price.',
     },
     {
+      // Straight after The Streak, and deliberately the shortest page in the
+      // docs. That page explains the mechanism; this one, while it is still in
+      // front of the reader, says what the mechanism is FOR. It is the line
+      // they should still have in their head after forgetting the rest, so it
+      // sits on the streak rather than at the end behind the mint chart.
+      speaker: 'Why It Matters',
+      text: 'Longer Streaks\n= Higher Devotion\n\nHigher Devotion\n= Higher Payout',
+    },
+    {
       // The colours are the ones these two already had elsewhere in the docs —
       // gold and the trophy for what is paid out, blood for the treasury — so
       // the wedges still mean what they used to before the split was redrawn.
@@ -94,14 +103,6 @@ export const LORE = {
           { label: 'Treasury', pct: 20, color: BLOOD.b, emoji: '\ud83e\ude78' },
         ],
       },
-    },
-    {
-      // LAST, and deliberately the shortest page in the docs. Everything before
-      // it explains a mechanism; this one says why any of it is worth doing,
-      // and it is the line a reader should still have in their head after they
-      // have forgotten the rest.
-      speaker: 'Why It Matters',
-      text: 'Longer Streaks\n= Higher Devotion\n\nHigher Devotion\n= Higher Payout',
     },
   ],
 
