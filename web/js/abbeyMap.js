@@ -395,6 +395,21 @@ prop('confessional', CONFESSIONAL_BOOTH_COL, CONFESSIONAL_BOOTH_ROW);
 for (let c = CONFESSIONAL.x0; c <= CONFESSIONAL.x1; c++) {
   if (c !== CONFESSIONAL_BOOTH_COL) prop('booth-block', c, CONFESSIONAL_BOOTH_ROW);
 }
+// THE RECKONING — hung on the transept's north wall, one tile east of the
+// confessor's niche.
+//
+// It used to be at the dead end of the west warren, beside the stair to the
+// cells, which sounded like the busiest wall in the abbey and was not: you only
+// pass it going to bed and getting up. This wall is on the route ITSELF —
+// step out of the niche, or cross the west arm to reach the nave and the
+// northern corridor, and it is straight ahead of you.
+//
+// Two tiles tall, hanging down from the wall course, so it reads as a board and
+// not a notice. It is approached from the SOUTH now rather than the east; the
+// station in abbey.js stands one tile below it accordingly.
+export const BOARD = { col: CONFESSIONAL.x1 + 2, row: TRANSEPT.y0 };
+prop('board', BOARD.col, BOARD.row);
+prop('board-block', BOARD.col, BOARD.row + 1);
 // staircases down (walkable — step to descend)
 // Stair rows are expressed off the transept rather than as absolute numbers,
 // so moving the crossbar can never leave a staircase standing in a wall.
@@ -416,13 +431,6 @@ for (const a of ALCOVES) {
 
 // --- WEST WARREN (six open cells, a bed in each) ---
 prop('stair-up', WEST_CORRIDOR.x0 + 2, 106, false, { dest: { col: TRANSEPT.x0 + 2, row: TRANSEPT.y0 + 8 } });
-// THE RECKONING — a board on the dead-end wall two tiles west of the stair, so
-// it faces you as you come down to the cells and again as you leave them.
-// Everyone passes this spot twice a day; it is the one wall in the abbey with a
-// guaranteed audience. Two tiles tall so it reads as a board and not a notice.
-export const BOARD = { col: WEST_CORRIDOR.x0, row: 106 };
-prop('board', BOARD.col, BOARD.row);
-prop('board-block', BOARD.col, BOARD.row + 1);
 for (const b of BEDS) prop('bed', b.col, b.row);
 
 // --- EAST SKULL CHAMBER (chant to the skulls; also holds the ritual games) ---

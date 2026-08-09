@@ -1037,8 +1037,11 @@ async function openLinesScreen(menu) {
     rows.forEach((r, i) => {
       const card = document.createElement('button');
       card.type = 'button';
+      // `wallet-row` marks the one row that is NOT a Bloodline, so the styling
+      // hangs off what the row IS rather than off the divider that happens to
+      // sit above it.
       card.className = 'cultist-card' + (i === _lines.index ? ' sel' : '') + (r.value ? '' : ' unset')
-        + (r.divide ? ' ruled' : '');
+        + (r.divide ? ' ruled' : '') + (r.kind === 'referrer' ? ' wallet-row' : '');
       const n = document.createElement('span');
       n.className = 'bl-name';
       n.textContent = r.kind === 'referrer'

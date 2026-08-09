@@ -72,10 +72,14 @@ const STATIONS = [
     id: `bed${i}`, kind: 'bed', label: 'Rest — Save & Exit',
     x: px(b.stand.col), y: px(b.stand.row), r: 12,
   })),
-  // The Reckoning, on the dead-end wall by the stair down to the cells. Read,
-  // not performed: it opens a box and does nothing else.
+  // The Reckoning, on the transept's north wall beside the confessor's niche.
+  // Read, not performed: it opens a box and does nothing else.
+  //
+  // Stood in front of, from the SOUTH. The board hangs on a wall now rather
+  // than closing off a dead end, so the tile a player reads it from is the one
+  // below it — the two rows it occupies are both solid.
   { id: 'board', kind: 'board', label: 'Read the Reckoning',
-    x: px(BOARD.col) + TILE, y: px(BOARD.row) + TILE / 2, r: 14 },
+    x: px(BOARD.col), y: px(BOARD.row + 2), r: 14 },
   // The braziers are deliberately NOT stations. A station opens a box and runs
   // a rite; a brazier is a container you put things in, and it has to behave
   // differently depending on what you are carrying. See _fireAction().
@@ -739,7 +743,11 @@ export class AbbeyScene {
             // only written down when they lie down. Saying it HERE, in the one
             // box a day that they are certain to read, is the whole point of
             // saying it at all.
-            + 'Rest in a bed to set it down.',
+            //
+            // "Save", not "set it down": the abbey's own word for a bed is
+            // Rest — Save & Exit, and a player who has just finished their
+            // third duty needs the instruction, not the poetry.
+            + 'Rest in a bed to save.',
         }]);
       }
     } catch (e) {

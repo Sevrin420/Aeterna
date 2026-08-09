@@ -95,6 +95,14 @@ export const LORE = {
         ],
       },
     },
+    {
+      // LAST, and deliberately the shortest page in the docs. Everything before
+      // it explains a mechanism; this one says why any of it is worth doing,
+      // and it is the line a reader should still have in their head after they
+      // have forgotten the rest.
+      speaker: 'Why It Matters',
+      text: 'Longer Streaks\n= Higher Devotion\n\nHigher Devotion\n= Higher Payout',
+    },
   ],
 
   // Why PLAY would not open. There is no wandering the abbey unbound any more —

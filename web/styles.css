@@ -682,10 +682,6 @@ body.powered .mute-toggle {
 }
 /* The rule above "Brought here by". That row is a property of the WALLET, not
    one of the Bloodlines listed above it, and without a line between them it
-   reads as another line in the list. Margin above the rule and padding below it
-   so the divider belongs to the gap rather than crowding either row. */
-/* The rule above "Brought here by". That row is a property of the WALLET, not
-   one of the Bloodlines listed above it, and without a line between them it
    reads as another line in the list.
    Drawn in the GAP as a pseudo-element rather than as a border on the card:
    every card in this list already carries a 1px border, so a border-top here
@@ -726,6 +722,33 @@ body.powered .mute-toggle {
   background: #2e2036;
   border-color: #d24b4b;
 }
+
+/* "BROUGHT HERE BY" IS NOT A BLOODLINE.
+   It is one fact about the wallet, and drawn in the same card as the lines
+   above it, it read as a third Bloodline the player had somehow acquired — a
+   divider alone was not enough, because the thing either side of the divider
+   still looked identical. So it is a different OBJECT: inset from the list,
+   dashed rather than solid, cooler and flatter in colour, and its label
+   lettered as a caption in small gold capitals instead of as a name. */
+.bloodline-list .cultist-card.wallet-row {
+  margin-inline: clamp(10px, 5cqw, 34px);
+  background: rgba(20, 13, 26, 0.55);
+  border-style: dashed;
+  border-color: rgba(154, 112, 24, 0.5);
+}
+.bloodline-list .cultist-card.wallet-row .bl-name {
+  color: #b9a36a;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+/* The cursor still has to be unmistakable on this row, so selection goes back
+   to the solid crimson every other card uses — the row reads as different, not
+   as unselectable. */
+.bloodline-list .cultist-card.wallet-row.sel {
+  background: #2a1f30;
+  border-style: solid;
+  border-color: #d24b4b;
+}
 /* ---- THE BLOODLINE PICKER, and only it ---------------------------------
    `picking` goes on the overlay while the list is up and comes off with it,
    the same way `minting` scopes the mint slider. Everything below is inside
@@ -757,6 +780,7 @@ body.powered .mute-toggle {
    screen, so it is marked rather than left to be inferred from wording. */
 .wallet-overlay.lines .naming-title { font-size: clamp(9px, 3.1cqw, 15px); }
 .wallet-overlay.lines .bl-name { font-size: clamp(11px, 4.2cqw, 20px); }
+.wallet-overlay.lines .wallet-row .bl-name { font-size: clamp(8px, 2.9cqw, 14px); }
 .wallet-overlay.lines .bl-sub { font-size: clamp(8px, 2.7cqw, 13px); }
 .wallet-overlay.lines .wallet-msg { min-height: 0; }
 /* Taller than the picker's, because this list carries one row the picker does
