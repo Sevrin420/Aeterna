@@ -1074,3 +1074,39 @@ body.dialogue-open .emoji-toggle { opacity: 0; pointer-events: none; }
   font-size: clamp(5px, 2.1cqw, 9px);
   letter-spacing: 0.06em;
 }
+
+/* ===== DISCONNECTED =====
+   Near the top, opposite PLEASE WAIT at the foot, so the two can be up at once
+   without meeting — losing the socket during a slow call is exactly when both
+   are true. Blood rather than gold: everything gold in this game is the abbey
+   talking to you, and this is the abbey not hearing you.
+
+   BELOW the HUD, not at the very top: at 3cqw it sat across the XP bar and the
+   Devotion count, which is the one row a player checks most. The offset clears
+   the HUD's two rows at every console width. */
+.net-lost[hidden] { display: none; }
+.net-lost {
+  position: absolute;
+  top: 13cqw;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  pointer-events: none;
+  font-family: 'Press Start 2P', monospace;
+  /* Smaller than PLEASE WAIT: it is a warning, not an interruption, and the
+     string is twice as long. */
+  font-size: clamp(5px, 2.6cqw, 12px);
+  color: #e85a4a;
+  white-space: nowrap;
+  text-shadow:
+    -2px 0 0 #1a0606, 2px 0 0 #1a0606, 0 -2px 0 #1a0606, 0 2px 0 #1a0606,
+    0 0 10px rgba(232, 90, 74, 0.55);
+  animation: net-lost-pulse 1.8s ease-in-out infinite;
+}
+/* This one DOES pulse, unlike PLEASE WAIT. That legend reports the abbey is
+   busy and will pass; this reports something wrong that will not fix itself
+   by being waited out, and it has to keep asking to be looked at. */
+@keyframes net-lost-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}

@@ -75,6 +75,13 @@
              would be a spinner nobody sees. -->
         <div class="please-wait" id="pleaseWait" hidden>PLEASE WAIT</div>
 
+        <!-- Shown while the socket is down. The abbey checks a live session
+             before it will credit a duty, so a dropped connection is no longer
+             only a cosmetic loss of other players — it is the difference
+             between a rite counting and not. Without this the first a player
+             heard of it was a refusal after they had already performed one. -->
+        <div class="net-lost" id="netLost" hidden>THE ABBEY CANNOT SEE YOU</div>
+
         <div class="emoji-wheel" id="emojiWheel" hidden></div>
 
         <!-- Entrance: connect wallet + choose your Cultist -->

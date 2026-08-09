@@ -299,9 +299,18 @@ export class AbbeyScene {
     // nothing about — no name, no position, and now no session to check a duty
     // against. A player whose connection blipped could walk to the shrine,
     // perform the rite, and be told the abbey could not see them.
-    this._onConnect = () => this._emitJoin();
+    this._onConnect = () => { this._netLost(false); this._emitJoin(); };
+    // socket.io reconnects on its own with backoff, so this is not a dead end —
+    // but the abbey will not credit a rite performed while it cannot see you,
+    // and a player deserves to know that before they perform one rather than
+    // after.
+    this._onDisconnect = () => this._netLost(true);
 
     s.on('connect', this._onConnect);
+    s.on('disconnect', this._onDisconnect);
+    // Already down when the scene binds — a reconnect that has not landed yet
+    // fires no event, and the legend would stay hidden through the whole gap.
+    if (s.connected === false) this._netLost(true);
     s.on('welcome', this._onWelcome);
     s.on('peers', this._onPeers);
     s.on('snap', this._onSnap);
@@ -314,6 +323,8 @@ export class AbbeyScene {
     const s = this.socket;
     if (!s) return;
     s.off('connect', this._onConnect);
+    s.off('disconnect', this._onDisconnect);
+    this._netLost(false);          // never leave it up over another screen
     s.off('welcome', this._onWelcome);
     s.off('peers', this._onPeers);
     s.off('snap', this._onSnap);
@@ -329,6 +340,14 @@ export class AbbeyScene {
 
 
 
+
+  // The legend the player sees when the socket is down. Kept here rather than
+  // in main.js because the abbey is the only screen where it means anything:
+  // the menu does not credit duties.
+  _netLost(on) {
+    const el = document.getElementById('netLost');
+    if (el) el.hidden = !on;
+  }
 
   _emitJoin() {
     if (!this.socket) return;
