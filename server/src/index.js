@@ -1178,8 +1178,24 @@ if (process.env.REDIS_URL) {
 io.on('connection', (socket) => {
   socket.on('join', (data) => {
     const netId = assignNet();
+    // WHITELISTED, not spread. `...data` put whatever the client sent into a
+    // record that is partly relayed to other players, and the client was
+    // sending its wallet credential — which the tick then handed to everyone
+    // nearby as peers[].id. Naming the fields here is what makes it impossible
+    // for a new field to become a new leak by accident.
+    //
+    // `wallet` and `tokenId` are kept because a duty claim has to be matched to
+    // a live session, and they are NEVER put on the wire again — see the
+    // interest tick, which sends `seed` and nothing else that identifies.
+    const d = data || {};
     online.set(socket.id, {
-      ...data,
+      seed: typeof d.seed === 'string' ? d.seed.slice(0, 32) : null,
+      wallet: typeof d.wallet === 'string' ? d.wallet.slice(0, 64) : null,
+      tokenId: Number.isInteger(d.tokenId) && d.tokenId > 0 ? d.tokenId : null,
+      name: typeof d.name === 'string' ? d.name.slice(0, 32) : '',
+      prefix: typeof d.prefix === 'string' ? d.prefix.slice(0, 12) : '',
+      x: typeof d.x === 'number' ? d.x : undefined,
+      y: typeof d.y === 'number' ? d.y : undefined,
       netId,
       dir: 'down',
       socket,          // local ref for the tick loop
@@ -1292,7 +1308,11 @@ setInterval(() => {
       if (!me.known.has(other.netId)) {
         newPeers.push({
           net: other.netId,
-          id: other.tokenId || null,
+          // The SEED, never the wallet id and never the token id. This line
+          // used to send other.tokenId, which the client had filled with
+          // getWalletId() — the credential — and it is used at the far end for
+          // nothing but choosing a face.
+          seed: other.seed || null,
           name: other.name,
           prefix: other.prefix,
         });

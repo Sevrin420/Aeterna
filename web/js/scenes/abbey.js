@@ -3,7 +3,7 @@
 // plain canvas primitives and a camera that follows the player, wired to the
 // real Fastify API (duties, rites, confession) and Socket.io presence.
 
-import { api, getWalletId } from '../api.js';
+import { api, getWalletId, getTokenId, getSpriteSeed } from '../api.js';
 import { sfx } from '../sfx.js';
 import { drawCharacter, getCultistSprite, getGuruSprite, getConfessorSprite, getNakedSprite, getCultistSpriteVariant, CHAR_SCALE } from '../spritesheet.js';
 import { rollCultTraits, drawRegaliaBack, drawRegaliaFront } from '../cultLook.js';
@@ -200,7 +200,7 @@ export class AbbeyScene {
   }
 
   enter() {
-    this.mySheet = getCultistSprite(getWalletId(), this.player.sex);
+    this.mySheet = getCultistSprite(getSpriteSeed(), this.player.sex);
     this._refreshCathedral();
     this._bindSocket();
     this._emitJoin();
@@ -261,7 +261,7 @@ export class AbbeyScene {
     this._onPeers = (list) => {
       for (const m of list) {
         const rp = this.remotePlayers.get(m.net) || {};
-        rp.id = m.id; rp.name = m.name; rp.prefix = m.prefix;
+        rp.seed = m.seed; rp.name = m.name; rp.prefix = m.prefix;
         this.remotePlayers.set(m.net, rp);
       }
     };
@@ -325,7 +325,12 @@ export class AbbeyScene {
   _emitJoin() {
     if (!this.socket) return;
     this.socket.emit('join', {
-      tokenId: getWalletId(),
+      // `seed` is what other players are shown — a one-way hash, not the id.
+      // `wallet` and `tokenId` go to the SERVER only, so it can tie this live
+      // session to the row a duty would pay; it never echoes them to anyone.
+      seed: getSpriteSeed(),
+      wallet: getWalletId(),
+      tokenId: getTokenId(),
       name: this.player.name,
       prefix: this.player.prefix,
       x: this.pc.x,
@@ -2108,12 +2113,12 @@ export class AbbeyScene {
   }
 
   _nakedSheet() {
-    if (!this._naked) this._naked = getNakedSprite(getWalletId(), this.player.sex);
+    if (!this._naked) this._naked = getNakedSprite(getSpriteSeed(), this.player.sex);
     return this._naked;
   }
 
   _drawRemotePlayer(ctx, net, rp) {
-    const seed = rp.id != null ? rp.id : 'n' + net;
+    const seed = rp.seed != null ? rp.seed : 'n' + net;
     const rpSheet = getCultistSprite(seed, rp.prefix === 'Sister' ? 'female' : 'male');
     this._drawRobedFigure(ctx, rp.rx, rp.ry, rp.dir || 'down', false, this.t, rpSheet, rp.name, rp.emoji, rp.chat);
   }

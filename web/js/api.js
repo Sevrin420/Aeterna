@@ -52,6 +52,32 @@ export function clearWalletId() {
   localStorage.removeItem(WALLET_KEY);
 }
 
+// WHAT OTHER PLAYERS ARE ALLOWED TO KNOW ABOUT YOU.
+//
+// Every Cultist's face is generated from a seed, and the seed used to be
+// getWalletId() itself — which is also the only credential this server checks
+// on /duty, /referral and /x/handle, because there is no signature auth yet.
+// The abbey sent that id to the socket, and the interest tick relayed it to
+// every nearby player as peers[].id. Standing next to somebody was enough to
+// read the string that lets you act as them.
+//
+// It was only ever used to pick a face. So the face now comes from a one-way
+// hash of the id: the same wallet always draws the same Cultist, and the id
+// itself never leaves this browser.
+//
+// FNV-1a. Not a security hash and does not need to be — it is not protecting
+// the id from analysis, it is making sure the id is not TRANSMITTED. A 32-bit
+// digest of a v4 UUID cannot be walked back to the UUID.
+export function getSpriteSeed() {
+  const id = getWalletId();
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return 'f' + h.toString(16).padStart(8, '0');
+}
+
 // Every call to the server goes through here, which is exactly why the
 // PLEASE WAIT lives here too rather than at the call sites: a request that is
 // slow is slow whoever asked for it, and there is no list of "the slow ones"
