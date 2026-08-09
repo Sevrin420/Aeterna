@@ -378,6 +378,32 @@ export async function mintBloodline(address, cultists) {
 // The amount is likewise the server's arithmetic; the client's job is to sign
 // what it was quoted, and the server checks the chain again before it forgives
 // anything.
+// Prove the wallet is yours, without spending anything.
+//
+// Used for one thing: taking a Bloodline back onto a new device. The server
+// will not move a bound row on the say-so of an address, because an address is
+// public and the caller supplies it — a signature is the difference between
+// "this is the owner's address" and "this is the owner".
+//
+// personal_sign rather than a typed-data scheme: it is the one signing method
+// every injected wallet and every WalletConnect wallet supports, and the
+// message is meant to be read by a human in a confirmation dialog.
+export async function signOwnership(address, message) {
+  const p = activeProvider();
+  if (!p) throw new Error('NO_WALLET');
+  beginWait();
+  try {
+    return await p.request({
+      // personal_sign takes the message FIRST and the address second, which is
+      // the reverse of eth_sign and the usual way to get this wrong.
+      method: 'personal_sign',
+      params: [message, address],
+    });
+  } finally {
+    endWait();
+  }
+}
+
 export async function payConfession(address, to, wei) {
   const p = activeProvider();
   if (!p) throw new Error('NO_WALLET');

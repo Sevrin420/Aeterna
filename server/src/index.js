@@ -6,6 +6,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
+import { verifyMessage } from 'viem';
 import db from './db/database.js';
 // THE SAME MAP THE CLIENT DRAWS. abbeyMap.js is a pure constants module with no
 // imports and no browser globals, and it resolves identically in development
@@ -349,6 +350,46 @@ function isUnnamed(name, tokenId) {
   return !name || String(name).trim() === '' || String(name).trim() === `Bloodline #${tokenId}`;
 }
 
+// ---- TAKING A BLOODLINE BACK ON A NEW DEVICE -------------------------------
+//
+// A player's identity here is a pseudo-id in localStorage, and a token bound to
+// one of those was bound to it forever: /bind answered a flat 409 to anybody
+// else. Clear your site data, change phone, or open the game in a second
+// browser, and your own Bloodline was gone — with the chain still saying, and
+// /bind still verifying, that you owned it.
+//
+// The naive repair is to re-key the row to the new pseudo-id whenever the chain
+// agrees. That would be a theft vector, and a worse bug than the one it fixes:
+// `address` is supplied BY THE CALLER and nothing proves they hold its key, so
+// anyone could pass a stranger's address — both it and the token id are public
+// — and walk off with the row and its Devotion. The lockout was, by accident,
+// the only thing standing in the way of that.
+//
+// So re-keying, and only re-keying, asks for a signature. First binds are
+// untouched and gain no prompt. What the signature proves is the thing the
+// browser id was standing in for all along: that you hold the wallet.
+const bindChallenges = new Map();     // nonce -> { address, message, expires }
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+function sweepChallenges() {
+  const now = Date.now();
+  for (const [k, v] of bindChallenges) if (v.expires < now) bindChallenges.delete(k);
+}
+
+fastify.post('/bind/challenge', async (req, reply) => {
+  const { address } = req.body || {};
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address || '')) return reply.code(400).send({ error: 'bad address' });
+  sweepChallenges();
+  const nonce = randomUUID();
+  // The token id is deliberately NOT in the message: the same signature must not
+  // be replayable for a different Bloodline, and the nonce is single-use, so
+  // scope comes from the nonce rather than from what the message happens to say.
+  const message = `Throbbin Abbey\n\nTake up your Bloodline on this device.\n\nWallet: ${String(address).toLowerCase()}\nNonce: ${nonce}`;
+  bindChallenges.set(nonce, { address: String(address).toLowerCase(), message, expires: Date.now() + CHALLENGE_TTL_MS });
+  reply.header('Cache-Control', 'no-store');
+  return { nonce, message };
+});
+
 fastify.post('/bind', async (req, reply) => {
   const { wallet, tokenId, address, bloodlineName } = req.body || {};
   const tid = Number(tokenId);
@@ -401,9 +442,37 @@ fastify.post('/bind', async (req, reply) => {
     return ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE id = ?').get(bound.id));
   }
 
-  // The token can only belong to one row, ever.
+  // Bound to somebody else's browser. That is either a stranger reaching for a
+  // Bloodline that is not theirs, or the holder on a new device — and the chain
+  // has already told us which, a few lines above: onChain.owner has been
+  // checked against `address`. What is still missing is proof the caller HOLDS
+  // that address, and that is what the signature supplies.
   const taken = db.prepare('SELECT * FROM players WHERE token_id = ?').get(tid);
-  if (taken) return reply.code(409).send({ error: 'That Bloodline is already bound to another player' });
+  if (taken) {
+    const { nonce, signature } = req.body || {};
+    const chal = nonce ? bindChallenges.get(String(nonce)) : null;
+    if (!chal || chal.expires < Date.now() || chal.address !== addr) {
+      return reply.code(409).send({
+        error: 'That Bloodline is bound to another device. Prove the wallet is yours to take it back.',
+        needsSignature: true,
+      });
+    }
+    let good = false;
+    try {
+      good = await verifyMessage({ address: addr, message: chal.message, signature });
+    } catch { good = false; }
+    // Single use either way: a nonce that has been answered, rightly or
+    // wrongly, must not be answerable again.
+    bindChallenges.delete(String(nonce));
+    if (!good) return reply.code(403).send({ error: 'That signature is not from the wallet holding this Bloodline.' });
+
+    // Proven. The row follows the wallet, not the browser — Devotion, streak,
+    // name and all. Nothing is reset: it is the same line, in the same hands.
+    db.prepare('UPDATE players SET wallet = ?, address = ?, cultists = ? WHERE id = ?')
+      .run(w, addr, onChain.cultists, taken.id);
+    req.log.info({ tokenId: tid, from: taken.wallet, to: w }, 'bind: Bloodline moved to a new device');
+    return ensureFreshDay(db, db.prepare('SELECT * FROM players WHERE id = ?').get(taken.id));
+  }
 
   // A wallet's first-ever row may exist with no token (it registered as a
   // ghost). The row is adopted so the player keeps their name and face — but

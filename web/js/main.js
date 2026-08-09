@@ -12,7 +12,7 @@ import { beginWait, endWait, clearWait } from './wait.js';
 import {
   connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen, payConfession,
   fetchPricePerCultist, formatAvax, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
-  ensureChain, currentChainId, disconnectWallet, BLOODLINE_ADDRESS,
+  ensureChain, currentChainId, disconnectWallet, BLOODLINE_ADDRESS, signOwnership,
 } from './wallet.js';
 
 // The tab follows the flag too, so ?oldName=1 rolls the rename back everywhere
@@ -777,7 +777,21 @@ async function bindBloodline(bl, menu, bloodlineName, { afterMint = false } = {}
   }
   try {
     if (menu) menu.status = 'BINDING BLOODLINE…';
-    const row = await api.bind(bl.id, connectedAddr, bloodlineName);
+    let row;
+    try {
+      row = await api.bind(bl.id, connectedAddr, bloodlineName);
+    } catch (e) {
+      // The row is bound to a browser that is not this one. That is the same
+      // player on a new device far more often than it is a stranger, and the
+      // chain has already agreed they own it — so ask them to sign for it
+      // rather than turning them away from their own Bloodline.
+      if (!(e && e.body && e.body.needsSignature)) throw e;
+      if (menu) menu.status = 'SIGN TO TAKE IT BACK…';
+      const { nonce, message } = await api.bindChallenge(connectedAddr);
+      const signature = await signOwnership(connectedAddr, message);
+      row = await api.bind(bl.id, connectedAddr, bloodlineName, { nonce, signature });
+      showToast('Taken back. This device now carries the line.');
+    }
     boundToken = bl.id;
     setTokenId(bl.id);
     chosenCultist = bl;

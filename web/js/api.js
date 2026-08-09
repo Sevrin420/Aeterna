@@ -127,11 +127,18 @@ export const api = {
   // `address` really holds `tokenId` before it will write the row.
   // `bloodlineName` is only meaningful the first time a token is bound — a
   // Bloodline is named when it is raised and keeps that name afterwards.
-  bind(tokenId, address, bloodlineName) {
+  bind(tokenId, address, bloodlineName, proof) {
     return req('/bind', {
       method: 'POST',
-      body: JSON.stringify({ wallet: getWalletId(), tokenId, address, bloodlineName }),
+      // `proof` is only present when a Bloodline is being taken back onto a new
+      // device — see bindBloodline() in main.js. A first bind never carries one
+      // and never asks the player to sign anything.
+      body: JSON.stringify({ wallet: getWalletId(), tokenId, address, bloodlineName, ...(proof || {}) }),
     });
+  },
+  // The message to sign when reclaiming a Bloodline bound to another device.
+  bindChallenge(address) {
+    return req('/bind/challenge', { method: 'POST', body: JSON.stringify({ address }) });
   },
   duty(type) {
     return req(`/duty/${type}`, { method: 'POST', body: who() });
