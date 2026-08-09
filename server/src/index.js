@@ -7,6 +7,13 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
 import db from './db/database.js';
+// THE SAME MAP THE CLIENT DRAWS. abbeyMap.js is a pure constants module with no
+// imports and no browser globals, and it resolves identically in development
+// (../../web from server/src) and on the box (/opt/web, beside
+// /opt/aeterna-server) — which is the same path Fastify already serves static
+// files from. Duplicating station coordinates here instead would let the map
+// and the rules that police it drift apart silently.
+import { ALCOVES, SKULL_ALTAR, NAVE_CX, TILE as MAP_TILE } from '../../web/js/abbeyMap.js';
 import {
   DUTY_DEVOTION, DUTIES, DUTY_NAMES, X_DEVOTION, X_KINDS, REFERRAL_DEVOTION,
   REFERRAL_CAP, X_COMMENT_DEVOTION, X_DAILY_CLAIMS, X_PHRASE, matchesPhrase,
@@ -741,6 +748,73 @@ fastify.post('/confession', async (req, reply) => {
 // streak sees the bonus land with each act rather than once at the end of the
 // set. The streak itself still advances once, on the task that completes all
 // three, and the day rolls at 00:00 UTC (todayStr is an ISO date).
+// ---- WHAT THE SERVER WILL BELIEVE ABOUT A DUTY -----------------------------
+//
+// It used to believe anything. POST /duty/candles checked that you held a
+// Bloodline and had not already done that duty today, and then paid — so three
+// curl calls a day, for eight weeks, was a perfect score without ever opening
+// the game. Harmless in testing; not harmless when the ranking decides who is
+// paid.
+//
+// This cannot be made airtight without simulating the abbey server-side, and
+// pretending otherwise would be worse than the hole. What it CAN do is make
+// scripting cost more than playing:
+//
+//   ORDER    candles, then scourge, then the shrine. The client enforced this
+//            and the server did not, so the sequence was advisory.
+//   PRESENCE you must have a live session in the abbey, and the position the
+//            server uses is ITS OWN — the last one your socket reported through
+//            the movement stream, not a claim attached to the duty call.
+//   DWELL    you must have been standing at that station for at least as long
+//            as the rite actually takes.
+//
+// A script must now hold a socket open, walk to the right place, and wait out
+// every rite in real time — which is most of the way to playing.
+const px = (t) => t * MAP_TILE + MAP_TILE / 2;
+
+// Where each duty is performed. Braziers are plural: any of the six alcoves.
+const DUTY_STATIONS = {
+  candles: ALCOVES.map((a) => ({ x: px(a.brazier.col), y: px(a.brazier.row) })),
+  scourge: [{ x: px(NAVE_CX), y: px(11) }],                 // the Abbot
+  garden: [{ x: px(SKULL_ALTAR.col), y: px(SKULL_ALTAR.row) }],
+};
+
+// Generous on purpose — a rite MOVES you. The shrine walks a circuit at
+// DANCE_R = 52px around the skull, and the scourging drags you to the Abbot's
+// feet, so a tight radius would fail honest players mid-rite. These are wide
+// enough to hold someone performing the rite and far too small to hold someone
+// standing in the warren.
+const DUTY_RADIUS = { candles: 40, scourge: 45, garden: 75 };
+
+// Measured from the rites themselves, not guessed: the chant is CHANT_PAIR (2
+// lines) x 3 repeats x 2.8s = 16.8s for both the vigil and the shrine, and the
+// scourging is five blows plus approach and break, about 8s. Floors are set
+// BELOW the true length so lag or a dropped frame cannot rob an honest player.
+const DUTY_MIN_MS = { candles: 12000, scourge: 6000, garden: 13000 };
+
+const DUTY_ORDER = ['candles', 'scourge', 'garden'];
+
+function nearestStation(type, x, y) {
+  let best = Infinity;
+  for (const s of DUTY_STATIONS[type] || []) {
+    const d = Math.hypot(x - s.x, y - s.y);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+// The live session for a player, if they are actually in the abbey. Keyed on
+// both halves of the identity because one wallet may hold several Bloodlines
+// and only the one being played may earn.
+function sessionFor(wallet, tokenId) {
+  const w = String(wallet).toLowerCase();
+  const t = Number(tokenId);
+  for (const p of online.values()) {
+    if (p.wallet && String(p.wallet).toLowerCase() === w && Number(p.tokenId) === t) return p;
+  }
+  return null;
+}
+
 fastify.post('/duty/:type', async (req, reply) => {
   const { type } = req.params;
   const { wallet, tokenId } = req.body || {};
@@ -755,6 +829,35 @@ fastify.post('/duty/:type', async (req, reply) => {
   const col = `${type}_today`;
   if (fresh[col]) {
     return { success: true, duty: type, name: DUTY_NAMES[type], alreadyDone: true, devotionGained: 0 };
+  }
+
+  // IN ORDER. The client has always known this; the server had not been told.
+  const step = DUTY_ORDER.indexOf(type);
+  if (step > 0 && !fresh[`${DUTY_ORDER[step - 1]}_today`]) {
+    return reply.code(409).send({ error: 'The abbey takes its duties in order. That one is not open yet.' });
+  }
+
+  // PRESENT, and standing where the rite is performed. The position is the
+  // server's own — whatever this socket last reported through the movement
+  // stream — so a duty call cannot assert where it is standing.
+  const sess = sessionFor(wallet, tokenId);
+  if (!sess) {
+    return reply.code(409).send({ error: 'The abbey cannot see you. Enter and perform the rite.' });
+  }
+  if (typeof sess.x !== 'number' || typeof sess.y !== 'number') {
+    return reply.code(409).send({ error: 'The abbey cannot see where you are standing.' });
+  }
+  if (nearestStation(type, sess.x, sess.y) > (DUTY_RADIUS[type] || 40)) {
+    return reply.code(409).send({ error: 'You are not at the place that rite is performed.' });
+  }
+
+  // AND long enough for the rite to have happened. `riteSince` is stamped by
+  // the movement handler the moment a player comes into range and cleared the
+  // moment they leave, so this is dwell, not a timestamp the caller chose.
+  const since = sess.riteSince && sess.riteSince[type];
+  const held = since ? Date.now() - since : 0;
+  if (held < (DUTY_MIN_MS[type] || 0)) {
+    return reply.code(409).send({ error: 'The rite is not finished.' });
   }
 
   db.prepare(`UPDATE players SET ${col} = 1 WHERE id = ?`).run(fresh.id);
@@ -1215,6 +1318,19 @@ io.on('connection', (socket) => {
     p.x = data.x;
     p.y = data.y;
     p.dir = data.dir;
+
+    // How long they have been standing where each rite is performed. Stamped on
+    // arrival, cleared on leaving — so a duty claim is checked against dwell
+    // the server measured rather than a duration the caller reported.
+    if (typeof p.x === 'number' && typeof p.y === 'number') {
+      if (!p.riteSince) p.riteSince = {};
+      const now = Date.now();
+      for (const type of DUTY_ORDER) {
+        const near = nearestStation(type, p.x, p.y) <= (DUTY_RADIUS[type] || 40);
+        if (near) { if (!p.riteSince[type]) p.riteSince[type] = now; }
+        else p.riteSince[type] = 0;
+      }
+    }
   });
 
   socket.on('emoji', (data) => {

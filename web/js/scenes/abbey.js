@@ -294,7 +294,14 @@ export class AbbeyScene {
     };
     this._onChatMsg = (p) => this.showChat(p.net, p.text);
 
+    // REJOIN ON RECONNECT. join was emitted once, in enter(), so a socket that
+    // dropped and came back left the server holding a connection it knew
+    // nothing about — no name, no position, and now no session to check a duty
+    // against. A player whose connection blipped could walk to the shrine,
+    // perform the rite, and be told the abbey could not see them.
+    this._onConnect = () => this._emitJoin();
 
+    s.on('connect', this._onConnect);
     s.on('welcome', this._onWelcome);
     s.on('peers', this._onPeers);
     s.on('snap', this._onSnap);
@@ -306,6 +313,7 @@ export class AbbeyScene {
   _unbindSocket() {
     const s = this.socket;
     if (!s) return;
+    s.off('connect', this._onConnect);
     s.off('welcome', this._onWelcome);
     s.off('peers', this._onPeers);
     s.off('snap', this._onSnap);
@@ -1055,11 +1063,26 @@ export class AbbeyScene {
         this.footDust.push({ x: p.x, y: p.y + 4, t: 0 });
       }
 
-      this.lastEmittedMove += dt;
-      if (this.socket && this.lastEmittedMove > 0.08) {
-        this.lastEmittedMove = 0;
-        this.socket.emit('move', { x: p.x, y: p.y, dir: p.dir });
-      }
+    }
+
+    // POSITION IS REPORTED WHETHER OR NOT YOU ARE WALKING.
+    //
+    // This emit used to sit inside the `moving` branch, so a player standing
+    // still told the server nothing — and standing still is exactly what
+    // performing a rite looks like. The server's view of where you are then
+    // dates from the last step you took, which mostly lands on arrival and is
+    // wrong the moment anything moves you without input: the shrine's own
+    // dance walks a circuit around the skull and never touches this branch.
+    //
+    // Since the server now decides whether you are standing where a rite is
+    // performed, "mostly right" is not good enough. Fast while walking, slow
+    // while still: 12.5 Hz costs what it always did, and a stationary player
+    // is a heartbeat rather than silence.
+    this.lastEmittedMove += dt;
+    const gap = p.moving ? 0.08 : 1.0;
+    if (this.socket && this.lastEmittedMove > gap) {
+      this.lastEmittedMove = 0;
+      this.socket.emit('move', { x: p.x, y: p.y, dir: p.dir });
     }
     this._checkStairs();
     this.fire.update(dt);
