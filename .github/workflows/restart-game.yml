@@ -51,23 +51,43 @@ jobs:
 
       - name: Archive the database and start a fresh one
         run: |
-          ssh vps '
+          # A QUOTED heredoc, not ssh vps '...'. The remote script has to run
+          # node -e with its own quoting, and single quotes cannot be nested
+          # inside a single-quoted ssh argument at all. <<'REMOTE' passes every
+          # byte through untouched, so the script below is exactly what runs.
+          ssh vps bash -s <<'REMOTE'
             set -e
             cd /opt/aeterna-server
             STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 
+            # Counted through the server's own better-sqlite3 rather than the
+            # sqlite3 CLI, which is NOT installed on this box. The first run of
+            # this workflow archived the database correctly and then died on the
+            # count with "sqlite3: command not found", reporting a failure for a
+            # restart that had actually worked.
+            count () {
+              node -e '
+                const fs = require("fs");
+                if (!fs.existsSync("./data/aeterna.db")) { console.log("no database — nothing to count"); process.exit(0); }
+                try {
+                  const db = require("better-sqlite3")("./data/aeterna.db", { readonly: true });
+                  const r = db.prepare("SELECT COUNT(*) n, COUNT(token_id) bound, COALESCE(SUM(devotion),0) d FROM players").get();
+                  console.log(r.n + " players, " + r.bound + " bound Bloodlines, " + r.d + " Devotion in all");
+                } catch (e) { console.log("(could not read counts: " + e.message + ")"); }
+              '
+            }
+
             echo "--- before ---"
-            if [ -f data/aeterna.db ]; then
-              sqlite3 data/aeterna.db "SELECT (SELECT COUNT(*) FROM players) || \" players, \" || (SELECT COUNT(*) FROM players WHERE token_id IS NOT NULL) || \" bound Bloodlines, \" || (SELECT COALESCE(SUM(devotion),0) FROM players) || \" Devotion in all\";" 2>/dev/null || echo "(could not read counts; archiving anyway)"
-            else
-              echo "no database yet — nothing to archive"
-            fi
+            count
 
             systemctl stop aeterna-server
 
             mkdir -p data/archive
+            # `|| true` matters under set -e: a checkpointed database has no
+            # -wal or -shm, and without it the failing test would end the script
+            # after the .db was moved but BEFORE the service was started again.
             for f in data/aeterna.db data/aeterna.db-wal data/aeterna.db-shm; do
-              [ -f "$f" ] && mv "$f" "data/archive/$(basename $f).$STAMP"
+              [ -f "$f" ] && mv "$f" "data/archive/$(basename $f).$STAMP" || true
             done
             echo "archived as data/archive/aeterna.db.$STAMP"
 
@@ -76,9 +96,10 @@ jobs:
             systemctl --no-pager --lines=5 status aeterna-server
 
             echo "--- after ---"
-            sqlite3 data/aeterna.db "SELECT (SELECT COUNT(*) FROM players) || \" players\";"
+            count
             ls -la data/archive/ | tail -5
-          '
+          REMOTE
+
 
       - name: Check the abbey answers
         run: |
