@@ -1592,13 +1592,31 @@ async function afterBoot() {
     let player;
     try { player = await api.me(); }
     catch {
-      const { name, sex } = randomIdentity();
-      await api.register(name, sex, '');
-      player = await api.me();
+      // A REMEMBERED TOKEN WITH NO ROW BEHIND IT IS WORSE THAN NO TOKEN.
+      //
+      // /me keys on (wallet, tokenId), so a token this browser remembers but
+      // the server has never heard of 404s every time — and registering does
+      // not help, because a fresh row carries no token and the next /me asks
+      // for the same missing pair again. The player was left on the title card
+      // with "Player not found" and no way forward.
+      //
+      // That is not a rare case: it is every returning player after the
+      // database is archived, and anyone whose line was bound on a collection
+      // that has since been replaced. Forget the token and ask again — the
+      // right one comes back the moment they take a Bloodline up.
+      setTokenId(null);
+      try { player = await api.me(); }
+      catch {
+        const { name, sex } = randomIdentity();
+        await api.register(name, sex, '');
+        player = await api.me();
+      }
     }
     revealTransition(() => enterEntrance(player));
   } catch (err) {
-    showToast(err.message);
+    // Whatever went wrong, do not strand them on the title card: say what
+    // happened and how to get out of it.
+    showToast(`${err.message} — press WALLET to connect and take up a Bloodline.`);
   }
 }
 
