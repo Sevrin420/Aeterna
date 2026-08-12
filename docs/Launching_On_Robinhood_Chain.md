@@ -19,6 +19,7 @@ day 0 of 2026-08-09.
 | Mint price | **0.01 ETH per Cultist** |
 | Founder mint | **One free Bloodline for the deployer wallet** |
 | Founder payout | **None. The founder's line takes no share, however it places.** |
+| Payout method | **Settled by hand.** No payout contract; the operator pays winners directly. |
 | Old Avalanche lines | Go dead. No migration, no compensation. |
 
 **What 0.01 ETH per Cultist means in practice.** A Bloodline holds 1–20
@@ -217,16 +218,65 @@ rather than left over.
 
 ## 4. Still not built
 
-**The endgame.** No ranking, no payout, no decided split. Day 55 arrives and
-nothing happens. GDD §8 is a deliberate stub. It needs a decision before it
-needs code:
+**The endgame.** GDD §8 is a deliberate stub. Two of the three questions are now
+answered — the founder is excluded (§1), and the pot is **settled by hand**: no
+payout contract, the operator pays the winners directly. One question is left:
 
-- how the 80% pot divides — top-N fixed shares? proportional to Devotion?
+- **how the 80% pot divides** — top-N fixed shares? proportional to Devotion?
   Devotion × Cultists?
-- on-chain or settled by hand?
 
-The founder question is **settled**: excluded, and removed from the ranking
-before the division rather than skipped during it — see §1.
+Everything below is what "by hand" needs built, and it is mostly not the
+division. The division decides amounts; these decide whether there is anything
+trustworthy to apply them to.
+
+### The run does not currently end
+
+`abbeyClock()` computes `ended` and **nothing reads it**. It is returned by
+`/day` and carried in `/me`, and that is the whole of its life. After day 55 the
+duties still pay, the streak still grows, Devotion still rises, and the
+Confessor still sells mendings at the week-8 rate.
+
+So there are no final standings. Whenever you look, the numbers are still
+moving — and a hand-settled payout is precisely the case that cannot tolerate
+that, because the operator reads a number, sends money, and the number changes
+behind them.
+
+**Closing the run is the first piece of the endgame**, and it is small: past
+`lastDay`, `/duty`, `/referral`, `/x/claim` and `/confession` refuse, and say
+why. The abbey stays open — people can walk it, read the board, see where they
+finished — it simply stops paying.
+
+### Then, the standings
+
+**Frozen, not live.** Take a snapshot when the run closes and rank from that. A
+live query answers differently every time it is run, and paying from a moving
+list means the record of what you paid cannot be reconciled with the list you
+paid from.
+
+**An admin-only export.** There is no leaderboard endpoint — one existed and was
+deliberately removed, because it served a public ranking of every player to
+anyone who asked for the URL. What the payout needs is different: authenticated,
+and carrying the holder's address. Per line: rank, token id, holder address,
+Devotion, Cultists — with `founderTokenId` removed before the ranking, per §1.
+
+**Soulbinding makes this unambiguous, and that is worth noticing.** Because a
+Bloodline can never be transferred, the address that minted it is the address
+holding it at the end. There is no "who owned it at snapshot time" question, no
+last-minute sale to a different wallet, no dispute about which address to pay.
+That property was chosen for other reasons and pays off here.
+
+**A record of what was paid.** Who, how much, which transaction. Without it, a
+dispute six weeks later has nothing to appeal to but memory. It should be
+written as the payments are made, not reconstructed afterwards.
+
+### What settling by hand means for the players
+
+The pot sits in the treasury and the operator sends it out. That works, and it
+asks the players to trust a person rather than a contract — which is a
+reasonable trade for a first run, and only reasonable if the process is stated
+plainly beforehand: who pays, from which address, on what schedule, and what a
+player does if they were missed. Silence on any of those turns an honest delay
+into a story about a rug.
 
 This is the single thing standing between "the game works" and "the game can
 finish". Everything else on this page is a day's work or a form to fill in.
