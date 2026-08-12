@@ -18,6 +18,7 @@ day 0 of 2026-08-09.
 | Chain | **Robinhood Chain** (id `4663`, gas token ETH) |
 | Mint price | **0.01 ETH per Cultist** |
 | Founder mint | **One free Bloodline for the deployer wallet** |
+| Founder payout | **None. The founder's line takes no share, however it places.** |
 | Old Avalanche lines | Go dead. No migration, no compensation. |
 
 **What 0.01 ETH per Cultist means in practice.** A Bloodline holds 1–20
@@ -51,6 +52,16 @@ can only ever fire once.
 /// collection — and a flag rather than a balance so it cannot be topped up.
 bool public founderMinted;
 
+/// WHICH token the founder took, or 0 if it has not been taken yet.
+///
+/// This exists for the payout, not for the mint. The founder's line is barred
+/// from taking a share, and a rule like that is worth nothing if it lives in a
+/// document — whoever writes the endgame six weeks from now needs to be able to
+/// ASK which line is excluded, and any player needs to be able to check the
+/// answer for themselves. On chain, permanently, is the only version of that
+/// which survives being forgotten.
+uint256 public founderTokenId;
+
 /**
  * @notice The deployer's single free Bloodline.
  * @dev Deliberately NOT a branch inside mint(). A payable function that waives
@@ -68,6 +79,7 @@ function founderMint(uint256 cultists) external onlyOwner returns (uint256 token
 
     founderMinted = true;
     tokenId = _nextId++;
+    founderTokenId = tokenId;
     cultistsOf[tokenId] = cultists;
     _safeMint(msg.sender, tokenId);
     emit Minted(msg.sender, tokenId, cultists, 0);   // paid = 0, and says so
@@ -85,17 +97,37 @@ function founderMint(uint256 cultists) external onlyOwner returns (uint256 token
   sell theirs either
 - `Minted` carries `paid = 0`, so the chain records it as free rather than
   looking like an unpaid mint
+- `founderTokenId` is 0 before the mint and the minted id afterwards, so the
+  payout can exclude it without being told which one it was
 
-### Three consequences worth deciding on before it ships
+### Two consequences that come with it
 
 1. **The founder's line is soulbound too.** It can never be sold or moved. That
    is consistent, and it is also permanent — worth saying out loud once.
-2. **It competes in the ranking.** A founder line earns Devotion like any other,
-   so as written it could place in a pot funded by players. If it should be
-   excluded from payout, that is a rule in the endgame code (§4), not in the
-   contract — and it is much easier to say now than to explain later.
-3. **It is visible.** `founderMinted`, and a `Minted` event with `paid = 0`,
-   are public. Better announced than discovered.
+2. **It is visible.** `founderMinted`, `founderTokenId`, and a `Minted` event
+   carrying `paid = 0` are all public. Better announced than discovered.
+
+### And the payout rule, which is decided
+
+**The founder's line takes no share of the pot, however well it places.** It is
+free to play, free to keep a streak, and free to appear in the standings — it
+simply cannot be paid.
+
+There is a detail in that which changes what other people get, so it is settled
+here rather than left to whoever writes §4:
+
+**The founder's line is removed from the ranking before the pot is divided, not
+merely skipped while being paid.** If it finished first and were only skipped,
+second place would still be paid a second-place share and everyone below would
+keep their lower share — the founder's presence would quietly cost every player
+money without the founder taking any. Removed first, second place becomes first
+and is paid as first. The pot divides exactly as though the founder had never
+entered, which is the only reading of "takes no payout" that costs the players
+nothing.
+
+The endgame code should read `founderTokenId` from the chain rather than
+hard-coding a number, so the exclusion is verifiable by anyone and cannot drift
+if the contract is ever redeployed again.
 
 ---
 
@@ -192,7 +224,9 @@ needs code:
 - how the 80% pot divides — top-N fixed shares? proportional to Devotion?
   Devotion × Cultists?
 - on-chain or settled by hand?
-- **is the founder's line eligible?** (see §1)
+
+The founder question is **settled**: excluded, and removed from the ranking
+before the division rather than skipped during it — see §1.
 
 This is the single thing standing between "the game works" and "the game can
 finish". Everything else on this page is a day's work or a form to fill in.

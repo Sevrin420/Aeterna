@@ -248,6 +248,22 @@ removed from the game and from this document. What replaces it is an open
 question, and this section is deliberately a stub rather than a description of
 something that does not exist.
 
+**One rule is settled, and it binds whatever replaces this.** The founder's
+Bloodline — the single free line the deployer takes with `founderMint()` — takes
+**no share of the pot**, however well it places. It plays, it keeps a streak,
+and it appears in the standings like any other line; it cannot be paid.
+
+And it is removed from the ranking **before** the pot is divided, not skipped
+while the pot is being handed out. Those are different, and the difference is
+other people's money: skipped, a founder line in first would leave second place
+paid as second and everyone below on their lower share, so the founder's
+presence would quietly cost every player without the founder taking anything.
+Removed first, second becomes first and is paid as first — the pot divides
+exactly as though the founder had never entered.
+
+The line to exclude is `founderTokenId`, read from the contract rather than
+written down here, so the rule is checkable by any player and cannot drift.
+
 ---
 
 ## 9. Social
