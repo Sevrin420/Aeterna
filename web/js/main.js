@@ -504,6 +504,10 @@ let boundToken = getTokenId();
 // a playtester spent minutes inside it wondering why nothing responded, which
 // is what a state that looks like play but is not will always cost.
 function playBlockedBy() {
+  // FIRST, and before anything about wallets. When the run is over the abbey is
+  // shut to everybody — a player with no Bloodline should be told the run has
+  // ended, not sent to a mint that will not pay them for anything.
+  if (entrancePlayer && entrancePlayer.clock && entrancePlayer.clock.ended) return 'ended';
   if (!connectedAddr) return 'wallet';
   if (!heldBloodlines.length) return 'bloodline';
   if (!boundToken) return 'unbound';
@@ -555,6 +559,16 @@ function enterEntrance(player) {
     onConnect: () => menuConnect(menu),
     onPlay: () => {
       const why = playBlockedBy();
+      if (why === 'ended') {
+        // Their own number, not a generic notice. The standings are frozen
+        // server-side; this is what the abbey has for them.
+        const d = (entrancePlayer && entrancePlayer.devotion) || 0;
+        box.show([{
+          speaker: LORE.blocked.ended.speaker,
+          text: `${LORE.blocked.ended.text}\n\nYour Devotion stands at ${d}.`,
+        }], { theme: THEMES.bitumen });
+        return;
+      }
       if (why) { box.show([LORE.blocked[why]], { theme: THEMES.bitumen }); return; }
       proceedIntoGame();
     },

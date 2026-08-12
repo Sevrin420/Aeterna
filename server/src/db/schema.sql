@@ -147,3 +147,31 @@ CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_wallet);
 --  this file is exec'd as one block on every boot, so an index that fails on a
 --  database with existing duplicate handles would crash the server outright.)
 
+
+-- THE FINAL STANDINGS. Written once, when the run's last day has passed, and
+-- never updated afterwards.
+--
+-- A frozen table rather than a query over players, because the payout is
+-- settled by hand: the operator reads a list, sends money against it, and has
+-- to be able to reconcile what they paid with what they read. A live ranking
+-- answers differently every time it is run, which makes that impossible — and
+-- Devotion only ever rises, so "the totals cannot change now" is a property of
+-- this table existing, not of the game being over.
+--
+-- rank is NULL for a line that is recorded but excluded from the division —
+-- today that is only the founder's. It is kept in the table rather than left
+-- out of it so the standings show the whole run and the exclusion is visible
+-- rather than implied by an absence.
+CREATE TABLE IF NOT EXISTS final_standings (
+  token_id       INTEGER PRIMARY KEY,
+  rank           INTEGER,
+  is_founder     INTEGER NOT NULL DEFAULT 0,
+  address        TEXT,
+  bloodline_name TEXT,
+  devotion       INTEGER NOT NULL,
+  cultists       INTEGER NOT NULL,
+  streak         INTEGER NOT NULL,
+  x_handle       TEXT,
+  frozen_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_final_standings_rank ON final_standings(rank);

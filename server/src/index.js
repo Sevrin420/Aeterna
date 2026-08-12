@@ -691,6 +691,7 @@ fastify.post('/confession', async (req, reply) => {
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(player, reply)) return reply;
+  if (runClosed(reply)) return reply;
 
   const fresh = ensureFreshDay(db, player);
   const pending = pendingConfession(db, fresh.id);
@@ -884,6 +885,103 @@ function sessionFor(wallet, tokenId) {
   return null;
 }
 
+// ---- THE END OF THE RUN ----------------------------------------------------
+//
+// abbeyClock() has always computed `ended` and nothing has ever read it. Past
+// day 55 the duties went on paying, streaks went on growing and the Confessor
+// went on selling mendings — so there were no final standings at all. Whenever
+// you looked, the numbers were still moving.
+//
+// That matters more than it sounds, because the pot is settled BY HAND: the
+// operator reads a total, sends money against it, and a total that can still
+// change behind them cannot be reconciled with what they paid.
+//
+// So the run closes. The abbey stops paying, the standings are frozen once, and
+// what is written down is what gets paid from.
+
+// The founder's line takes no share, however it places — see the GDD §8. It is
+// named by env rather than hardcoded because the collection that mints it does
+// not exist yet; when it does, this is its token id and the contract carries
+// the same number as `founderTokenId` so anyone can check it.
+const FOUNDER_TOKEN_ID = Number(process.env.FOUNDER_TOKEN_ID) || 0;
+
+// Idempotent, and deliberately lazy: called on the way into anything that could
+// pay, so the freeze happens the first time the abbey is touched after the run
+// ends rather than needing a scheduler that might not have run.
+function freezeStandings() {
+  const already = db.prepare('SELECT COUNT(*) n FROM final_standings').get().n;
+  if (already) return already;
+
+  // Only lines that were actually raised. A ghost row has no token and never
+  // earned anything it could be paid for.
+  const rows = db.prepare(`
+    SELECT token_id, address, bloodline_name, devotion, cultists, streak, x_handle
+    FROM players WHERE token_id IS NOT NULL
+    ORDER BY devotion DESC, token_id ASC
+  `).all();
+  if (!rows.length) return 0;
+
+  const now = new Date().toISOString();
+  const insert = db.prepare(`
+    INSERT OR REPLACE INTO final_standings
+      (token_id, rank, is_founder, address, bloodline_name, devotion, cultists, streak, x_handle, frozen_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+  `);
+  db.transaction(() => {
+    let rank = 0;
+    for (const r of rows) {
+      // Removed from the ranking BEFORE the division, not skipped during it:
+      // skipped, a founder line placing first would leave second place paid as
+      // second and everyone below on their lower share, so the founder's
+      // presence would cost every player without the founder taking anything.
+      const founder = FOUNDER_TOKEN_ID && r.token_id === FOUNDER_TOKEN_ID;
+      insert.run(r.token_id, founder ? null : ++rank, founder ? 1 : 0,
+        r.address, r.bloodline_name, r.devotion || 0, r.cultists || 0, r.streak || 0, r.x_handle, now);
+    }
+  })();
+  const n = db.prepare('SELECT COUNT(*) n FROM final_standings').get().n;
+  fastify.log.info({ lines: n, frozenAt: now }, 'the run has ended; final standings frozen');
+  return n;
+}
+
+// The guard every earning route sits behind. Returns the reply when the run is
+// over, so callers can `if (runClosed(reply)) return reply;` the same way they
+// already do for requireBloodline.
+function runClosed(reply) {
+  const clock = abbeyClock();
+  if (!clock.ended) return null;
+  freezeStandings();
+  reply.code(410).send({
+    error: 'The run is over. The abbey is closed and the final Devotion is set.',
+    ended: true,
+  });
+  return reply;
+}
+
+// The standings, for the operator settling the pot. FAILS CLOSED: without
+// ADMIN_TOKEN in the server's environment there is no way to call this at all.
+// The old public leaderboard was removed because it served a ranking of every
+// player to anyone with the URL, and this carries holder ADDRESSES on top of
+// that — it is the one thing here that must not be casually reachable.
+fastify.get('/admin/standings', async (req, reply) => {
+  const secret = process.env.ADMIN_TOKEN;
+  if (!secret) return reply.code(404).send({ error: 'Not found' });
+  if (req.headers['x-admin-token'] !== secret) return reply.code(404).send({ error: 'Not found' });
+
+  const clock = abbeyClock();
+  if (clock.ended) freezeStandings();
+  const rows = db.prepare('SELECT * FROM final_standings ORDER BY rank IS NULL, rank ASC').all();
+  reply.header('Cache-Control', 'no-store');
+  return {
+    ended: clock.ended,
+    day: clock.day,
+    frozenAt: rows.length ? rows[0].frozen_at : null,
+    founderTokenId: FOUNDER_TOKEN_ID || null,
+    // Everything the operator needs to pay somebody, and nothing they do not.
+    standings: rows,
+  };
+});
+
 fastify.post('/duty/:type', async (req, reply) => {
   const { type } = req.params;
   const { wallet, tokenId } = req.body || {};
@@ -893,6 +991,7 @@ fastify.post('/duty/:type', async (req, reply) => {
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(player, reply)) return reply;
+  if (runClosed(reply)) return reply;
 
   const fresh = ensureFreshDay(db, player);
   const col = `${type}_today`;
@@ -1060,6 +1159,7 @@ fastify.post('/referral', async (req, reply) => {
   const referee = playerFor(wallet, tokenId);
   if (!referee) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(referee, reply)) return reply;
+  if (runClosed(reply)) return reply;
 
   const handle = String(xHandle || '').trim().replace(/^@/, '');
   if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) {
@@ -1170,6 +1270,7 @@ fastify.post('/x/claim', async (req, reply) => {
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(player, reply)) return reply;
+  if (runClosed(reply)) return reply;
   if (!player.x_handle) return reply.code(400).send({ error: 'No X handle bound to this Cultist' });
 
   const already = db.prepare(

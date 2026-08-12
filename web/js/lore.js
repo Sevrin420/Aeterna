@@ -122,6 +122,16 @@ export const LORE = {
       speaker: 'The Door is Shut',
       text: 'You hold a Bloodline but have not taken one up.\n\nPress WALLET to choose which line walks today.',
     },
+    // Not a door that is shut for a reason you can fix — the run is over. It
+    // says so plainly and does not send anyone to the mint, which would take
+    // their money for a line that can no longer earn.
+    // Kept SHORT on purpose: main.js appends the player's own total, and the
+    // box paginates anything that overflows — an ending that arrives as "1/2"
+    // is a worse last impression than one that fits.
+    ended: {
+      speaker: 'The Abbey is Closed',
+      text: 'Eight weeks are kept.\n\nNothing more is counted.',
+    },
   },
 
   // The mint IS open. This said it was not, because it was written before the
