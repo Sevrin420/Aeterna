@@ -5,8 +5,14 @@
   "scripts": {
     "build": "hardhat compile",
     "test": "hardhat test",
+    "deploy:robinhoodTestnet": "hardhat run scripts/deploy.js --network robinhoodTestnet",
+    "deploy:robinhood": "hardhat run scripts/deploy.js --network robinhood",
     "deploy:fuji": "hardhat run scripts/deploy.js --network fuji",
     "deploy:avalanche": "hardhat run scripts/deploy.js --network avalanche",
+    "founder:robinhoodTestnet": "hardhat run scripts/founderMint.js --network robinhoodTestnet",
+    "founder:robinhood": "hardhat run scripts/founderMint.js --network robinhood",
+    "open:robinhoodTestnet": "MINT_OPEN=true hardhat run scripts/setMint.js --network robinhoodTestnet",
+    "open:robinhood": "MINT_OPEN=true hardhat run scripts/setMint.js --network robinhood",
     "open:fuji": "MINT_OPEN=true hardhat run scripts/setMint.js --network fuji",
     "open:avalanche": "MINT_OPEN=true hardhat run scripts/setMint.js --network avalanche"
   },

@@ -68,6 +68,19 @@ contract ThrobbinAbbeyBloodline is ERC721Enumerable, Ownable, IERC5192 {
     /// Minting can be paused before it opens and closed for good afterwards.
     bool public mintOpen;
 
+    /// The founder's single free Bloodline: spent or not. A flag rather than a
+    /// count, so it cannot be topped up.
+    bool public founderMinted;
+
+    /// WHICH token the founder took, or 0 until they take it.
+    ///
+    /// This is here for the PAYOUT, not for the mint. The founder's line is
+    /// barred from taking a share of the pot, and a rule like that is worth
+    /// nothing living in a document — whoever settles the run needs to be able
+    /// to ask which line is excluded, and any player needs to be able to check
+    /// the answer without taking anyone's word for it.
+    uint256 public founderTokenId;
+
     string private _base;
     uint256 private _nextId = 1;
 
@@ -159,6 +172,34 @@ contract ThrobbinAbbeyBloodline is ERC721Enumerable, Ownable, IERC5192 {
         returns (bool)
     {
         return interfaceId == type(IERC5192).interfaceId || super.supportsInterface(interfaceId);
+    }
+
+    /**
+     * @notice The deployer's single free Bloodline.
+     * @dev Deliberately NOT a branch inside mint(). A payable function that
+     *      waives payment for one caller is one edit away from waiving it for
+     *      everyone; this takes no money at all, cannot be called twice, and is
+     *      plain in the ABI to anyone reading the contract.
+     *
+     *      It does not require mintOpen, so the founder's line can be raised
+     *      and the whole flow checked end to end before the public mint opens.
+     *
+     *      The token is soulbound like every other — the founder cannot sell
+     *      theirs either — and `paid = 0` in the event says on chain that it
+     *      was free rather than leaving it looking like an unpaid mint.
+     */
+    function founderMint(uint256 cultists) external onlyOwner returns (uint256 tokenId) {
+        require(!founderMinted, "founder mint spent");
+        require(cultists >= 1 && cultists <= MAX_CULTISTS, "1-20 cultists");
+        require(_nextId <= maxSupply, "sold out");
+
+        founderMinted = true;
+        tokenId = _nextId++;
+        founderTokenId = tokenId;
+        cultistsOf[tokenId] = cultists;
+        _safeMint(msg.sender, tokenId);
+        emit Minted(msg.sender, tokenId, cultists, 0);
+        emit Locked(tokenId);
     }
 
     /**

@@ -107,6 +107,73 @@ describe('ThrobbinAbbeyBloodline', () => {
     expect(names).to.not.include('setMaxSupply');
   });
 
+  // ---- THE FOUNDER'S FREE LINE ----
+  //
+  // One Bloodline, once, for the wallet that deployed the collection. It pays
+  // nothing and it wins nothing — the payout exclusion lives off-chain, but the
+  // token id it keys on is recorded here so anyone can check it.
+
+  describe('founder mint', () => {
+    it('gives the owner one line for nothing', async () => {
+      const before = await ethers.provider.getBalance(await c.getAddress());
+      await c.founderMint(6);
+      expect(await c.cultistsOf(1)).to.equal(6);
+      expect(await c.ownerOf(1)).to.equal(owner.address);
+      // The contract took no money for it.
+      expect(await ethers.provider.getBalance(await c.getAddress())).to.equal(before);
+    });
+
+    it('records which token it was, so the payout can exclude it', async () => {
+      expect(await c.founderTokenId()).to.equal(0);      // before
+      expect(await c.founderMinted()).to.equal(false);
+      await c.founderMint(1);
+      expect(await c.founderTokenId()).to.equal(1);      // after
+      expect(await c.founderMinted()).to.equal(true);
+    });
+
+    it('cannot be spent twice', async () => {
+      await c.founderMint(1);
+      await expect(c.founderMint(1)).to.be.revertedWith('founder mint spent');
+    });
+
+    it('is the owner only', async () => {
+      await expect(c.connect(alice).founderMint(1))
+        .to.be.revertedWithCustomError(c, 'OwnableUnauthorizedAccount');
+    });
+
+    it('holds 1 to 20 Cultists like any other line', async () => {
+      await expect(c.founderMint(0)).to.be.revertedWith('1-20 cultists');
+      await expect(c.founderMint(21)).to.be.revertedWith('1-20 cultists');
+    });
+
+    it('says on chain that it was free', async () => {
+      await expect(c.founderMint(4)).to.emit(c, 'Minted').withArgs(owner.address, 1, 4, 0);
+    });
+
+    it('is soulbound too — the founder cannot sell theirs either', async () => {
+      await c.founderMint(2);
+      await expect(c.transferFrom(owner.address, alice.address, 1))
+        .to.be.revertedWithCustomError(c, 'Soulbound');
+      expect(await c.locked(1)).to.equal(true);
+    });
+
+    it('does not need the mint to be open', async () => {
+      const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
+      const shut = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/');
+      expect(await shut.mintOpen()).to.equal(false);
+      await shut.founderMint(3);                    // the public mint is closed
+      expect(await shut.ownerOf(1)).to.equal(owner.address);
+    });
+
+    it('takes its place in the numbering, it does not skip it', async () => {
+      await c.founderMint(1);
+      await c.connect(alice).mint(2, { value: PRICE * 2n });
+      expect(await c.ownerOf(1)).to.equal(owner.address);
+      expect(await c.ownerOf(2)).to.equal(alice.address);
+      expect(await c.minted()).to.equal(2);
+    });
+  });
+
   // ---- SOULBOUND ----
   //
   // These are the point of the redeploy. The old collection was a plain

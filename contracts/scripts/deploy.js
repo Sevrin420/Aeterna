@@ -28,19 +28,29 @@ async function main() {
   const [deployer] = await hre.ethers.getSigners();
   const bal = await hre.ethers.provider.getBalance(deployer.address);
 
-  console.log(`\nnetwork          ${net}`);
+  // The gas token differs by chain — ETH on Robinhood, AVAX on Avalanche — and
+  // a price printed in the wrong unit is exactly the mistake this whole
+  // print-then-pause block exists to catch.
+  const GAS = { robinhood: 'ETH', robinhoodTestnet: 'ETH', avalanche: 'AVAX', fuji: 'AVAX' };
+  const coin = GAS[net] || 'ETH';
+  const chainId = hre.network.config.chainId;
+  // A testnet is the one place these values can be got wrong for free, so it
+  // is the only place the deploy does not stop to be read.
+  const isTestnet = net === 'robinhoodTestnet' || net === 'fuji' || net === 'hardhat' || net === 'localhost';
+
+  console.log(`\nnetwork          ${net}  (chain ${chainId})`);
   console.log(`deployer         ${deployer.address}`);
-  console.log(`balance          ${hre.ethers.formatEther(bal)} AVAX`);
-  console.log(`price / cultist  ${hre.ethers.formatEther(price)} AVAX`);
-  console.log(`a full Bloodline ${hre.ethers.formatEther(price * 20n)} AVAX  (20 cultists)`);
+  console.log(`balance          ${hre.ethers.formatEther(bal)} ${coin}`);
+  console.log(`price / cultist  ${hre.ethers.formatEther(price)} ${coin}`);
+  console.log(`a full Bloodline ${hre.ethers.formatEther(price * 20n)} ${coin}  (20 cultists)`);
   const UNCAPPED = 2n ** 256n - 1n;
   console.log(`max supply       ${maxSupply === UNCAPPED ? 'uncapped' : maxSupply}`);
   console.log(`team    (20%)    ${team}`);
   console.log(`treasury (80%)   ${treasury}`);
   console.log(`base URI         ${baseURI}`);
 
-  if (net === 'avalanche') {
-    console.log('\n*** AVALANCHE MAINNET. Every value above is immutable. ***');
+  if (!isTestnet) {
+    console.log(`\n*** ${net.toUpperCase()} MAINNET. Every value above is immutable. ***`);
     console.log('Ctrl-C now if any of it is wrong. Continuing in 15s…\n');
     await new Promise((r) => setTimeout(r, 15000));
   }
@@ -58,12 +68,12 @@ async function main() {
   fs.writeFileSync(path.join(dir, `${net}.json`), JSON.stringify({
     network: net, address: addr, deployer: deployer.address,
     pricePerCultistWei: price.toString(), maxSupply: maxSupply.toString(),
-    team, treasury, baseURI, deployedAt: new Date().toISOString(),
+    team, treasury, baseURI, chainId, deployedAt: new Date().toISOString(),
   }, null, 2));
 
   console.log(`\nPut this in web/index.html:`);
   console.log(`  <meta name="bloodline-address" content="${addr}" />`);
-  console.log(`  <meta name="bloodline-chain-id" content="${net === 'avalanche' ? 43114 : 43113}" />`);
+  console.log(`  <meta name="bloodline-chain-id" content="${chainId}" />`);
   console.log(`\nVerify:  npx hardhat verify --network ${net} ${addr} ${price} ${maxSupply} ${team} ${treasury} "${baseURI}"`);
 }
 

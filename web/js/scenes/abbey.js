@@ -14,6 +14,9 @@ import { Scourge, StickPile } from '../scourge.js';
 import { SkullShrine } from '../skullrite.js';
 import { FireVigil } from '../vigil.js';
 import { CHANT_PAIR } from '../config.js';
+// The gas token's ticker, so the confession price is not labelled AVAX on a
+// chain that charges ETH.
+import { COIN } from '../wallet.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, ROOMS, BEDS, SPAWN_BEDS, SKULL_ROOM, SKULL_ALTAR, NAVE, TRANSEPT, NAVE_CX,
@@ -919,7 +922,7 @@ export class AbbeyScene {
         text: '"You have broken something."\n\n'
           + `"Week ${p.week}. ${p.pct}% of what the line cost to raise, `
           + `across ${p.cultists} Cultist${p.cultists === 1 ? '' : 's'}."\n\n`
-          + `"${p.avax} AVAX. Kneel, or go."`,
+          + `"${p.avax} ${COIN}. Kneel, or go."`,
       };
     }
     return LORE.stations[s.id] || LORE.stations[s.kind];
@@ -973,7 +976,7 @@ export class AbbeyScene {
     // over a quoted price on a build that took nothing would let a player
     // believe they had paid it.
     this.onToast(res.collected
-      ? `Paid ${res.costPaid} AVAX. Streak restored to ${res.restoredStreak}.`
+      ? `Paid ${res.costPaid} ${COIN}. Streak restored to ${res.restoredStreak}.`
       : `Streak restored to ${res.restoredStreak}. Nothing was taken.`);
   }
 

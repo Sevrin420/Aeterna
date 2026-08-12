@@ -52,10 +52,15 @@ export function hasInjectedWallet() {
 const _meta = (n) => (typeof document !== 'undefined'
   ? (document.querySelector(`meta[name="${n}"]`) || {}).content || '' : '');
 export const WC_PROJECT_ID = _meta('wc-project-id');
-const WC_CHAIN = Number(_meta('wc-chain-id')) || 43114;      // Avalanche C-Chain
 // The deployed collection. Both are read by fetchCultists() below.
 export const BLOODLINE_ADDRESS = _meta('bloodline-address');
 export const BLOODLINE_CHAIN_ID = Number(_meta('bloodline-chain-id')) || 43114;
+// WalletConnect opens on the same chain the collection lives on. It used to be
+// a second number that could drift out of step with the first.
+const WC_CHAIN = Number(_meta('wc-chain-id')) || BLOODLINE_CHAIN_ID;
+// The gas token's ticker, shown wherever a price is. ETH on Robinhood Chain,
+// AVAX on Avalanche — a label, never used for arithmetic.
+export const COIN = _meta('chain-symbol') || 'AVAX';
 const WC_SRC = 'https://esm.sh/@walletconnect/ethereum-provider@2.17.2';
 
 export function hasWalletConnect() { return !!WC_PROJECT_ID; }
@@ -169,15 +174,25 @@ export async function currentChainId() {
   }
 }
 
-const AVALANCHE_PARAMS = {
-  chainId: '0xa86a',                       // 43114
-  chainName: 'Avalanche C-Chain',
-  nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
-  rpcUrls: ['https://api.avax.network/ext/bc/C/rpc'],
-  blockExplorerUrls: ['https://snowtrace.io'],
+// Everything the wallet needs to be told about the chain, from the same meta
+// tags a deploy rewrites. The hex id is DERIVED from BLOODLINE_CHAIN_ID rather
+// than written out again: when those two were separate values, moving the game
+// to another chain switched the wallet to Avalanche and then compared the
+// result against the new chain, so ensureChain() could only ever throw.
+export const CHAIN_PARAMS = {
+  chainId: '0x' + BLOODLINE_CHAIN_ID.toString(16),
+  chainName: _meta('chain-name') || 'Avalanche C-Chain',
+  nativeCurrency: {
+    name: _meta('chain-currency') || 'Avalanche',
+    symbol: COIN,
+    decimals: 18,
+  },
+  rpcUrls: [_meta('chain-rpc') || 'https://api.avax.network/ext/bc/C/rpc'],
+  blockExplorerUrls: [_meta('chain-explorer') || 'https://snowtrace.io'],
 };
 
-// Ask the wallet to move to Avalanche, adding it if it has never heard of it.
+// Ask the wallet to move to the collection's chain, adding it if it has never
+// heard of it.
 // MetaMask opens on whichever chain the player last used — usually Ethereum —
 // and every read below would then be answered by a chain that has never heard
 // of this contract.
@@ -191,14 +206,14 @@ export async function ensureChain() {
   if (!p) throw new Error('NO_WALLET');
   if ((await currentChainId()) === BLOODLINE_CHAIN_ID) return true;
   try {
-    await p.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: AVALANCHE_PARAMS.chainId }] });
+    await p.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_PARAMS.chainId }] });
   } catch (e) {
     // 4902: the wallet does not know this chain yet. Anything else is the
     // player declining, and declining is their right — it is not an error to
     // shout about, but nothing on-chain can be read until they relent.
     if (e && (e.code === 4902 || e.code === -32603)) {
       try {
-        await p.request({ method: 'wallet_addEthereumChain', params: [AVALANCHE_PARAMS] });
+        await p.request({ method: 'wallet_addEthereumChain', params: [CHAIN_PARAMS] });
       } catch {
         throw new Error('WRONG_CHAIN');
       }

@@ -1,13 +1,30 @@
 # Launching on Robinhood Chain
 
-Everything between the current Avalanche test and the real launch. Nothing here
-has been done — it is a plan, not a record. Where a decision has been made it
-says so; where one is still open it says that too, and open decisions are the
-things that will hold the launch up.
+Everything between the current Avalanche test and the real launch. Sections are
+marked **DONE** or **OPEN**; the open ones are what will hold the launch up.
 
 **Current state:** a test run on Avalanche C-Chain, soulbound
 `ThrobbinAbbeyBloodline` at `0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878`,
-day 0 of 2026-08-09.
+day 0 of 2026-08-09. **Nothing has been deployed to Robinhood Chain.**
+
+## The short version
+
+The launch is one button: **Actions → `LAUNCH — deploy, restart and open`**.
+Pick the network, type `LAUNCH`, run it. It runs the contract tests as a hard
+gate, closes and sweeps the old collection, deploys, verifies, takes the
+founder's free line, rewrites and commits every place the chain and the address
+are named, deploys the server and web, archives the player database, checks the
+abbey is answering on the new collection, and opens the mint last.
+
+What is **not** automatic, and must be true before the button is pressed:
+
+| | |
+|---|---|
+| ETH on Robinhood Chain in the deployer wallet | §3 |
+| `TEAM_ADDRESS` / `TREASURY_ADDRESS` correct **on this chain** | §3 |
+| `ADMIN_TOKEN` set as a repo secret | else the final standings cannot be read |
+| A non-rate-limited RPC, if the mint is expected to be busy | §2 |
+| How the 80% pot divides | §4 — still undecided |
 
 ---
 
@@ -32,10 +49,15 @@ worth carrying forward is that **`MAX_CULTISTS` is now the price lever**, not
 
 ---
 
-## 1. The contract needs one change
+## 1. The founder mint — **DONE**
 
-The free founder mint does not exist yet. `mint()` requires exact payment with
-no exception:
+Built, tested and committed: `founderMint()` and `founderTokenId` are in
+`contracts/contracts/ThrobbinAbbeyBloodline.sol`, with nine tests covering it in
+`contracts/test/bloodline.test.js` (29 passing). `contracts/scripts/founderMint.js`
+calls it, and the launch workflow runs that script between the deploy and the
+mint opening. The rest of this section is why it is shaped the way it is.
+
+`mint()` requires exact payment with no exception:
 
 ```solidity
 require(msg.value == cultists * pricePerCultist, "wrong value");
@@ -46,7 +68,7 @@ There is no owner path around it, and there should not be one bolted onto
 mints get drained. It wants its own function that can be read at a glance and
 can only ever fire once.
 
-### To add to `contracts/contracts/ThrobbinAbbeyBloodline.sol`
+### What was added to `contracts/contracts/ThrobbinAbbeyBloodline.sol`
 
 ```solidity
 /// Spent or not. One Bloodline, once, for the wallet that deployed the
@@ -88,7 +110,7 @@ function founderMint(uint256 cultists) external onlyOwner returns (uint256 token
 }
 ```
 
-### Tests to add to `contracts/test/bloodline.test.js`
+### The tests that cover it
 
 - the owner may call it once and pays nothing
 - the second call reverts `founder mint spent`
@@ -132,15 +154,54 @@ if the contract is ever redeployed again.
 
 ---
 
-## 2. Chain configuration
+## 2. Chain configuration — **DONE**
 
-| | |
-|---|---|
-| Chain ID | `4663` (`0x1237`) |
-| RPC | `https://rpc.mainnet.chain.robinhood.com/` |
-| Gas token | ETH |
-| Explorer | Blockscout — `robinhoodchain.blockscout.com` |
-| Contract changes needed | **None.** It is EVM; the Solidity deploys unmodified. |
+| | | |
+|---|---|---|
+| | mainnet | testnet |
+| Chain ID | `4663` (`0x1237`) | `46630` |
+| RPC | `https://rpc.mainnet.chain.robinhood.com/` | `https://rpc.testnet.chain.robinhood.com/` |
+| Gas token | ETH | ETH |
+| Explorer | `robinhoodchain.blockscout.com` | `explorer.testnet.chain.robinhood.com` |
+| Faucet | — | `faucet.testnet.chain.robinhood.com` |
+| Contract changes needed | **None.** It is EVM; the Solidity deploys unmodified. | |
+
+> The **testnet** values came from a search, not from Robinhood's own docs
+> (`docs.robinhood.com` is unreachable from the build environment). Confirm chain
+> id `46630` against the faucet's own add-chain page before relying on it. If it
+> is wrong, it is one line in `contracts/hardhat.config.js` and one entry in the
+> launch workflow's `CHAINS` map — and it is a testnet, so being wrong costs
+> nothing but a failed run.
+
+**Nothing about the chain is hardcoded any more.** The client reads all of it
+from meta tags in `web/index.html`:
+
+```html
+<meta name="bloodline-chain-id" content="43114" />
+<meta name="chain-name"         content="Avalanche C-Chain" />
+<meta name="chain-currency"     content="Avalanche" />
+<meta name="chain-symbol"       content="AVAX" />
+<meta name="chain-rpc"          content="https://api.avax.network/ext/bc/C/rpc" />
+<meta name="chain-explorer"     content="https://snowtrace.io" />
+```
+
+Those six are what `wallet_addEthereumChain` is built from, and `chain-symbol`
+is the ticker printed beside every price — the mint screen, the Confessor's
+demand, and the confession toast all read it, so none of them can say AVAX on a
+chain that charges ETH. The launch workflow rewrites all six together from a
+single `CHAINS` map, so moving chains is a deploy rather than an edit.
+
+The server takes `CHAIN_ID` and `CHAIN_RPC` from its environment, written to
+`/etc/aeterna-server.env` by the same workflow. `AVAX_RPC` is still read as a
+fallback so an existing box keeps working. Hardhat has all four networks and
+Blockscout `customChains` entries for both Robinhood ones.
+
+**One latent bug was fixed along the way.** `ensureChain()` used to ask the
+wallet to switch to a hardcoded `0xa86a` and then compare the result against
+`BLOODLINE_CHAIN_ID`. Those were two independent values: changing the chain id
+alone would have made the switch succeed and the check fail, so every wallet
+would have been told `WRONG_CHAIN` forever. The hex id is now derived from the
+decimal one and cannot drift.
 
 Two things improve on this chain: **ETH is native**, so the scoring document's
 "prize pool is in ETH" stops being untrue, and **Blockscout verification
@@ -154,50 +215,28 @@ recommends a provider for production. The server reads the chain on *every*
 failing binds on a busy mint. Point it at a provider (Chainstack supports the
 chain) before opening.
 
-### Every place the chain is named
+### What is still named for Avalanche, and does not matter
 
-**Chain id — `43114` → `4663`**
+Naming only — no behaviour depends on any of it:
 
-| File | Line | |
-|---|---|---|
-| `server/src/index.js` | 1257 | `chainId` in the `/collection` reply |
-| `web/index.html` | 11, 16 | the two meta tags |
-| `web/js/wallet.js` | 55, 58 | `WC_CHAIN` and `BLOODLINE_CHAIN_ID` fallbacks |
-| `web/js/wallet.js` | 173 | `chainId: '0xa86a'` — **hex**, becomes `0x1237` |
-| `web/js/main.js` | 1365 | the WRONG_CHAIN message names "Avalanche (43114)" |
-| `contracts/scripts/deploy.js` | 66 | prints the meta tag to paste |
-| `contracts/hardhat.config.js` | 42, 50 | network definitions |
+- `weiToAvax` (`server/src/lib/gameLogic.js`) and `formatAvax`
+  (`web/js/wallet.js`). Both tokens are 18 decimals; the maths is identical.
+- `AVAX_RPC` in the server, kept as a fallback for `CHAIN_RPC`.
+- `contracts/deployments/avalanche.json` — the record of the old test deploy.
+  A Robinhood launch writes `robinhood.json` beside it.
+- The two server-side price errors in `server/src/index.js`, and the AVAX prices
+  quoted throughout `docs/Throbbin_Abbey_GDD.md` §3 and §6 and in
+  `docs/Contract_Changes.md`.
 
-**RPC** — `server/src/index.js:194`, `web/js/wallet.js:176`,
-`contracts/hardhat.config.js:41,49`. The env var is called `AVAX_RPC`; rename it
-to `CHAIN_RPC` in the same pass (read in the server and hardhat config, set in
-`.github/workflows/deploy-contract.yml`).
+### The price — **CONFIRM BEFORE THE MAINNET RUN**
 
-**The word AVAX, where a player reads it** — `web/js/wallet.js:175`
-(`nativeCurrency`), `web/js/scenes/abbey.js:922,976` (the Confessor),
-`web/js/main.js:1375,1387,1542` (mint screen and confession), and
-`server/src/index.js:715,756` (the two price errors). Also the helpers named for
-it: `weiToAvax` (`server/src/lib/gameLogic.js:173`) and `formatAvax`
-(`web/js/wallet.js:264`) — both tokens are 18 decimals, so this is naming only.
+`price_per_cultist_wei` is now a **workflow input**, defaulting to
+`10000000000000000` — 0.01. It is no longer buried in a YAML line.
 
-**Network names** — `.github/workflows/deploy-contract.yml` offers
-`fuji` / `avalanche`; `contracts/deployments/avalanche.json` is named for the
-chain. Robinhood Chain has a testnet: put it where `fuji` sits.
-
-**The price** — `.github/workflows/deploy-contract.yml`, "Write .env" step,
-line 96. It is **hardcoded, not a workflow input**, so it must be edited in the
-file:
-
-```yaml
-echo "PRICE_PER_CULTIST_WEI=10000000000000000"     # 0.01 — unchanged for ETH
-```
-
-The number happens to be the same. That is a coincidence of the two tokens both
-having 18 decimals, not a no-op — it is 0.01 **ETH** now. Confirm it is intended
-rather than left over.
-
-**Docs** — `docs/Throbbin_Abbey_GDD.md` §3 and §6 quote AVAX prices throughout;
-`docs/Contract_Changes.md` names the chain and the old address.
+That number is unchanged from the Avalanche test, which is a coincidence of the
+two tokens both having 18 decimals and **not** a no-op: it was 0.01 AVAX, about
+a quarter, and it is now 0.01 **ETH**. A 20-Cultist line costs **0.2 ETH**. Read
+the value in the box before typing `LAUNCH`.
 
 ---
 
@@ -216,54 +255,56 @@ rather than left over.
 
 ---
 
-## 4. Still not built
+## 4. The endgame — **built, except the division**
 
-**The endgame.** GDD §8 is a deliberate stub. Two of the three questions are now
-answered — the founder is excluded (§1), and the pot is **settled by hand**: no
-payout contract, the operator pays the winners directly. One question is left:
+GDD §8 was a deliberate stub. Two of its three questions are answered and the
+code for both is in: the founder is excluded (§1), and the pot is **settled by
+hand** — no payout contract, the operator pays the winners directly. One
+question is left, and it is the only one that still blocks paying anyone:
 
 - **how the 80% pot divides** — top-N fixed shares? proportional to Devotion?
   Devotion × Cultists?
 
-Everything below is what "by hand" needs built, and it is mostly not the
-division. The division decides amounts; these decide whether there is anything
-trustworthy to apply them to.
+### The run ends — **DONE**
 
-### The run does not currently end
+Past `lastDay`, `/duty`, `/referral`, `/x/claim` and `/confession` answer `410`
+and say why. The abbey stays open — people can walk it, read the board, see
+where they finished — it simply stops paying.
 
-`abbeyClock()` computes `ended` and **nothing reads it**. It is returned by
-`/day` and carried in `/me`, and that is the whole of its life. After day 55 the
-duties still pay, the streak still grows, Devotion still rises, and the
-Confessor still sells mendings at the week-8 rate.
+### The standings are frozen — **DONE**
 
-So there are no final standings. Whenever you look, the numbers are still
-moving — and a hand-settled payout is precisely the case that cannot tolerate
-that, because the operator reads a number, sends money, and the number changes
-behind them.
+The first request after the run closes writes every line into `final_standings`
+and never writes it again. Ranking from a live query answers differently every
+time it is run, and paying from a moving list means the record of what you paid
+cannot be reconciled with the list you paid from.
 
-**Closing the run is the first piece of the endgame**, and it is small: past
-`lastDay`, `/duty`, `/referral`, `/x/claim` and `/confession` refuse, and say
-why. The abbey stays open — people can walk it, read the board, see where they
-finished — it simply stops paying.
+The founder's line is recorded with `rank = NULL` and **removed before the
+ranking**, not skipped during it — so second place becomes first and is paid as
+first, exactly as though the founder had never entered (§1).
 
-### Then, the standings
+`FOUNDER_TOKEN_ID` in the server environment is what names that line. The launch
+workflow reads it back from `founderTokenId` on the contract and writes it to
+`/etc/aeterna-server.env` automatically. **If it is unset, no line is excluded.**
 
-**Frozen, not live.** Take a snapshot when the run closes and rank from that. A
-live query answers differently every time it is run, and paying from a moving
-list means the record of what you paid cannot be reconciled with the list you
-paid from.
+### An admin-only export — **DONE**
 
-**An admin-only export.** There is no leaderboard endpoint — one existed and was
-deliberately removed, because it served a public ranking of every player to
-anyone who asked for the URL. What the payout needs is different: authenticated,
-and carrying the holder's address. Per line: rank, token id, holder address,
-Devotion, Cultists — with `founderTokenId` removed before the ranking, per §1.
+`GET /admin/standings`, with `x-admin-token`. It carries what a payment needs:
+rank, token id, holder address, Devotion, Cultists, streak. A wrong token and a
+missing token both answer **404**, not 401 — the endpoint does not admit to
+existing. There is no public leaderboard; one existed and was deliberately
+removed, because it served a ranking of every player to anyone with the URL.
+
+**`ADMIN_TOKEN` must be set or the standings cannot be read at all.** Set it as
+a repository secret and the launch workflow writes it to the server; the run
+summary says so loudly if it is missing.
 
 **Soulbinding makes this unambiguous, and that is worth noticing.** Because a
 Bloodline can never be transferred, the address that minted it is the address
 holding it at the end. There is no "who owned it at snapshot time" question, no
 last-minute sale to a different wallet, no dispute about which address to pay.
 That property was chosen for other reasons and pays off here.
+
+### Still to do by hand
 
 **A record of what was paid.** Who, how much, which transaction. Without it, a
 dispute six weeks later has nothing to appeal to but memory. It should be
@@ -318,35 +359,70 @@ worth an hour of professional advice before the mint opens rather than after.
 
 ---
 
-## 6. The order to run it in
+## 6. The launch — one button
 
-Unchanged by the chain move; written up in `docs/Contract_Changes.md`. Every
-mainnet action needs `DEPLOY` typed into the confirm box.
+**Actions → `LAUNCH — deploy, restart and open` → Run workflow.**
 
-1. **Dry run on the Robinhood testnet.** The founder mint is new code and the
-   price is immutable — deploy once where it costs nothing, mint a line, check
-   the game reads it, then throw it away.
-2. **Close the old mint** — `close-mint`, `contract_address` = the Avalanche
-   address `0xC5D08383B1e56297Adbfa4f15E87588996f4C343`.
-3. **Sweep the old contract** — `withdraw`, same address. Whatever was minted
+| Input | |
+|---|---|
+| `network` | `robinhoodTestnet` first. Then `robinhood`. |
+| `confirm` | Type `LAUNCH`. Anything else and the run stops on the first step. |
+| `price_per_cultist_wei` | `10000000000000000` = 0.01. **Immutable.** Read §2. |
+| `founder_cultists` | `1`–`20`, or `0` to skip the founder mint. |
+| `old_contract` | The previous collection, to close and sweep. Blank on a first launch. |
+| `max_supply` | Uncapped by default. **Immutable.** |
+| `base_uri` | Where metadata is served. Must end in a slash. |
+
+What it does, in the one order that works, stopping at the first failure:
+
+1. Refuses unless `confirm` is exactly `LAUNCH`.
+2. **Runs the contract tests as a hard gate.** Nothing is signed if one fails.
+3. Closes the mint on the old collection, if one was named.
+4. Sweeps the old collection's balance to team and treasury. Whatever was minted
    during the test is real money at an address nothing will point at again.
-4. **Deploy** to Robinhood Chain. Tests are a hard gate; nothing signs if one
-   fails.
-5. **Verify on Blockscout**, so the soulbound rule is publicly readable.
-6. **Founder mint** — `founderMint(n)` from the deployer wallet, before the
-   public mint opens.
-7. **Commit the new address in four places**, then deploy the server:
-   `contracts/deployments/avalanche.json` (rename it), the `bloodline-address`
-   meta tag, the server's `BLOODLINE_ADDRESS` fallback, and `DEPLOYED_AT` —
-   **which is day 0**.
-8. **Restart the run** — archives the database. Not optional: token ids start at
-   1 again, and `/bind` refuses a token already bound to a row, so without it
-   the first person to mint the new #1 is locked out.
-9. **Open the mint** — last, so nobody can mint into a collection the server is
-   not yet reading.
+5. Deploys the new contract.
+6. Verifies it on Blockscout — best effort, a failure here does not stop a
+   launch that has already signed a deploy.
+7. **Founder mint**, before anyone else can mint.
+8. Rewrites and commits the address, the six chain meta tags, the server's
+   `CHAIN_ID`, and `DEPLOYED_AT` — **which is day 0**. Committed with
+   `[skip ci]` so `deploy-server.yml` does not race this run.
+9. Deploys the server and web; writes `CHAIN_ID`, `CHAIN_RPC`,
+   `FOUNDER_TOKEN_ID` and `ADMIN_TOKEN` to `/etc/aeterna-server.env`;
+   **archives the player database**; checks `/collection` reports the new
+   address; and **opens the mint last**.
+
+Step 9's archive is not optional. Token ids start at 1 again on a new
+collection, and `/bind` refuses a token already bound to a row — without it the
+first person to mint the new #1 is told it belongs to somebody else and cannot
+get into the abbey at all.
 
 Day 0 becomes the new contract's deploy timestamp: week 1, a duty worth 10, 56
 days on the clock.
+
+### The secrets it needs
+
+Repo secrets, all checked in step 1 and named in the error if missing:
+`DEPLOYER_KEY`, `TEAM_ADDRESS`, `TREASURY_ADDRESS`, `VPS_HOST`, `VPS_USER`,
+`VPS_SSH_KEY`. Optional: `EXPLORER_KEY` (Blockscout takes anything),
+`ADMIN_TOKEN` (without it the final standings cannot be read).
+
+Both workflows use `environment: <network>`, so if any of those secrets are
+scoped to a GitHub **environment** rather than the repository, an environment
+named `robinhood` and `robinhoodTestnet` needs to exist with them in it. The
+secrets check fails loudly and before anything is signed if they do not.
+
+### Before pressing it on mainnet
+
+- **Dry-run the whole workflow on `robinhoodTestnet` first.** The founder mint
+  and the chain rewiring are both new code, and the price and payout addresses
+  are immutable. This is the only place any of it can be wrong for free.
+- **The run is irreversible.** It signs a deploy, archives the live player
+  database and opens a public mint. The only guards are the typed `LAUNCH` and
+  the test gate. There is no undo.
+- Re-running it is safe in the sense that it will not double-mint the founder
+  (the contract refuses) and will not leave duplicate environment keys — but it
+  **will** deploy a second collection and archive the database again.
 
 ### One thing to tell the old testers
 

@@ -13,6 +13,7 @@ import {
   connectWallet, fetchBloodlines, totalCultists, mintBloodline, fetchMintOpen, payConfession,
   fetchPricePerCultist, formatAvax, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
   ensureChain, currentChainId, disconnectWallet, BLOODLINE_ADDRESS, signOwnership,
+  COIN, CHAIN_PARAMS, BLOODLINE_CHAIN_ID,
 } from './wallet.js';
 
 // The tab follows the flag too, so ?oldName=1 rolls the rename back everywhere
@@ -675,7 +676,7 @@ async function menuConnect(menu) {
     menu.status = 'OPENING WALLET…';
     const addr = await connectWallet();
     connectedAddr = addr;
-    // Move the wallet to Avalanche before reading anything. On any other chain
+    // Move the wallet to the collection's chain before reading anything. On any other chain
     // this contract does not exist, and every answer comes back as zero —
     // which the game would otherwise show as "no Bloodlines, mint closed".
     menu.status = 'SWITCHING TO AVALANCHE…';
@@ -1376,7 +1377,7 @@ async function openMintPicker(menu) {
     // with no contract on it answers every call with zero.
     const chain = await currentChainId();
     walletMsg.textContent = {
-      WRONG_CHAIN: `Your wallet is on chain ${chain ?? '?'}. The Bloodlines live on Avalanche (43114) — switch, then try again.`,
+      WRONG_CHAIN: `Your wallet is on chain ${chain ?? '?'}. The Bloodlines live on ${CHAIN_PARAMS.chainName} (${BLOODLINE_CHAIN_ID}) — switch, then try again.`,
       NO_CONTRACT_HERE: 'No collection found at the configured address.',
       NO_WALLET: 'No wallet connected.',
       NO_CONTRACT: 'The collection is not configured.',
@@ -1386,7 +1387,7 @@ async function openMintPicker(menu) {
 
   const total = (n) => price * BigInt(n);
   walletMsg.innerHTML = 'How many Cultists shall this Bloodline hold? The count is fixed '
-    + `forever at the moment it is raised. <span class="addr">${formatAvax(price)} AVAX</span> each.`;
+    + `forever at the moment it is raised. <span class="addr">${formatAvax(price)} ${COIN}</span> each.`;
 
   cultistSlider.hidden = false;
   walletSubmitBtn.hidden = false;
@@ -1398,7 +1399,7 @@ async function openMintPicker(menu) {
   const paint = () => {
     const n = Number(cultistRange.value);
     cultistCount.textContent = `${n} Cultist${n === 1 ? '' : 's'}`;
-    cultistCost.textContent = `${formatAvax(total(n))} AVAX`;
+    cultistCost.textContent = `${formatAvax(total(n))} ${COIN}`;
   };
   paint();
 
@@ -1524,7 +1525,7 @@ async function openMintPicker(menu) {
         BAD_CULTISTS: 'A Bloodline holds between 1 and 20 Cultists.',
         NO_WALLET: 'No wallet connected.',
         NO_CONTRACT: 'The collection is not configured.',
-        WRONG_CHAIN: 'Switch your wallet to Avalanche and try again.',
+        WRONG_CHAIN: `Switch your wallet to ${CHAIN_PARAMS.chainName} and try again.`,
         NO_CONTRACT_HERE: 'No collection found at the configured address.',
       }[e && e.message] || (e && e.message) || 'The rite failed.';
       walletMsg.textContent = why;
@@ -1553,7 +1554,7 @@ async function openMintPicker(menu) {
 // quote and neither is computed here — see payConfession in wallet.js.
 async function payForConfession(payTo, wei, avax) {
   if (!connectedAddr) { showToast('No wallet is connected.', { size: 't-mid' }); return null; }
-  showToast(`Confirm ${avax} AVAX in your wallet to mend the streak.`, { size: 't-mid' });
+  showToast(`Confirm ${avax} ${COIN} in your wallet to mend the streak.`, { size: 't-mid' });
   try {
     return await payConfession(connectedAddr, payTo, wei);
   } catch (e) {
@@ -1561,7 +1562,7 @@ async function payForConfession(payTo, wei, avax) {
       NO_WALLET: 'No wallet connected.',
       NO_TREASURY: 'The abbey did not say where to send it. Nothing was paid.',
       BAD_AMOUNT: 'The abbey quoted nothing to pay.',
-      WRONG_CHAIN: 'Switch your wallet to Avalanche and try again.',
+      WRONG_CHAIN: `Switch your wallet to ${CHAIN_PARAMS.chainName} and try again.`,
     }[e && e.message] || (e && e.message) || 'The payment was not sent.';
     showToast(why, { size: 't-mid' });
     return null;

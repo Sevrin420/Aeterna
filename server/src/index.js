@@ -191,14 +191,21 @@ function requireBloodline(player, reply) {
 // check anywhere in this API (see server/README.md), so a caller can claim to
 // be any address — what this stops is claiming a token that address does not
 // hold. Signature auth is the remaining hole and it is not closed here.
-const AVAX_RPC = process.env.AVAX_RPC || 'https://api.avax.network/ext/bc/C/rpc';
-// The deployed collection on Avalanche C-Chain. Defaulted rather than required
-// because it is public — the same address is a meta tag in web/index.html — and
-// the deploy rsync deliberately excludes .env, so a required secret here would
-// mean /bind silently 503s on every server that was updated without someone
-// remembering to hand-edit a file on the box.
+// CHAIN_RPC is the name to set; AVAX_RPC is still read so a box that has the
+// old variable in its environment keeps working across the move.
+const AVAX_RPC = process.env.CHAIN_RPC || process.env.AVAX_RPC
+  || 'https://api.avax.network/ext/bc/C/rpc';
+// The deployed collection. Defaulted rather than required because it is public
+// — the same address is a meta tag in web/index.html — and the deploy rsync
+// deliberately excludes .env, so a required secret here would mean /bind
+// silently 503s on every server that was updated without someone remembering
+// to hand-edit a file on the box.
 const BLOODLINE_ADDRESS = process.env.BLOODLINE_ADDRESS
   || '0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878';
+// Reported by /collection, which is how a cached page finds out it is reading
+// the wrong collection. It has to match web/index.html's bloodline-chain-id;
+// the launch workflow rewrites both in the same commit.
+const CHAIN_ID = Number(process.env.CHAIN_ID || 43114);
 
 // Two failures live here and they are NOT the same thing, so they are thrown
 // apart. A dead RPC must fail closed (nobody gets bound on an unverified
@@ -1355,7 +1362,7 @@ fastify.get('/bloodlines', async (req, reply) => {
 // A stale page cannot know it is stale by looking at itself. It has to ask.
 fastify.get('/collection', async (req, reply) => {
   reply.header('Cache-Control', 'no-store');
-  return { address: BLOODLINE_ADDRESS, chainId: 43114 };
+  return { address: BLOODLINE_ADDRESS, chainId: CHAIN_ID };
 });
 
 fastify.get('/day', async () => {
