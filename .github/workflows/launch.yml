@@ -284,7 +284,8 @@ jobs:
 
           // Carried to the step that writes the service environment, so the
           // chain is described in exactly one place in this workflow.
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `chainId=${chain.id}\nrpc=${chain.rpc}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,
+            `chainId=${chain.id}\nrpc=${chain.rpc}\nsymbol=${chain.symbol}\n`);
           JS
 
           git config user.name  'Claude'
@@ -331,18 +332,30 @@ jobs:
           TOKEN: ${{ steps.founder.outputs.token }}
           CHAIN_ID: ${{ steps.wire.outputs.chainId }}
           CHAIN_RPC: ${{ steps.wire.outputs.rpc }}
+          CHAIN_SYMBOL: ${{ steps.wire.outputs.symbol }}
+          TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
-          # Four settings that must survive a restart and must not need a commit
-          # to change: which chain to read, where to read it, which line is the
+          # The settings that must survive a restart and must not need a commit
+          # to change: which chain to read and where, what to call its coin,
+          # where the confession money is expected to go, which line is the
           # founder's (the one excluded from the standings), and the token that
           # reads the final standings when the run ends.
+          #
+          # CONFESSION_TREASURY is not optional on a redeploy. The server's
+          # fallback is the FIRST collection's treasury; deploy to a different
+          # address without setting this and every confession answers 503,
+          # because the cross-check compares the new contract against the old
+          # address. Written from the same secret the contract was deployed
+          # with, so it stays a genuine second source.
           #
           # Written by rewriting the whole file rather than appending, so
           # re-running a launch cannot leave two values for the same key.
           {
             echo "CHAIN_ID=${CHAIN_ID}"
             echo "CHAIN_RPC=${CHAIN_RPC}"
+            echo "CHAIN_SYMBOL=${CHAIN_SYMBOL}"
+            echo "CONFESSION_TREASURY=${TREASURY_ADDRESS}"
             if [ -n "${TOKEN}" ] && [ "${TOKEN}" != "0" ]; then echo "FOUNDER_TOKEN_ID=${TOKEN}"; fi
             if [ -n "${ADMIN_TOKEN}" ]; then echo "ADMIN_TOKEN=${ADMIN_TOKEN}"; fi
           } > env.new
@@ -354,7 +367,7 @@ jobs:
             touch /etc/aeterna-server.env
             # Anything the operator set by hand that this launch does not own
             # is kept; the keys below are replaced.
-            grep -vE '^(CHAIN_ID|CHAIN_RPC|FOUNDER_TOKEN_ID|ADMIN_TOKEN)=' /etc/aeterna-server.env > /tmp/aeterna-env.keep || true
+            grep -vE '^(CHAIN_ID|CHAIN_RPC|CHAIN_SYMBOL|CONFESSION_TREASURY|FOUNDER_TOKEN_ID|ADMIN_TOKEN)=' /etc/aeterna-server.env > /tmp/aeterna-env.keep || true
             cat /tmp/aeterna-env.keep /tmp/aeterna-env.new > /etc/aeterna-server.env
             chmod 600 /etc/aeterna-server.env
             grep -q 'EnvironmentFile=-\?/etc/aeterna-server.env' /etc/systemd/system/aeterna-server.service \

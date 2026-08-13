@@ -206,6 +206,9 @@ const BLOODLINE_ADDRESS = process.env.BLOODLINE_ADDRESS
 // the wrong collection. It has to match web/index.html's bloodline-chain-id;
 // the launch workflow rewrites both in the same commit.
 const CHAIN_ID = Number(process.env.CHAIN_ID || 43114);
+// The gas token's ticker, for the two price errors a player can read. A label,
+// never used for arithmetic — both tokens are 18 decimals.
+const COIN = process.env.CHAIN_SYMBOL || 'AVAX';
 
 // Two failures live here and they are NOT the same thing, so they are thrown
 // apart. A dead RPC must fail closed (nobody gets bound on an unverified
@@ -290,11 +293,19 @@ async function confessionPriceFor(player, now = new Date()) {
 // The treasury address is READ FROM THE CONTRACT, not configured. `treasury` is
 // an immutable public on the deployed contract, so the chain is the authority
 // on where its money goes and there is no way for a wrong value in a file, or a
-// wrong value pasted into a chat, to send a player's AVAX somewhere else.
+// wrong value pasted into a chat, to send a player's coin somewhere else.
 //
 // CONFESSION_TREASURY is a cross-check, not the source: if the chain disagrees
 // with it the server refuses to take money at all and says so in the log. A
 // mismatch means one of the two is wrong and neither is safe to act on.
+//
+// SET IT AT EVERY DEPLOY. The fallback is the FIRST collection's treasury, and
+// it is only right by accident — deploy with a different TREASURY_ADDRESS and
+// leave this unset and every confession answers 503 forever, because the check
+// is comparing the new contract against the old address. The launch workflow
+// writes it from the same secret the contract is deployed with, which keeps two
+// independent sources (the repo secret, and the chain) rather than collapsing
+// the check into "the chain agrees with the chain".
 const CONFESSION_TREASURY = String(
   process.env.CONFESSION_TREASURY || '0xda74c09ec68a291287e92e7e0e68a17b824d6b0e',
 ).toLowerCase();
@@ -720,7 +731,7 @@ fastify.post('/confession', async (req, reply) => {
   // No payment yet: quote, and say where to send it.
   if (!txHash) {
     return reply.code(402).send({
-      error: `The mending costs ${price.avax} AVAX.`,
+      error: `The mending costs ${price.avax} ${COIN}.`,
       price,
       payTo: treasury,
     });
@@ -761,7 +772,7 @@ fastify.post('/confession', async (req, reply) => {
   const owed = BigInt(price.wei);
   if (paid < owed) {
     return reply.code(402).send({
-      error: `That is not enough. The mending costs ${price.avax} AVAX.`,
+      error: `That is not enough. The mending costs ${price.avax} ${COIN}.`,
       price,
       payTo: treasury,
     });

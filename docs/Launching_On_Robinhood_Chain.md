@@ -238,6 +238,41 @@ two tokens both having 18 decimals and **not** a no-op: it was 0.01 AVAX, about
 a quarter, and it is now 0.01 **ETH**. A 20-Cultist line costs **0.2 ETH**. Read
 the value in the box before typing `LAUNCH`.
 
+### The mint price is the only price
+
+There are exactly **two** things a player ever pays, and the second is derived
+from the first:
+
+| | |
+|---|---|
+| **Mint** | `pricePerCultist × cultists`, on the contract. |
+| **Confession** | `pricePerCultist × cultists × week%`, paid to the treasury. |
+
+The server reads `pricePerCultist()` off the deployed contract at boot — it is
+not configured anywhere — so **changing the mint price changes the confession
+charge with it, automatically**. There is nothing else to edit and no third
+charge.
+
+The week bands are `CONFESSION_WEEK_PCT` in `server/src/lib/gameLogic.js`:
+25% through week 1, 50% weeks 2–4, 100% weeks 5–7, 200% week 8. At 0.01 that
+means a 1-Cultist line mends for 0.0025 → 0.02 ETH across the run, and a
+20-Cultist line for **0.05 → 0.4 ETH**. The top of that range is twice what the
+line cost to raise, which is the design — but it is a number worth having looked
+at deliberately before the mint opens rather than discovering in week 8.
+
+### `CONFESSION_TREASURY` must be set at every deploy
+
+The server refuses to take confession money unless the contract's `treasury()`
+matches `CONFESSION_TREASURY` — two independent sources agreeing, so no single
+wrong value can redirect a payment. The fallback in the source is the **first**
+collection's treasury, and it is only correct by accident.
+
+Deploy with a different `TREASURY_ADDRESS` and leave that unset, and every
+confession answers `503` for the whole run, because the check is comparing the
+new contract against the old address. The launch workflow now writes it from the
+same secret the contract was deployed with. If you ever deploy by hand, set it
+by hand.
+
 ---
 
 ## 3. Money, before anything is signed
