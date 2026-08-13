@@ -62,9 +62,15 @@ on:
         required: true
         default: '1'
       old_contract:
-        description: 'The PREVIOUS collection, to close and sweep. Blank to skip (a first launch).'
+        description: 'The PREVIOUS collection, to close and sweep. Defaults to the live Avalanche one. Blank to skip.'
         required: false
-        default: ''
+        default: '0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878'
+      old_network:
+        description: 'Which chain the PREVIOUS collection is on. It is not the one you are launching to.'
+        required: false
+        default: avalanche
+        type: choice
+        options: [avalanche, fuji, robinhood, robinhoodTestnet]
       max_supply:
         description: 'IMMUTABLE. Default is uncapped.'
         required: true
@@ -106,7 +112,7 @@ jobs:
             echo "| founder Cultists | \`${{ inputs.founder_cultists }}\` |"
             echo "| token door | \`${{ inputs.pay_token || 'off — coin only' }}\` |"
             echo "| price in token | \`${{ inputs.pay_token_per_cultist || 'n/a' }}\` per Cultist |"
-            echo "| previous collection | \`${{ inputs.old_contract || 'none — first launch' }}\` |"
+            echo "| previous collection | \`${{ inputs.old_contract || 'none — first launch' }}\` on \`${{ inputs.old_network }}\` |"
             echo ""
             echo "The player database will be archived and day 0 reset."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -123,9 +129,10 @@ jobs:
           TEAM: ${{ secrets.TEAM_ADDRESS }}
           TREASURY: ${{ secrets.TREASURY_ADDRESS }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
           VPS_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
-          for v in KEY TEAM TREASURY VPS_HOST VPS_KEY; do
+          for v in KEY TEAM TREASURY VPS_HOST VPS_USER VPS_KEY; do
             if [ -z "${!v}" ]; then echo "::error::Missing repository secret for $v"; exit 1; fi
           done
           echo "team     ${TEAM}"
@@ -167,20 +174,25 @@ jobs:
           } > .env
 
       # ---- 3 & 4: finish with the old collection before starting the new one --
+      # ON THE OLD CHAIN, WHICH IS NOT THE NEW ONE. The game is moving from
+      # Avalanche to Robinhood, so the collection being shut down is not on the
+      # chain being launched to. Running these against `network` pointed them at
+      # an address with no contract on it: the launch would have died here, and
+      # the old collection would have been left open and unswept.
       - name: Close the old mint
         if: inputs.old_contract != ''
         working-directory: contracts
         env:
           MINT_OPEN: 'false'
           CONTRACT_ADDRESS: ${{ inputs.old_contract }}
-        run: npx hardhat run scripts/setMint.js --network ${{ inputs.network }}
+        run: npx hardhat run scripts/setMint.js --network ${{ inputs.old_network }}
 
       - name: Sweep the old collection
         if: inputs.old_contract != ''
         working-directory: contracts
         env:
           CONTRACT_ADDRESS: ${{ inputs.old_contract }}
-        run: npx hardhat run scripts/withdraw.js --network ${{ inputs.network }}
+        run: npx hardhat run scripts/withdraw.js --network ${{ inputs.old_network }}
 
       # ---- 5: the new collection ---------------------------------------------
       - name: Deploy
