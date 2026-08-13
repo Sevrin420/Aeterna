@@ -16,7 +16,7 @@ missing rather than letting the launch find out.
 | **Real secrets** | `DEPLOYER_KEY`, `VPS_SSH_KEY`, `VPS_HOST`, `VPS_USER`, `ADMIN_TOKEN` — credentials. These must be repo secrets and must never be pasted anywhere. |
 | **`OLD_DEPLOYER_KEY`** | The key for `0x2cBf16…`, which owns the Avalanche collection. **Needed to close the old mint**, because the new deployer does not own it. Also a secret. |
 | **Addresses** | `TEAM_ADDRESS`, `TREASURY_ADDRESS`, and the deployer's own address — **public**, and readable off the chain by anyone. Keep them as secrets, or type them straight into the workflow inputs. Typed wins; the secret is the fallback. |
-| **`ADMIN_TOKEN`** | Any long random string. Without it the final standings can never be read, and there is no second chance to want it. |
+| **`ADMIN_TOKEN`** | **A password you invent.** Any long random string — it is not issued by anyone and does not have to look like anything. It does two things: it **starts the run** (`/admin/begin`) and it **reads the final standings**. Both endpoints answer 404 without it, so a launch held at day 0 with no token is a run that can never start. LAUNCH refuses that combination. |
 | **Gas** | ETH in the deployer wallet **on Robinhood Chain**. Bridged in ahead of time. |
 | **Team + treasury** | Must be addresses you control **on Robinhood Chain**. Both are immutable at deploy. |
 
@@ -187,6 +187,34 @@ to mint the new #1 is told it belongs to someone else and cannot get in at all.
 ---
 
 ## 3. BEGIN — the starting gun
+
+### First: `ADMIN_TOKEN`
+
+It is not a thing you obtain. You make one up, save it as a repo secret, and
+keep a copy where you keep passwords. Any long random string; 32+ characters is
+plenty. One way to make one:
+
+```
+openssl rand -hex 32
+```
+
+or on a Mac/Linux box without openssl:
+
+```
+head -c 32 /dev/urandom | base64
+```
+
+It is the only key to two doors, both of which fail closed — no token on the
+server means the endpoint does not exist:
+
+| | |
+|---|---|
+| `POST /admin/begin` | **Starts the run.** Without this you cannot begin at all. |
+| `GET /admin/standings` | The final Devotion table with holder addresses — how you know who to pay. |
+
+Lose it and you can put a new one in `/etc/aeterna-server.env` on the box, so it
+is recoverable — but only by someone who can ssh in.
+
 
 Launching does **not** start the run. With `await_begin` true the mint opens,
 people connect, raise lines, name them and walk the abbey — and **nothing is

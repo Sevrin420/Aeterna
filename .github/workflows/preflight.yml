@@ -15,6 +15,12 @@ name: PREFLIGHT — check the launch will work
 on:
   workflow_dispatch:
     inputs:
+      await_begin:
+        description: 'Matches the LAUNCH input. True means the run is held at day 0 and ADMIN_TOKEN becomes REQUIRED.'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
       network:
         description: 'Which chain the launch will go to.'
         required: true
@@ -108,10 +114,17 @@ jobs:
               echo "::error::DEPLOYER_KEY is not a 32-byte hex private key — check for a stray space or newline"; bad=1
             fi
           fi
-          # ADMIN_TOKEN is not needed to launch. It IS needed to ever read the
-          # final standings, and there is no second chance to want it.
+          # ADMIN_TOKEN does two things and one of them is not optional. It
+          # reads the final standings at the end — and it FIRES THE STARTING
+          # GUN. Held at day 0 with no token, /admin/begin is a 404 and the run
+          # can never be started at all.
           if [ -z "$ADMIN_TOKEN" ]; then
-            echo "::warning::ADMIN_TOKEN is not set. The run will launch, but the final standings cannot be read when it ends."
+            if [ "${{ inputs.await_begin }}" != "false" ]; then
+              echo "::error::MISSING ADMIN_TOKEN. With await_begin true the run is held at day 0 and /admin/begin is the only way to start it — and that endpoint needs this token."
+              bad=1
+            else
+              echo "::warning::ADMIN_TOKEN is not set. The run will launch, but the final standings cannot be read when it ends."
+            fi
           else echo "ok        ADMIN_TOKEN"; fi
           if [ -z "$EXPLORER_KEY" ]; then
             echo "::notice::EXPLORER_KEY unset — fine, Blockscout takes any key."

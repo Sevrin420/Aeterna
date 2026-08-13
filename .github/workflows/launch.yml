@@ -117,6 +117,16 @@ jobs:
           echo "::error::Not confirmed. Re-run and type LAUNCH in the confirm box."
           exit 1
 
+      # HELD AT DAY 0 WITH NO WAY TO START IT is a game that can never begin.
+      # /admin/begin needs ADMIN_TOKEN, and with no token on the server that
+      # endpoint is a 404 — so this combination launches an abbey whose clock
+      # nothing can start short of editing a file on the box by hand.
+      - name: Refuse to hold a clock nothing can start
+        if: inputs.await_begin != 'false' && secrets.ADMIN_TOKEN == ''
+        run: |
+          echo "::error::await_begin is true but ADMIN_TOKEN is not set. The run would be held at day 0 with no way to start it — /admin/begin needs that token and answers 404 without it. Set the secret (any long random string), or set await_begin to false."
+          exit 1
+
       - name: Say what is about to happen
         run: |
           {
