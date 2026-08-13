@@ -160,7 +160,7 @@ export class FireVigil {
       const sp = 22 + Math.random() * 46;
       this.embers.push({
         x: this.bx + (Math.random() - 0.5) * 6,
-        y: this.by - 2,
+        y: this.by - 3,          // embers leave from the fuel, not the floor
         vx: Math.cos(a) * sp * 0.5,
         vy: Math.sin(a) * sp,
         t: 0, life: 0.7 + Math.random() * 1.1,
@@ -224,7 +224,12 @@ export class FireVigil {
     // one. Now the base is pinned to the fuel line and only the top rises, and
     // the width is held near the bowl's own while the height is left free: a
     // fire that towers reads as fierce, a fire that fattens reads as detached.
-    const baseY = this.by + 2;                                    // the fuel line
+    // THE FUEL LINE, measured from the brazier's tile centre — the same place
+    // FireRite.drawLaid puts the wood, and just under the gilded rim at -4.
+    // It used to be +2 against a point that was itself +2, which stood the
+    // fire four pixels BELOW the bowl: a flame burning in front of the brazier
+    // rather than in it, with the tripod legs lit from the wrong side.
+    const baseY = this.by - 3;
     const sw = 0.85 + Math.min(this.roar, 1) * 0.42 + this.flare * 0.10;
     const sh = 0.85 + this.roar * 1.05 + this.flare * 0.22;
 

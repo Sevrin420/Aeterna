@@ -404,12 +404,21 @@ for (let c = CONFESSIONAL.x0; c <= CONFESSIONAL.x1; c++) {
 // step out of the niche, or cross the west arm to reach the nave and the
 // northern corridor, and it is straight ahead of you.
 //
-// Two tiles tall, hanging down from the wall course, so it reads as a board and
-// not a notice. It is approached from the SOUTH now rather than the east; the
-// station in abbey.js stands one tile below it accordingly.
-export const BOARD = { col: CONFESSIONAL.x1 + 2, row: TRANSEPT.y0 };
+// ON THE WALL, not standing in the room. It used to sit two tiles out on the
+// transept floor and block them, which read as a sandwich board left in a
+// corridor rather than something mounted where notices go.
+//
+// TRANSEPT.y0 - 1 is the crossbar's north wall, and it runs solid from col 42
+// to col 50 — east of the confessional's outer wall, which ends at 44. So the
+// board hangs on that wall clear of the nook, and the two floor tiles it used
+// to occupy are walkable again.
+//
+// Two tiles WIDE and one tall, because the wall is one tile deep: a board that
+// hung two tiles down would be back out over the floor it just left. Neither
+// tile needs blocking — they are already wall.
+export const BOARD = { col: CONFESSIONAL.x1 + 4, row: TRANSEPT.y0 - 1 };
 prop('board', BOARD.col, BOARD.row);
-prop('board-block', BOARD.col, BOARD.row + 1);
+prop('board-r', BOARD.col + 1, BOARD.row);
 // staircases down (walkable — step to descend)
 // Stair rows are expressed off the transept rather than as absolute numbers,
 // so moving the crossbar can never leave a staircase standing in a wall.

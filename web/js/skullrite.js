@@ -170,16 +170,27 @@ export class SkullShrine {
     if (this.altar) {
       const live = !this.done && !this.active;
       const a = live ? 0.5 + Math.sin(t * 2.2) * 0.16 : 0.20;
+      // THE WHOLE TILE. It was an 8x8 square centred on a 10x10 flagstone,
+      // which read as a rug laid on the floor rather than a stone that IS the
+      // floor — a small mark you could stand beside without being on.
       const A = this.altar;
-      ctx.fillStyle = `rgba(74,13,22,${live ? 0.95 : 0.8})`;
-      ctx.fillRect(A.x - 5, A.y - 5, 10, 10);
-      ctx.fillStyle = `rgba(198,43,48,${a})`;
-      ctx.fillRect(A.x - 4, A.y - 4, 8, 8);
-      ctx.fillStyle = `rgba(232,90,74,${a * 0.7})`;
-      ctx.fillRect(A.x - 4, A.y - 4, 8, 1.2);
-      ctx.fillStyle = `rgba(140,26,34,${live ? 0.9 : 0.55})`;   // grouted in
-      ctx.fillRect(A.x - 5, A.y + 4, 10, 1);
-      ctx.fillRect(A.x - 5, A.y - 5, 1, 10);
+      const x0 = A.x - 5, y0 = A.y - 5;          // the flagstone's own corner
+      ctx.fillStyle = `rgba(140,26,34,${live ? 0.96 : 0.82})`;   // the stone
+      ctx.fillRect(x0, y0, 10, 10);
+      ctx.fillStyle = `rgba(198,43,48,${a})`;                    // lit face
+      ctx.fillRect(x0, y0, 10, 10);
+      // Bevelled, and bevelled in reds: the light the crypt has comes from
+      // above and to the left, so that is where the cut catches and the far
+      // edges fall away. Drawn INSIDE the tile, so the stone still ends where
+      // the flagstone ends.
+      ctx.fillStyle = `rgba(232,90,74,${Math.min(1, a * 1.1)})`;
+      ctx.fillRect(x0, y0, 10, 1.5);                             // top edge
+      ctx.fillRect(x0, y0, 1.5, 10);                             // left edge
+      ctx.fillStyle = `rgba(255,150,132,${a * 0.6})`;            // the cut itself
+      ctx.fillRect(x0, y0, 4, 0.9);
+      ctx.fillStyle = `rgba(74,13,22,${live ? 0.9 : 0.65})`;
+      ctx.fillRect(x0, y0 + 8.5, 10, 1.5);                       // bottom, in shadow
+      ctx.fillRect(x0 + 8.5, y0, 1.5, 10);                       // right, in shadow
     }
 
     // --- the pool ---------------------------------------------------------

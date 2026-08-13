@@ -81,8 +81,10 @@ const STATIONS = [
   // Stood in front of, from the SOUTH. The board hangs on a wall now rather
   // than closing off a dead end, so the tile a player reads it from is the one
   // below it — the two rows it occupies are both solid.
+  // Read from the floor tile below it. The board is two tiles wide, so the
+  // station sits on the seam between them rather than under one half.
   { id: 'board', kind: 'board', label: 'Read the Reckoning',
-    x: px(BOARD.col), y: px(BOARD.row + 2), r: 14 },
+    x: px(BOARD.col) + TILE / 2, y: px(BOARD.row + 1), r: 14 },
   // The braziers are deliberately NOT stations. A station opens a box and runs
   // a rite; a brazier is a container you put things in, and it has to behave
   // differently depending on what you are carrying. See _fireAction().
@@ -651,7 +653,9 @@ export class AbbeyScene {
   // walking away mid-rite is not a way to be paid without performing it.
   _beginVigil(b) {
     const bz = ALCOVES[b].brazier;
-    if (!this.vigil.begin(px(bz.col), px(bz.row) + 2, this.pc.x, this.pc.y)) return;
+    // The brazier's own tile centre. The vigil works the fuel line out from it
+    // — passing a point already nudged down put the flame below the bowl.
+    if (!this.vigil.begin(px(bz.col), px(bz.row), this.pc.x, this.pc.y)) return;
     document.body.classList.add('rite-open');
     this.pc.dir = this.pc.x > px(bz.col) ? 'left' : 'right';
     this.pc.moving = false;
@@ -1883,24 +1887,31 @@ export class AbbeyScene {
         candleFlame(ctx, x, y - 6, this.t, p.col * 2.3 + p.row);
         break;
       }
-      case 'board-block': break;   // covered by the board draw above it
+      case 'board-r': break;   // the right half, drawn by the anchor tile below
       case 'board': {
-        // A slate on the wall, tall enough to read across the corridor. Gold
-        // frame because gold is what the abbey uses for anything it wants
+        // A slate MOUNTED ON THE WALL. Two tiles wide and one tall, sitting in
+        // the wall's own face rather than standing out in the room — landscape
+        // because the wall is one tile deep and anything taller would hang back
+        // over the floor this was moved off.
+        //
+        // Gold frame because gold is what the abbey uses for anything it wants
         // looked at, and ruled lines so it reads as a board of figures rather
         // than a door.
-        const bx = x - 6, by = y - 5, bw = 12, bh = 22;
-        this._dropShadow(ctx, x + 1, y + 16, 7, 2.2);
-        ctx.fillStyle = '#0f0b14'; ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);   // shadow gap
-        ctx.fillStyle = '#9a7018'; ctx.fillRect(bx, by, bw, bh);                    // gold frame
-        ctx.fillStyle = '#1b1622'; ctx.fillRect(bx + 1, by + 1, bw - 2, bh - 2);    // slate
-        ctx.fillStyle = 'rgba(247,221,147,0.30)';                                   // ruled figures
-        for (let i = 0; i < 7; i++) {
-          const w = 4 + (h2(p.col + i, p.row) % 5);
-          ctx.fillRect(bx + 2, by + 3 + i * 2.6, w, 1);
+        const bx = x - 5, by = y - 5, bw = TILE * 2, bh = TILE;
+        ctx.fillStyle = '#0f0b14'; ctx.fillRect(bx, by, bw, bh);                    // set into the wall
+        ctx.fillStyle = '#9a7018'; ctx.fillRect(bx + 0.5, by + 0.5, bw - 1, bh - 1); // gold frame
+        ctx.fillStyle = '#1b1622'; ctx.fillRect(bx + 1.5, by + 1.5, bw - 3, bh - 3); // slate
+        ctx.fillStyle = 'rgba(247,221,147,0.78)';                                    // a heading rule
+        ctx.fillRect(bx + 2.5, by + 2.5, bw - 5, 1);
+        ctx.fillStyle = 'rgba(247,221,147,0.30)';                                    // ruled figures
+        for (let i = 0; i < 3; i++) {
+          const w = 5 + (h2(p.col + i, p.row) % 8);
+          ctx.fillRect(bx + 2.5, by + 4.6 + i * 1.8, w, 0.9);
         }
-        ctx.fillStyle = 'rgba(247,221,147,0.75)';                                   // a heading rule
-        ctx.fillRect(bx + 2, by + 2, bw - 4, 1);
+        // The lip that says it stands off the wall, and the shadow it throws
+        // onto the stone under it.
+        ctx.fillStyle = 'rgba(247,221,147,0.22)'; ctx.fillRect(bx + 0.5, by + 0.5, bw - 1, 0.8);
+        ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(bx + 1, by + bh, bw - 1, 1.2);
         break;
       }
       case 'stair-down': {
