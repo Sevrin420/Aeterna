@@ -404,6 +404,10 @@ chatInput.addEventListener('keydown', (e) => {
 
 const CROWD = parseInt(new URLSearchParams(location.search).get('crowd') || '0', 10) || 0;
 let _saidNotBegun = false;
+// ONE RITE, ONE TRANSACTION. Module-level on purpose: a listener left behind by
+// an earlier mint carries its own scope with it, so a flag inside the rite
+// would not see the second call. This does.
+let _mintInFlight = false;
 
 function enterAbbey(player) {
   updateHud(player);
@@ -1481,6 +1485,7 @@ async function openMintPicker(menu) {
     walletOverlay.classList.remove('minting');
     cultistRange.removeEventListener('input', paint);
     walletSubmitBtn.removeEventListener('click', onPickCount);
+    disarmCurrency();
     walletSkipBtn.hidden = true;
     walletBackBtn.removeEventListener('click', teardown);
     _mintTeardown = null;
@@ -1538,7 +1543,33 @@ async function openMintPicker(menu) {
   // currency — so the button goes through here rather than at onRaise directly.
   function onPickCount() { chooseCurrency(); }
 
+  // THE TWO SCREENS SHARE ONE BUTTON, so only one of them may be listening to
+  // it at a time. They both used to be: the count screen's handler stayed on
+  // while the currency screen added its own, so a CLICK on the price fired
+  // both — re-entering the currency screen, which armed a SECOND pay handler
+  // that the first one's teardown knew nothing about. That orphan survived onto
+  // the naming box, and pressing "Name it" there sent a second mint.
+  //
+  // Armed and disarmed explicitly instead, in one place each, so the button has
+  // exactly one meaning at any moment.
+  let currencyArmed = false;
+  function payCoin() { disarmCurrency(); onRaise('coin'); }
+  function payToken() { disarmCurrency(); onRaise('token'); }
+  function armCurrency() {
+    if (currencyArmed) return;
+    currencyArmed = true;
+    walletSubmitBtn.addEventListener('click', payCoin);
+    walletSkipBtn.addEventListener('click', payToken);
+  }
+  function disarmCurrency() {
+    currencyArmed = false;
+    walletSubmitBtn.removeEventListener('click', payCoin);
+    walletSkipBtn.removeEventListener('click', payToken);
+  }
+
   function chooseCurrency() {
+    // Off before anything else goes on.
+    walletSubmitBtn.removeEventListener('click', onPickCount);
     if (!payTok) { onRaise('coin'); return; }
     const n = Number(cultistRange.value);
     let pick = 'coin';
@@ -1555,14 +1586,8 @@ async function openMintPicker(menu) {
     };
     paintPick();
 
-    const stop = () => {
-      walletSubmitBtn.removeEventListener('click', payCoin);
-      walletSkipBtn.removeEventListener('click', payToken);
-    };
-    function payCoin() { stop(); onRaise('coin'); }
-    function payToken() { stop(); onRaise('token'); }
-    walletSubmitBtn.addEventListener('click', payCoin);
-    walletSkipBtn.addEventListener('click', payToken);
+    const stop = disarmCurrency;
+    armCurrency();
 
     _mintInput = {
       handleInput(inp) {
@@ -1579,6 +1604,7 @@ async function openMintPicker(menu) {
           // Back to the count, not out of the rite: changing your mind about
           // how to pay should not cost you the number you picked.
           stop();
+          walletSubmitBtn.addEventListener('click', onPickCount);   // the count screen has the button back
           walletSkipBtn.hidden = true;
           cultistSlider.hidden = false;
           walletSubmitBtn.textContent = 'Raise it';
@@ -1595,6 +1621,9 @@ async function openMintPicker(menu) {
   const slider = _mintInput;
 
   async function onRaise(how = 'coin') {
+    // Whatever called this, it is not calling it twice.
+    if (_mintInFlight) return;
+    _mintInFlight = true;
     const n = Number(cultistRange.value);
     const usingToken = how === 'token' && !!payTok;
     cultistSlider.hidden = true;
@@ -1691,6 +1720,7 @@ async function openMintPicker(menu) {
       walletMsg.textContent = why;
       sfx.error();
     } finally {
+      _mintInFlight = false;
       cultistRange.disabled = false;
       walletSubmitBtn.disabled = false;
     }
