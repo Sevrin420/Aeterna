@@ -69,12 +69,7 @@ async function main() {
     note('no EXPECT_DEPLOYER given — nothing is checking that the secret holds the key you think it does');
   }
   console.log(`balance   ${hre.ethers.formatEther(bal)} ${coin}`);
-  // Not a precise gas estimate — a floor. Two deploys, a founder mint and two
-  // setMintOpen calls all have to fit, and being told "you have none" after the
-  // first one succeeds is the failure this is here to prevent.
   if (bal === 0n) fail(`the deployer holds no ${coin} on ${net} — it cannot deploy anything`);
-  else if (bal < 10n ** 15n) fail(`the deployer holds under 0.001 ${coin} — very likely not enough for two deploys`);
-  else ok('the deployer has gas');
 
   // ---- where the money will go ---------------------------------------------
   const team = process.env.TEAM_ADDRESS;
@@ -126,6 +121,11 @@ async function main() {
   // ---- the token ------------------------------------------------------------
   const tokenAddr = (process.env.PAY_TOKEN || '').trim();
   const human = (process.env.PAY_TOKEN_PER_CULTIST || '').trim();
+  // Resolved forms, for the gas estimate below — it has to deploy the same
+  // constructor arguments the launch will, or it is estimating a different
+  // contract from the one that gets deployed.
+  let payToken = ZERO;
+  let tokenPrice = 0n;
   if (!tokenAddr && !human) {
     note('no token — the mint will be coin-only. Correct for a testnet dry run.');
   } else if (!tokenAddr || !human) {
@@ -148,6 +148,8 @@ async function main() {
       const sym = await erc20.symbol();
       const supply = await erc20.totalSupply();
       const raw = hre.ethers.parseUnits(human, dp);
+      payToken = tokenAddr;
+      tokenPrice = raw;
       ok(`the token answers: ${sym}, ${dp} decimals`);
       console.log(`          supply ${hre.ethers.formatUnits(supply, dp)} ${sym}`);
       console.log(`price     ${human} ${sym} per Cultist  =  ${raw} raw`);
@@ -158,7 +160,46 @@ async function main() {
     }
   }
 
+  // ---- WHAT THE LAUNCH WILL ACTUALLY COST ----------------------------------
+  //
+  // Estimated, not guessed. A floor picked by hand is either so low it passes a
+  // wallet that cannot afford the second deploy, or so high it fails one that
+  // can. This asks the chain what these exact two contracts cost to put on it,
+  // at the gas price the chain is quoting right now.
+  try {
+    const fee = await hre.ethers.provider.getFeeData();
+    const gasPrice = fee.maxFeePerGas || fee.gasPrice || 0n;
+    const F = await hre.ethers.getContractFactory('ThrobbinAbbeyBloodline');
+    const T = await hre.ethers.getContractFactory('ThrobbinAbbeyTolls');
+    const dep1 = await F.getDeployTransaction(price || 1n, maxSupplyForEstimate(), team, treasury, 'https://x/', payToken, tokenPrice);
+    const dep2 = await T.getDeployTransaction(team, treasury, payToken);
+    const g1 = await hre.ethers.provider.estimateGas({ ...dep1, from: signer.address });
+    const g2 = await hre.ethers.provider.estimateGas({ ...dep2, from: signer.address });
+    // Plus the founder mint, the two setMintOpen calls and the tolls setup,
+    // none of which are deploys. 400k gas covers all of them generously.
+    const total = (g1 + g2 + 400000n) * gasPrice;
+    const withRoom = (total * 15n) / 10n;                 // 50% headroom
+    console.log(`gas price ${hre.ethers.formatUnits(gasPrice, 'gwei')} gwei`);
+    console.log(`estimate  ${hre.ethers.formatEther(total)} ${coin} for the whole launch`);
+    console.log(`          ${hre.ethers.formatEther(withRoom)} ${coin} to be comfortable`);
+    if (bal < total) {
+      fail(`the deployer holds ${hre.ethers.formatEther(bal)} ${coin} and the launch needs about ${hre.ethers.formatEther(total)} — top it up`);
+    } else if (bal < withRoom) {
+      note(`the deployer has enough but not much spare (${hre.ethers.formatEther(bal)} ${coin} against a ${hre.ethers.formatEther(total)} estimate). A gas spike mid-launch would strand it between the deploy and the mint opening.`);
+    } else {
+      ok(`the deployer has comfortable gas (${hre.ethers.formatEther(bal)} ${coin})`);
+    }
+  } catch (e) {
+    note(`could not estimate the launch's gas: ${e.shortMessage || e.message}`);
+    if (bal < 10n ** 15n) fail(`and the deployer holds under 0.001 ${coin}, which is very likely not enough`);
+  }
+
   return done();
+}
+
+function maxSupplyForEstimate() {
+  const v = process.env.MAX_SUPPLY;
+  return v ? BigInt(v) : (2n ** 256n - 1n);
 }
 
 // The collection being shut down, on ITS chain — which is not the one being
@@ -195,6 +236,15 @@ async function oldCollection(coin, done) {
   const bal = await hre.ethers.provider.getBalance(addr);
   console.log(`balance   ${hre.ethers.formatEther(bal)} ${coin}   <- this is what the sweep will move`);
   if (bal === 0n) note('nothing in coin to sweep — already swept, or nothing was minted');
+
+  // Closing and sweeping are transactions on THIS chain, so the key signing
+  // here needs this chain's coin. A different wallet from the new deployer, and
+  // easy to forget precisely because it is the old one.
+  const signerBal = await hre.ethers.provider.getBalance(signer.address);
+  console.log(`signer    ${signer.address} holds ${hre.ethers.formatEther(signerBal)} ${coin}`);
+  if (signerBal === 0n) {
+    fail(`the key used on ${hre.network.name} holds no ${coin} — it cannot pay for the close or the sweep`);
+  } else ok(`the key used here can pay for its own transactions`);
 
   try {
     const tokenAddr = await c.payToken();

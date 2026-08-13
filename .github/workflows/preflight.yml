@@ -186,12 +186,25 @@ jobs:
             set -e
             echo "host      $(hostname)"
             echo "whoami    $(whoami)"
-            systemctl is-enabled aeterna-server >/dev/null 2>&1 \
-              && echo "ok        aeterna-server is a known service" \
-              || { echo "MISSING   aeterna-server service unit"; exit 1; }
+            # DOES THE UNIT EXIST — which is what the launch needs. `is-enabled`
+            # was the wrong question: it exits non-zero for a unit that exists
+            # and is merely disabled, so a perfectly healthy running service
+            # reported as missing.
+            systemctl cat aeterna-server >/dev/null 2>&1 \
+              && echo "ok        aeterna-server unit exists" \
+              || { echo "MISSING   no aeterna-server unit on this box"; exit 1; }
             systemctl is-active aeterna-server >/dev/null 2>&1 \
               && echo "ok        aeterna-server is running" \
               || echo "note      aeterna-server is not running right now"
+            # SEPARATELY: does it come back after a reboot? Not needed to
+            # launch, and it matters for eight weeks — a box that reboots with
+            # the service disabled takes the abbey down until someone notices.
+            EN=$(systemctl is-enabled aeterna-server 2>/dev/null || true)
+            if [ "$EN" = "enabled" ]; then
+              echo "ok        and it starts on boot"
+            else
+              echo "note      NOT enabled at boot (${EN:-unknown}) — a reboot would leave the abbey down until started by hand. Fix: systemctl enable aeterna-server"
+            fi
             [ -d /opt/aeterna-server ] && echo "ok        /opt/aeterna-server" || { echo "MISSING   /opt/aeterna-server"; exit 1; }
             [ -d /opt/web ] && echo "ok        /opt/web" || { echo "MISSING   /opt/web"; exit 1; }
             [ -w /etc ] && echo "ok        can write /etc/aeterna-server.env" || { echo "MISSING   cannot write /etc"; exit 1; }
