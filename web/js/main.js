@@ -14,6 +14,7 @@ import {
   fetchPricePerCultist, formatAvax, waitForTx, shortAddr, hasWalletConnect, isDemoMode,
   ensureChain, currentChainId, disconnectWallet, BLOODLINE_ADDRESS, signOwnership,
   COIN, CHAIN_PARAMS, BLOODLINE_CHAIN_ID,
+  fetchPayToken, mintBloodlineWithToken, payConfessionWithToken, fetchTokenBalance, formatUnits,
 } from './wallet.js';
 
 // The tab follows the flag too, so ?oldName=1 rolls the rename back everywhere
@@ -1249,6 +1250,54 @@ function askOverlay({ title, message, placeholder, confirm = 'Confirm', skip = '
   });
 }
 
+// A two-way choice on the same overlay askOverlay uses. Returns 'a' | 'b' |
+// null (backed out).
+//
+// Built because the abbey now takes two currencies and there is no honest way
+// to pick one for the player: the amounts are in different units and cannot be
+// compared at a glance, so both go on screen with their names and the choice is
+// made once, deliberately, with a wallet prompt waiting on the other side.
+function chooseOverlay({ title, message, a, b }) {
+  return new Promise((resolve) => {
+    _picker = null;
+    walletOverlay.classList.remove('picking', 'lines', 'minting');
+    walletOverlay.classList.add('asking');
+    walletOverlay.hidden = false;
+    cultistGrid.hidden = true;
+    cultistGrid.innerHTML = '';
+    cultistSlider.hidden = true;
+    walletInput.hidden = true;
+    walletConnectBtn.hidden = true;
+    walletTitle.textContent = title;
+    walletMsg.innerHTML = message;
+    walletSubmitBtn.hidden = false;
+    walletSkipBtn.hidden = false;
+    walletSubmitBtn.textContent = a;
+    walletSkipBtn.textContent = b;
+    walletSubmitBtn.disabled = false;
+    walletSkipBtn.disabled = false;
+
+    const done = (v) => {
+      _asking = null;
+      walletOverlay.classList.remove('asking');
+      walletOverlay.hidden = true;
+      walletSubmitBtn.hidden = true;
+      walletSkipBtn.hidden = true;
+      walletSubmitBtn.removeEventListener('click', onA);
+      walletSkipBtn.removeEventListener('click', onB);
+      resolve(v);
+    };
+    function onA() { done('a'); }
+    function onB() { done('b'); }
+    walletSubmitBtn.addEventListener('click', onA);
+    walletSkipBtn.addEventListener('click', onB);
+    // A takes the first, B the second — the same two buttons that mean confirm
+    // and back everywhere else. Backing out of a payment IS choosing the other
+    // one here, so there is no third outcome to represent.
+    _asking = { ok: onA, skip: onB };
+  });
+}
+
 // After a bind: offer to put an X handle on the Bloodline, then to name whoever
 // brought them in. Both are optional, and on an ordinary connect each is asked
 // ONCE — a player who skips is not nagged every time they come back.
@@ -1365,6 +1414,7 @@ async function openMintPicker(menu) {
   walletMsg.textContent = 'Consulting the chain…';
 
   let price;
+  let payTok = null;
   try {
     await ensureChain();
     if (!(await fetchMintOpen())) {
@@ -1372,6 +1422,10 @@ async function openMintPicker(menu) {
       return;
     }
     price = await fetchPricePerCultist();
+    // The second door, if this collection has one. Soft: a collection deployed
+    // without a token, or an older one with no payToken() at all, simply mints
+    // for coin as it always did.
+    payTok = await fetchPayToken();
   } catch (e) {
     // Each of these used to surface as "the mint is not open", because a chain
     // with no contract on it answers every call with zero.
@@ -1386,8 +1440,11 @@ async function openMintPicker(menu) {
   }
 
   const total = (n) => price * BigInt(n);
+  const tokenTotal = (n) => (payTok ? payTok.price * BigInt(n) : 0n);
   walletMsg.innerHTML = 'How many Cultists shall this Bloodline hold? The count is fixed '
-    + `forever at the moment it is raised. <span class="addr">${formatAvax(price)} ${COIN}</span> each.`;
+    + `forever at the moment it is raised. <span class="addr">${formatAvax(price)} ${COIN}</span>`
+    + (payTok ? ` or <span class="addr">${formatUnits(payTok.price, payTok.decimals)} ${payTok.symbol}</span>` : '')
+    + ' each.';
 
   cultistSlider.hidden = false;
   walletSubmitBtn.hidden = false;
@@ -1399,7 +1456,9 @@ async function openMintPicker(menu) {
   const paint = () => {
     const n = Number(cultistRange.value);
     cultistCount.textContent = `${n} Cultist${n === 1 ? '' : 's'}`;
-    cultistCost.textContent = `${formatAvax(total(n))} ${COIN}`;
+    cultistCost.textContent = payTok
+      ? `${formatAvax(total(n))} ${COIN}  ·  ${formatUnits(tokenTotal(n), payTok.decimals)} ${payTok.symbol}`
+      : `${formatAvax(total(n))} ${COIN}`;
   };
   paint();
 
@@ -1410,7 +1469,8 @@ async function openMintPicker(menu) {
     walletSubmitBtn.hidden = true;
     walletOverlay.classList.remove('minting');
     cultistRange.removeEventListener('input', paint);
-    walletSubmitBtn.removeEventListener('click', onRaise);
+    walletSubmitBtn.removeEventListener('click', onPickCount);
+    walletSkipBtn.hidden = true;
     walletBackBtn.removeEventListener('click', teardown);
     _mintTeardown = null;
     _mintInput = null;
@@ -1443,7 +1503,7 @@ async function openMintPicker(menu) {
         const now = Math.min(hi, Math.max(lo, was + way * step));
         if (now !== was) { cultistRange.value = String(now); paint(); sfx.click(); }
       }
-      if (inp.consumeAPress()) { onRaise(); return; }
+      if (inp.consumeAPress()) { chooseCurrency(); return; }
       if (inp.consumeBPress()) {
         teardown();
         closeBloodlinePicker();
@@ -1456,14 +1516,95 @@ async function openMintPicker(menu) {
   // player never asked for.
   input.flush();
 
-  async function onRaise() {
+  // WHICH DOOR. With no token on the collection there is only one, and this
+  // step does not appear at all — pressing A raises the line as it always did.
+  //
+  // A second screen rather than a toggle on the first: the two prices are in
+  // different currencies and cannot be compared at a glance, so they are put
+  // side by side and named, and the choice is made once with both in view.
+  // Paying is not a thing to do by accident with a d-pad.
+  // A click hands its MouseEvent to the handler, and a MouseEvent is not a
+  // currency — so the button goes through here rather than at onRaise directly.
+  function onPickCount() { chooseCurrency(); }
+
+  function chooseCurrency() {
+    if (!payTok) { onRaise('coin'); return; }
     const n = Number(cultistRange.value);
+    let pick = 'coin';
+
+    cultistSlider.hidden = true;
+    walletSkipBtn.hidden = false;
+    walletMsg.innerHTML = `<b>${n} Cultist${n === 1 ? '' : 's'}.</b> How will you pay?`;
+
+    const paintPick = () => {
+      const coinTxt = `${formatAvax(total(n))} ${COIN}`;
+      const tokTxt = `${formatUnits(tokenTotal(n), payTok.decimals)} ${payTok.symbol}`;
+      walletSubmitBtn.textContent = (pick === 'coin' ? '▸ ' : '') + coinTxt;
+      walletSkipBtn.textContent = (pick === 'token' ? '▸ ' : '') + tokTxt;
+    };
+    paintPick();
+
+    const stop = () => {
+      walletSubmitBtn.removeEventListener('click', payCoin);
+      walletSkipBtn.removeEventListener('click', payToken);
+    };
+    function payCoin() { stop(); onRaise('coin'); }
+    function payToken() { stop(); onRaise('token'); }
+    walletSubmitBtn.addEventListener('click', payCoin);
+    walletSkipBtn.addEventListener('click', payToken);
+
+    _mintInput = {
+      handleInput(inp) {
+        if (walletSubmitBtn.disabled) return;
+        let d;
+        while ((d = inp.consumeDir ? inp.consumeDir() : null)) {
+          const was = pick;
+          if (d === 'left' || d === 'up') pick = 'coin';
+          if (d === 'right' || d === 'down') pick = 'token';
+          if (pick !== was) { paintPick(); sfx.click(); }
+        }
+        if (inp.consumeAPress()) { stop(); onRaise(pick); return; }
+        if (inp.consumeBPress()) {
+          // Back to the count, not out of the rite: changing your mind about
+          // how to pay should not cost you the number you picked.
+          stop();
+          walletSkipBtn.hidden = true;
+          cultistSlider.hidden = false;
+          walletSubmitBtn.textContent = 'Raise it';
+          walletMsg.innerHTML = 'How many Cultists shall this Bloodline hold? The count is fixed '
+            + `forever at the moment it is raised. <span class="addr">${formatAvax(price)} ${COIN}</span>`
+            + ` or <span class="addr">${formatUnits(payTok.price, payTok.decimals)} ${payTok.symbol}</span> each.`;
+          _mintInput = slider;
+          input.flush();
+        }
+      },
+    };
+    input.flush();
+  }
+  const slider = _mintInput;
+
+  async function onRaise(how = 'coin') {
+    const n = Number(cultistRange.value);
+    const usingToken = how === 'token' && !!payTok;
+    cultistSlider.hidden = true;
+    walletSkipBtn.hidden = true;
     cultistRange.disabled = true;
     walletSubmitBtn.disabled = true;
+    walletSubmitBtn.hidden = true;
+    _mintInput = null;
     walletMsg.textContent = `Confirm ${n} Cultist${n === 1 ? '' : 's'} in your wallet…`;
     try {
       const before = heldBloodlines.length;
-      const hash = await mintBloodline(connectedAddr, n);
+      const hash = usingToken
+        // Two signatures, and the screen says which is which — an unexplained
+        // second wallet prompt is how a mint gets abandoned half-done.
+        ? await mintBloodlineWithToken(connectedAddr, n, (step) => {
+          walletMsg.innerHTML = step === 'approve'
+            ? `<b>1 of 2.</b> Allow the abbey to take `
+              + `<span class="addr">${formatUnits(tokenTotal(n), payTok.decimals)} ${payTok.symbol}</span>.`
+            : `<b>2 of 2.</b> Confirm the mint in your wallet…`;
+        })
+        : await mintBloodline(connectedAddr, n);
       walletMsg.innerHTML = `Sent. Waiting for the chain to seal it…<br><span class="addr">${String(hash).slice(0, 18)}…</span>`;
       const receipt = await waitForTx(hash);
       if (receipt && receipt.status === '0x0') throw new Error('The transaction was reverted.');
@@ -1537,7 +1678,7 @@ async function openMintPicker(menu) {
   }
 
   cultistRange.addEventListener('input', paint);
-  walletSubmitBtn.addEventListener('click', onRaise);
+  walletSubmitBtn.addEventListener('click', onPickCount);
   walletBackBtn.addEventListener('click', teardown);
 }
 
@@ -1552,16 +1693,44 @@ async function openMintPicker(menu) {
 // Sign the confession payment. The scene asks for it; only this file knows the
 // connected address. Both the destination and the amount come from the server's
 // quote and neither is computed here — see payConfession in wallet.js.
-async function payForConfession(payTo, wei, avax) {
+async function payForConfession(quote) {
   if (!connectedAddr) { showToast('No wallet is connected.', { size: 't-mid' }); return null; }
-  showToast(`Confirm ${avax} ${COIN} in your wallet to mend the streak.`, { size: 't-mid' });
+  const { payTo, price } = quote;
+  const tok = price.token || null;
+
+  // Two doors, so ask which. One door, so do not.
+  let useToken = false;
+  if (tok) {
+    const pick = await chooseOverlay({
+      title: 'Mend the streak',
+      message: `Week ${price.week}. ${price.pct}% of what the line cost to raise, `
+        + `across ${price.cultists} Cultist${price.cultists === 1 ? '' : 's'}.<br><br>How will you pay?`,
+      a: `${price.avax} ${COIN}`,
+      b: `${formatUnits(tok.wei, tok.decimals)} ${tok.symbol}`,
+    });
+    if (!pick) return null;
+    useToken = pick === 'b';
+  }
+
+  showToast(
+    useToken
+      ? `Confirm ${formatUnits(tok.wei, tok.decimals)} ${tok.symbol} in your wallet to mend the streak.`
+      : `Confirm ${price.avax} ${COIN} in your wallet to mend the streak.`,
+    { size: 't-mid' },
+  );
   try {
-    return await payConfession(connectedAddr, payTo, wei);
+    return useToken
+      ? await payConfessionWithToken(connectedAddr, tok.address, payTo, tok.wei)
+      : await payConfession(connectedAddr, payTo, price.wei);
   } catch (e) {
     const why = {
       NO_WALLET: 'No wallet connected.',
       NO_TREASURY: 'The abbey did not say where to send it. Nothing was paid.',
+      NO_TOKEN: 'The abbey did not name the token. Nothing was paid.',
       BAD_AMOUNT: 'The abbey quoted nothing to pay.',
+      NOT_ENOUGH_TOKEN: tok
+        ? `You do not hold ${formatUnits(tok.wei, tok.decimals)} ${tok.symbol}. Nothing was paid.`
+        : 'You do not hold enough. Nothing was paid.',
       WRONG_CHAIN: `Switch your wallet to ${CHAIN_PARAMS.chainName} and try again.`,
     }[e && e.message] || (e && e.message) || 'The payment was not sent.';
     showToast(why, { size: 't-mid' });

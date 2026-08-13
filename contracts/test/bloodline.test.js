@@ -2,15 +2,21 @@ const { expect } = require('chai');
 const { ethers } = require('hardhat');
 
 const PRICE = ethers.parseEther('0.01');
+// 30,000 THROBBIN a Cultist, at the mock token's 18 decimals.
+const TOKEN_PRICE = 30000n * 10n ** 18n;
+const ZERO = '0x0000000000000000000000000000000000000000';
 const ERC5192_ID = '0xb45a3c0e';   // bytes4(keccak256('locked(uint256)'))
 
 describe('ThrobbinAbbeyBloodline', () => {
-  let c, owner, alice, bob, team, treasury;
+  let c, tok, owner, alice, bob, team, treasury;
 
   beforeEach(async () => {
     [owner, alice, bob, team, treasury] = await ethers.getSigners();
     const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
-    c = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/');
+    tok = await (await ethers.getContractFactory('MockERC20')).deploy('Throbbin', 'THROBBIN', 18);
+    await tok.waitForDeployment();
+    c = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/',
+                       await tok.getAddress(), TOKEN_PRICE);
     await c.waitForDeployment();
     await c.setMintOpen(true);
   });
@@ -54,13 +60,13 @@ describe('ThrobbinAbbeyBloodline', () => {
 
   it('cannot be minted until the mint is opened', async () => {
     const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
-    const shut = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/');
+    const shut = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/', ZERO, 0);
     await expect(shut.connect(alice).mint(1, { value: PRICE })).to.be.revertedWith('mint closed');
   });
 
   it('stops at max supply', async () => {
     const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
-    const tiny = await F.deploy(PRICE, 2, team.address, treasury.address, 'https://x/nft/');
+    const tiny = await F.deploy(PRICE, 2, team.address, treasury.address, 'https://x/nft/', ZERO, 0);
     await tiny.setMintOpen(true);
     await tiny.connect(alice).mint(1, { value: PRICE });
     await tiny.connect(bob).mint(1, { value: PRICE });
@@ -80,7 +86,7 @@ describe('ThrobbinAbbeyBloodline', () => {
   it('mints past any plausible cap when supply is set uncapped', async () => {
     const MAX = 2n ** 256n - 1n;
     const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
-    const open = await F.deploy(PRICE, MAX, team.address, treasury.address, 'https://x/nft/');
+    const open = await F.deploy(PRICE, MAX, team.address, treasury.address, 'https://x/nft/', ZERO, 0);
     await open.setMintOpen(true);
     expect(await open.maxSupply()).to.equal(MAX);
     for (let i = 0; i < 5; i++) await open.connect(alice).mint(1, { value: PRICE });
@@ -159,7 +165,7 @@ describe('ThrobbinAbbeyBloodline', () => {
 
     it('does not need the mint to be open', async () => {
       const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
-      const shut = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/');
+      const shut = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/', ZERO, 0);
       expect(await shut.mintOpen()).to.equal(false);
       await shut.founderMint(3);                    // the public mint is closed
       expect(await shut.ownerOf(1)).to.equal(owner.address);
@@ -230,6 +236,186 @@ describe('ThrobbinAbbeyBloodline', () => {
       expect(await c.ownerOf(1)).to.equal(alice.address);
       expect(await c.bloodlinesOf(alice.address)).to.deep.equal([1n]);
       expect(await c.cultistsHeldBy(alice.address)).to.equal(4);
+    });
+  });
+
+  // ---- PAYING IN $THROBBIN ----
+  //
+  // The second door. 30,000 a Cultist, flat — no oracle, no conversion, and no
+  // way to change either price once the contract is out.
+
+  describe('minting with the token', () => {
+    const fund = async (who, cultists) => {
+      const cost = TOKEN_PRICE * BigInt(cultists);
+      await tok.mint(who.address, cost);
+      await tok.connect(who).approve(await c.getAddress(), cost);
+      return cost;
+    };
+
+    it('costs 30,000 THROBBIN per cultist', async () => {
+      expect(await c.tokenPricePerCultist()).to.equal(TOKEN_PRICE);
+      const cost = await fund(alice, 7);
+      await c.connect(alice).mintWithToken(7);
+      expect(await c.cultistsOf(1)).to.equal(7);
+      expect(await c.ownerOf(1)).to.equal(alice.address);
+      expect(await tok.balanceOf(await c.getAddress())).to.equal(cost);
+      expect(await tok.balanceOf(alice.address)).to.equal(0);
+    });
+
+    it('produces a line indistinguishable from one bought with coin', async () => {
+      await fund(alice, 4);
+      await c.connect(alice).mintWithToken(4);
+      await c.connect(bob).mint(4, { value: PRICE * 4n });
+      expect(await c.cultistsOf(1)).to.equal(await c.cultistsOf(2));
+      expect(await c.locked(1)).to.equal(true);
+      expect(await c.tokenURI(1)).to.equal('https://x/nft/1');
+    });
+
+    it('is soulbound too', async () => {
+      await fund(alice, 1);
+      await c.connect(alice).mintWithToken(1);
+      await expect(c.connect(alice).transferFrom(alice.address, bob.address, 1))
+        .to.be.revertedWithCustomError(c, 'Soulbound');
+    });
+
+    it('says on chain what was paid, and in which currency', async () => {
+      const cost = await fund(alice, 3);
+      const tx = c.connect(alice).mintWithToken(3);
+      await expect(tx).to.emit(c, 'MintedWithToken').withArgs(alice.address, 1, 3, cost);
+      // Minted carries paid = 0: no coin changed hands, and a reader summing
+      // Minted.paid must not count a token mint as coin revenue.
+      await expect(tx).to.emit(c, 'Minted').withArgs(alice.address, 1, 3, 0);
+      await expect(tx).to.emit(c, 'Locked').withArgs(1);
+    });
+
+    it('needs an approval first, and refuses without one', async () => {
+      await tok.mint(alice.address, TOKEN_PRICE);
+      await expect(c.connect(alice).mintWithToken(1))
+        .to.be.revertedWithCustomError(tok, 'ERC20InsufficientAllowance');
+    });
+
+    it('refuses a wallet that approved but does not hold enough', async () => {
+      await tok.mint(alice.address, TOKEN_PRICE - 1n);
+      await tok.connect(alice).approve(await c.getAddress(), TOKEN_PRICE);
+      await expect(c.connect(alice).mintWithToken(1))
+        .to.be.revertedWithCustomError(tok, 'ERC20InsufficientBalance');
+    });
+
+    it('honours the same 1-20 range and the same closed mint', async () => {
+      await fund(alice, 20);
+      await expect(c.connect(alice).mintWithToken(0)).to.be.revertedWith('1-20 cultists');
+      await expect(c.connect(alice).mintWithToken(21)).to.be.revertedWith('1-20 cultists');
+      await c.setMintOpen(false);
+      await expect(c.connect(alice).mintWithToken(1)).to.be.revertedWith('mint closed');
+    });
+
+    it('shares one numbering with the coin mint', async () => {
+      await c.connect(bob).mint(1, { value: PRICE });
+      await fund(alice, 1);
+      await c.connect(alice).mintWithToken(1);
+      expect(await c.ownerOf(1)).to.equal(bob.address);
+      expect(await c.ownerOf(2)).to.equal(alice.address);
+      expect(await c.minted()).to.equal(2);
+    });
+
+    it('counts against max supply like any other', async () => {
+      const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
+      const tiny = await F.deploy(PRICE, 1, team.address, treasury.address, 'https://x/nft/',
+                                  await tok.getAddress(), TOKEN_PRICE);
+      await tiny.setMintOpen(true);
+      await tok.mint(alice.address, TOKEN_PRICE * 2n);
+      await tok.connect(alice).approve(await tiny.getAddress(), TOKEN_PRICE * 2n);
+      await tiny.connect(alice).mintWithToken(1);
+      await expect(tiny.connect(alice).mintWithToken(1)).to.be.revertedWith('sold out');
+    });
+
+    it('is shut entirely when no token was set at deploy', async () => {
+      const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
+      const noTok = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/', ZERO, 0);
+      await noTok.setMintOpen(true);
+      await expect(noTok.connect(alice).mintWithToken(1)).to.be.revertedWith('token minting is off');
+      await expect(noTok.withdrawToken()).to.be.revertedWith('no token');
+      // And the coin door is untouched.
+      await noTok.connect(alice).mint(1, { value: PRICE });
+      expect(await noTok.ownerOf(1)).to.equal(alice.address);
+    });
+
+    it('refuses a deploy that sets one half of the pair', async () => {
+      const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
+      const t = await tok.getAddress();
+      await expect(F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/', t, 0))
+        .to.be.revertedWith('token needs both address and price');
+      await expect(F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/', ZERO, TOKEN_PRICE))
+        .to.be.revertedWith('token needs both address and price');
+    });
+
+    it('does not assume 18 decimals', async () => {
+      // A 6-decimal token: 30,000 of it is 30000e6, and nothing in the contract
+      // should care which it is.
+      const six = await (await ethers.getContractFactory('MockERC20')).deploy('Six', 'SIX', 6);
+      const price6 = 30000n * 10n ** 6n;
+      const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
+      const c6 = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/',
+                                await six.getAddress(), price6);
+      await c6.setMintOpen(true);
+      await six.mint(alice.address, price6 * 2n);
+      await six.connect(alice).approve(await c6.getAddress(), price6 * 2n);
+      await c6.connect(alice).mintWithToken(2);
+      expect(await six.balanceOf(await c6.getAddress())).to.equal(price6 * 2n);
+    });
+
+    it('refuses a token that takes a cut, rather than selling cheap', async () => {
+      const fee = await (await ethers.getContractFactory('FeeERC20')).deploy(100);   // 1%
+      const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
+      const cf = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/',
+                                await fee.getAddress(), TOKEN_PRICE);
+      await cf.setMintOpen(true);
+      await fee.mint(alice.address, TOKEN_PRICE);
+      await fee.connect(alice).approve(await cf.getAddress(), TOKEN_PRICE);
+      await expect(cf.connect(alice).mintWithToken(1)).to.be.revertedWith('token short - fee on transfer?');
+    });
+
+    it('refuses a token that calls back into the mint', async () => {
+      const re = await (await ethers.getContractFactory('ReentrantERC20')).deploy();
+      const F = await ethers.getContractFactory('ThrobbinAbbeyBloodline');
+      const cr = await F.deploy(PRICE, 100, team.address, treasury.address, 'https://x/nft/',
+                                await re.getAddress(), TOKEN_PRICE);
+      await cr.setMintOpen(true);
+      await re.mint(alice.address, TOKEN_PRICE * 4n);
+      await re.connect(alice).approve(await cr.getAddress(), TOKEN_PRICE * 4n);
+      await re.arm(await cr.getAddress());
+      await expect(cr.connect(alice).mintWithToken(1))
+        .to.be.revertedWithCustomError(cr, 'ReentrancyGuardReentrantCall');
+    });
+
+    it('sweeps the token 20/80 as well, and anyone may call it', async () => {
+      const cost = await fund(alice, 10);
+      await c.connect(alice).mintWithToken(10);
+      await c.connect(bob).withdrawToken();                       // not the owner
+      expect(await tok.balanceOf(team.address)).to.equal(cost / 5n);
+      expect(await tok.balanceOf(treasury.address)).to.equal(cost - cost / 5n);
+      expect(await tok.balanceOf(await c.getAddress())).to.equal(0);
+    });
+
+    it('sweeps each currency without needing the other', async () => {
+      // Coin only: the token sweep has nothing to do and says so, and the coin
+      // sweep still works. One function requiring both would strand whichever
+      // arrived first.
+      await c.connect(bob).mint(1, { value: PRICE });
+      await expect(c.withdrawToken()).to.be.revertedWith('nothing to withdraw');
+      await c.withdraw();
+      // Token only.
+      await fund(alice, 1);
+      await c.connect(alice).mintWithToken(1);
+      await expect(c.withdraw()).to.be.revertedWith('nothing to withdraw');
+      await c.withdrawToken();
+      expect(await tok.balanceOf(treasury.address)).to.equal(TOKEN_PRICE - TOKEN_PRICE / 5n);
+    });
+
+    it('keeps the token price immutable too', () => {
+      const names = c.interface.fragments.filter((f) => f.type === 'function').map((f) => f.name);
+      expect(names).to.not.include('setTokenPrice');
+      expect(names).to.not.include('setPayToken');
     });
   });
 });

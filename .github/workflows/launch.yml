@@ -43,6 +43,14 @@ on:
         description: 'IMMUTABLE. 0.01 ETH = 10000000000000000. A 20-Cultist line costs 20x this.'
         required: true
         default: '10000000000000000'
+      pay_token:
+        description: 'IMMUTABLE. ERC-20 players may pay with instead of the coin. Blank = coin only.'
+        required: false
+        default: '0xe8fB470E0685437d7739BD2AacBA60b228800335'
+      pay_token_per_cultist:
+        description: 'IMMUTABLE. Whole tokens per Cultist, written plainly: 30000. Decimals are read off the token.'
+        required: false
+        default: '30000'
       founder_cultists:
         description: 'Cultists in the founder free line (1-20). 0 to skip the founder mint.'
         required: true
@@ -90,6 +98,8 @@ jobs:
             echo "| price per Cultist | \`${{ inputs.price_per_cultist_wei }}\` wei |"
             echo "| a 20-Cultist line | \`$(( ${{ inputs.price_per_cultist_wei }} / 1000000000000000 * 20 ))\` milli-units |"
             echo "| founder Cultists | \`${{ inputs.founder_cultists }}\` |"
+            echo "| token door | \`${{ inputs.pay_token || 'off — coin only' }}\` |"
+            echo "| price in token | \`${{ inputs.pay_token_per_cultist || 'n/a' }}\` per Cultist |"
             echo "| previous collection | \`${{ inputs.old_contract || 'none — first launch' }}\` |"
             echo ""
             echo "The player database will be archived and day 0 reset."
@@ -146,6 +156,8 @@ jobs:
             echo "PRICE_PER_CULTIST_WEI=${{ inputs.price_per_cultist_wei }}"
             echo "MAX_SUPPLY=${{ inputs.max_supply }}"
             echo "BASE_URI=${{ inputs.base_uri }}"
+            echo "PAY_TOKEN=${{ inputs.pay_token }}"
+            echo "PAY_TOKEN_PER_CULTIST=${{ inputs.pay_token_per_cultist }}"
           } > .env
 
       # ---- 3 & 4: finish with the old collection before starting the new one --
@@ -187,11 +199,19 @@ jobs:
           TEAM_ADDRESS: ${{ secrets.TEAM_ADDRESS }}
           TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
         run: |
+          # The token price in SMALLEST UNITS is not an input — deploy.js works
+          # it out from the token's own decimals() and records it. Reading it
+          # back is the only way the verify arguments can match what was
+          # actually deployed.
+          REC="deployments/${{ inputs.network }}.json"
+          PAY_TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REC','utf8')).payToken)")
+          TOKEN_PRICE=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REC','utf8')).tokenPricePerCultist)")
           npx hardhat verify --network ${{ inputs.network }} \
             "${{ steps.deploy.outputs.address }}" \
             "${{ inputs.price_per_cultist_wei }}" \
             "${{ inputs.max_supply }}" \
-            "$TEAM_ADDRESS" "$TREASURY_ADDRESS" "${{ inputs.base_uri }}"
+            "$TEAM_ADDRESS" "$TREASURY_ADDRESS" "${{ inputs.base_uri }}" \
+            "$PAY_TOKEN" "$TOKEN_PRICE"
 
       # ---- 7: the founder's line, before anyone else can mint ----------------
       - name: Founder mint
@@ -221,9 +241,10 @@ jobs:
           DEPLOYED_AT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REC','utf8')).deployedAt)")
           echo "deployedAt=$DEPLOYED_AT" >> "$GITHUB_OUTPUT"
 
-          node - "$ADDR" "$DEPLOYED_AT" "$NET" <<'JS'
+          node - "$ADDR" "$DEPLOYED_AT" "$NET" "$REC" <<'JS'
           const fs = require('fs');
-          const [addr, deployedAt, net] = process.argv.slice(2);
+          const [addr, deployedAt, net, rec] = process.argv.slice(2);
+          const record = JSON.parse(fs.readFileSync(rec, 'utf8'));
           // A pattern that no longer matches is a broken launch and stops it.
           // A pattern that matches and is ALREADY the wanted value is not —
           // relaunching on the same chain rewrites the address and the date but
@@ -275,6 +296,17 @@ jobs:
           // commit.
           edit('server/src/index.js', /const CHAIN_ID = Number\(process\.env\.CHAIN_ID \|\| \d+\);/,
                `const CHAIN_ID = Number(process.env.CHAIN_ID || ${chain.id});`);
+
+          // THE SECOND DOOR. Both are read back off the deployment record
+          // rather than from the workflow inputs: the raw price is computed
+          // from the token's own decimals() at deploy time, and the ticker is
+          // read off the token, so neither is knowable up here. Blank when the
+          // collection was deployed coin-only, which is what shuts the door in
+          // the client.
+          const ZERO = '0x' + '0'.repeat(40);
+          const tokenOn = record.payToken && record.payToken !== ZERO;
+          meta('pay-token', tokenOn ? record.payToken : '');
+          meta('pay-token-symbol', tokenOn ? (record.tokenSymbol || '') : '');
 
           // And DAY 0. The trailing comment names the deployment record this
           // has to agree with, so it moves with the network.

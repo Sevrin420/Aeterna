@@ -238,8 +238,10 @@ async function rpc(method, params) {
   return body.result;
 }
 
-async function chainCall(data) {
-  const result = await rpc('eth_call', [{ to: BLOODLINE_ADDRESS, data }, 'latest']);
+// `to` defaults to the collection. It is passed explicitly only to read the
+// payment token's own decimals() and symbol(), which belong to the token.
+async function chainCall(data, to = BLOODLINE_ADDRESS) {
+  const result = await rpc('eth_call', [{ to, data }, 'latest']);
   // ownerOf() reverts on an unminted id, and a bare '0x' is the same answer
   // from a node that would rather not say so.
   if (!result || result === '0x') throw new NoSuchToken('empty result');
@@ -247,6 +249,10 @@ async function chainCall(data) {
 }
 
 const padUint256 = (n) => BigInt(n).toString(16).padStart(64, '0');
+
+/// keccak256('Transfer(address,address,uint256)') — topic 0 on every ERC-20
+/// transfer, which is where a token payment to the treasury is recorded.
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
 // pricePerCultist(), cached for the life of the process.
 //
@@ -271,21 +277,108 @@ async function pricePerCultistWei() {
   }
 }
 
-// What mending this player's streak costs, right now. Both inputs are the
-// abbey's own: the week from the abbey's clock, the Cultists from the row that
-// /bind verified against the chain.
+// ── THE SECOND DOOR: paying in the collection's ERC-20 ──────────────────────
+//
+// The same immutability argument as the price above, so the same one-call-per-
+// boot cache. Null here means two different things and the caller must not
+// conflate them: `payToken` null after a successful read means the collection
+// was deployed with the token door shut, which is a permanent fact; a throw
+// means the chain could not be reached, which is not.
+let _payToken = undefined;          // undefined = unread, null = off, string = address
+let _tokenPricePerCultist = null;
+let _tokenSymbol = null;
+let _tokenDecimals = null;
+
+async function payTokenInfo() {
+  if (_payToken !== undefined) {
+    return _payToken === null ? null
+      : { address: _payToken, price: _tokenPricePerCultist, symbol: _tokenSymbol, decimals: _tokenDecimals };
+  }
+  try {
+    const raw = await chainCall('0x96336b30');                    // payToken()
+    const addr = '0x' + String(raw).replace(/^0x/, '').slice(-40).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(addr) || addr === `0x${'0'.repeat(40)}`) {
+      _payToken = null;                                            // deployed with the door shut
+      return null;
+    }
+    const price = BigInt(await chainCall('0xa157c70f') || '0x0');  // tokenPricePerCultist()
+    if (price <= 0n) { _payToken = null; return null; }
+
+    // Read off the TOKEN, not the collection — the ticker a player is shown and
+    // the decimals the amount is formatted with both belong to the token.
+    const dp = Number(BigInt(await chainCall('0x313ce567', addr) || '0x12'));
+    let sym = 'TOKEN';
+    try { sym = decodeAbiString(await chainCall('0x95d89b41', addr)) || 'TOKEN'; } catch { /* keep the fallback */ }
+
+    _payToken = addr;
+    _tokenPricePerCultist = price;
+    _tokenDecimals = Number.isFinite(dp) && dp >= 0 && dp <= 36 ? dp : 18;
+    _tokenSymbol = sym;
+    return { address: addr, price, symbol: sym, decimals: _tokenDecimals };
+  } catch {
+    return null;                                                   // not cached: retry next time
+  }
+}
+
+// A `string` return, ABI-encoded: [offset][length][bytes...]. Some older tokens
+// return a bytes32 instead; that case is read as a NUL-padded ASCII word rather
+// than refused, because a wrong ticker must not stop a payment.
+function decodeAbiString(hex) {
+  const b = String(hex || '').replace(/^0x/, '');
+  if (!b) return null;
+  if (b.length === 64) {
+    const s = Buffer.from(b, 'hex').toString('utf8').replace(/\0+$/, '').trim();
+    return /^[\x20-\x7e]{1,32}$/.test(s) ? s : null;
+  }
+  const off = Number(BigInt('0x' + b.slice(0, 64))) * 2;
+  const len = Number(BigInt('0x' + b.slice(off, off + 64)));
+  if (!len || len > 128) return null;
+  return Buffer.from(b.slice(off + 64, off + 64 + len * 2), 'hex').toString('utf8').trim();
+}
+
+// Smallest units -> a human string, without a float anywhere near it.
+function formatUnits(raw, dp) {
+  const v = BigInt(raw || 0);
+  const scale = 10n ** BigInt(dp);
+  const whole = v / scale;
+  const frac = (v % scale).toString().padStart(dp, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : String(whole);
+}
+
+// What mending this player's streak costs, right now, in EITHER currency. Both
+// inputs are the abbey's own: the week from the abbey's clock, the Cultists from
+// the row that /bind verified against the chain.
+//
+// The two prices are independent — the same percentage applied to two flat mint
+// prices — so neither is converted from the other and there is no rate here.
 async function confessionPriceFor(player, now = new Date()) {
   const price = await pricePerCultistWei();
   if (price === null) return null;
   const week = abbeyWeek(now);
-  const wei = confessionCostWei(price, player.cultists || 0, week);
-  return {
+  const cultists = player.cultists || 0;
+  const wei = confessionCostWei(price, cultists, week);
+
+  const out = {
     week,
     pct: confessionPct(week),
-    cultists: player.cultists || 0,
+    cultists,
     wei: wei.toString(),
     avax: weiToAvax(wei),
+    coin: COIN,
   };
+
+  const tok = await payTokenInfo();
+  if (tok) {
+    const raw = confessionCostWei(tok.price, cultists, week);
+    out.token = {
+      address: tok.address,
+      symbol: tok.symbol,
+      decimals: tok.decimals,
+      wei: raw.toString(),
+      amount: formatUnits(raw, tok.decimals),
+    };
+  }
+  return out;
 }
 
 // ── WHERE THE MONEY GOES ────────────────────────────────────────────────────
@@ -728,12 +821,16 @@ fastify.post('/confession', async (req, reply) => {
     return reply.code(503).send({ error: 'The abbey cannot say where its own coffer is. Nothing was taken.' });
   }
 
-  // No payment yet: quote, and say where to send it.
+  // No payment yet: quote, and say where to send it. Both prices go out; the
+  // player picks, and whichever they send is what gets checked below.
   if (!txHash) {
     return reply.code(402).send({
-      error: `The mending costs ${price.avax} ${COIN}.`,
+      error: price.token
+        ? `The mending costs ${price.avax} ${COIN}, or ${price.token.amount} ${price.token.symbol}.`
+        : `The mending costs ${price.avax} ${COIN}.`,
       price,
       payTo: treasury,
+      payToken: price.token || null,
     });
   }
 
@@ -762,21 +859,57 @@ fastify.post('/confession', async (req, reply) => {
     return reply.code(400).send({ error: 'That transaction failed on the chain.' });
   }
 
+  // WHICH CURRENCY DID THEY SEND? A coin payment is a plain transfer to the
+  // treasury and shows up as tx.to + tx.value. A token payment goes TO THE
+  // TOKEN CONTRACT and the treasury never appears in the transaction itself —
+  // it appears in a Transfer log. Reading tx.value on one of those gives zero,
+  // so the two are told apart before either is judged.
   const to = String(tx.to || '').toLowerCase();
-  if (to !== treasury) {
+  const paidInToken = !!(price.token && to === price.token.address);
+
+  if (!paidInToken && to !== treasury) {
     req.log.warn({ hash, to, treasury }, 'confession: payment sent somewhere other than the treasury');
     return reply.code(400).send({ error: 'That payment did not go to the abbey.' });
   }
 
-  const paid = BigInt(tx.value || '0x0');
-  const owed = BigInt(price.wei);
-  if (paid < owed) {
-    return reply.code(402).send({
-      error: `That is not enough. The mending costs ${price.avax} ${COIN}.`,
-      price,
-      payTo: treasury,
-    });
+  const notEnough = () => reply.code(402).send({
+    error: paidInToken
+      ? `That is not enough. The mending costs ${price.token.amount} ${price.token.symbol}.`
+      : `That is not enough. The mending costs ${price.avax} ${COIN}.`,
+    price,
+    payTo: treasury,
+    payToken: price.token || null,
+  });
+
+  let paid;
+  let owed;
+  if (paidInToken) {
+    // Sum every Transfer of THIS token to the treasury in this transaction. A
+    // sum rather than a first-match: a token that splits a transfer across two
+    // events would otherwise look underpaid, and paying twice in one
+    // transaction is a player being generous, not an attack.
+    owed = BigInt(price.token.wei);
+    paid = 0n;
+    for (const log of receipt.logs || []) {
+      if (String(log.address || '').toLowerCase() !== price.token.address) continue;
+      const t = log.topics || [];
+      if (String(t[0] || '').toLowerCase() !== TRANSFER_TOPIC) continue;
+      // topics = [sig, from, to]; the recipient is the low 20 bytes of topic 2.
+      if (t.length < 3) continue;
+      if ('0x' + String(t[2]).replace(/^0x/, '').slice(-40).toLowerCase() !== treasury) continue;
+      paid += BigInt(log.data || '0x0');
+    }
+    if (paid === 0n) {
+      req.log.warn({ hash, token: price.token.address, treasury },
+        'confession: token transaction carried no transfer to the treasury');
+      return reply.code(400).send({ error: 'That payment did not go to the abbey.' });
+    }
+  } else {
+    paid = BigInt(tx.value || '0x0');
+    owed = BigInt(price.wei);
   }
+
+  if (paid < owed) return notEnough();
 
   // (4). The payer must still hold the line being mended — otherwise a
   // stranger's payment, or an old one from a wallet that has since sold up,
@@ -795,9 +928,14 @@ fastify.post('/confession', async (req, reply) => {
   const now = new Date().toISOString();
   try {
     db.prepare(`
-      UPDATE streak_logs SET confessed = 1, confessed_at = ?, cost_eth = ?, tx_hash = ?
+      UPDATE streak_logs
+      SET confessed = 1, confessed_at = ?, cost_eth = ?, paid_currency = ?, paid_amount = ?, tx_hash = ?
       WHERE id = ?
-    `).run(now, price.avax, hash, pending.id);
+    `).run(now,
+           paidInToken ? null : price.avax,
+           paidInToken ? price.token.symbol : 'coin',
+           paid.toString(),
+           hash, pending.id);
   } catch (e) {
     // The UNIQUE index firing here means another request banked this same hash
     // between the check above and now. That is the race the index exists for.
@@ -817,7 +955,11 @@ fastify.post('/confession', async (req, reply) => {
 
   return {
     success: true,
-    costPaid: price.avax,
+    // What was actually taken, in the currency it was actually taken in — the
+    // toast says this back to the player, and quoting a coin figure at somebody
+    // who paid in the token would be a lie about their own payment.
+    costPaid: paidInToken ? price.token.amount : price.avax,
+    paidCurrency: paidInToken ? price.token.symbol : COIN,
     price,
     txHash: hash,
     confessionCount: fresh.confession_count + 1,

@@ -70,7 +70,9 @@ CREATE TABLE IF NOT EXISTS streak_logs (
   broke         INTEGER DEFAULT 0,
   confessed     INTEGER DEFAULT 0,
   confessed_at  TEXT,
-  cost_eth      REAL,
+  cost_eth      REAL,          -- the COIN amount, NULL when paid in the token
+  paid_currency TEXT,          -- 'coin' or the token's ticker
+  paid_amount   TEXT,          -- what actually moved, in smallest units
   tx_hash       TEXT
 );
 

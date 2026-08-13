@@ -922,7 +922,9 @@ export class AbbeyScene {
         text: '"You have broken something."\n\n'
           + `"Week ${p.week}. ${p.pct}% of what the line cost to raise, `
           + `across ${p.cultists} Cultist${p.cultists === 1 ? '' : 's'}."\n\n`
-          + `"${p.avax} ${COIN}. Kneel, or go."`,
+          + (p.token
+            ? `"${p.avax} ${COIN}, or ${p.token.amount} ${p.token.symbol}. Kneel, or go."`
+            : `"${p.avax} ${COIN}. Kneel, or go."`),
       };
     }
     return LORE.stations[s.id] || LORE.stations[s.kind];
@@ -951,8 +953,10 @@ export class AbbeyScene {
         quote = e.body;
       }
 
-      // 2. Sign the transfer the server quoted.
-      const hash = await this.onConfessionPay(quote.payTo, quote.price.wei, quote.price.avax);
+      // 2. Sign the transfer the server quoted. The whole quote goes up: it
+      //    carries both prices, and picking between them happens where the
+      //    overlay is.
+      const hash = await this.onConfessionPay(quote);
       if (!hash) { this.onToast('Nothing was paid, so nothing was mended.'); return; }
 
       // 3. Hand up the hash. The server verifies it against the chain.
@@ -976,7 +980,7 @@ export class AbbeyScene {
     // over a quoted price on a build that took nothing would let a player
     // believe they had paid it.
     this.onToast(res.collected
-      ? `Paid ${res.costPaid} ${COIN}. Streak restored to ${res.restoredStreak}.`
+      ? `Paid ${res.costPaid} ${res.paidCurrency || COIN}. Streak restored to ${res.restoredStreak}.`
       : `Streak restored to ${res.restoredStreak}. Nothing was taken.`);
   }
 

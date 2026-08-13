@@ -3,7 +3,10 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title Throbbin Abbey Bloodline
@@ -43,10 +46,30 @@ interface IERC5192 {
     function locked(uint256 tokenId) external view returns (bool);
 }
 
-contract ThrobbinAbbeyBloodline is ERC721Enumerable, Ownable, IERC5192 {
-    /// Price of one Cultist. Immutable: the cost of a Bloodline can never be
-    /// changed out from under someone who is mid-mint.
+contract ThrobbinAbbeyBloodline is ERC721Enumerable, Ownable, ReentrancyGuard, IERC5192 {
+    using SafeERC20 for IERC20;
+
+    /// Price of one Cultist in the chain's own coin. Immutable: the cost of a
+    /// Bloodline can never be changed out from under someone who is mid-mint.
     uint256 public immutable pricePerCultist;
+
+    /// The other way to pay: an ERC-20, at a price of its own.
+    ///
+    /// TWO PRICES, NOT A CONVERSION. There is no oracle here and there is
+    /// deliberately not going to be one — the token price is a flat number set
+    /// at deploy, so a mint costs what the sign says whatever the market does
+    /// that week. The consequence is honest and worth stating: if the token's
+    /// value moves, one of the two doors becomes the cheap one, and neither
+    /// price can be adjusted afterwards.
+    ///
+    /// address(0) shuts the token door entirely — which is what a testnet
+    /// deploy wants, where the token does not exist.
+    IERC20 public immutable payToken;
+
+    /// Price of one Cultist in payToken's SMALLEST UNIT. 30,000 tokens at 18
+    /// decimals is 30000e18, and the deploy script computes it from the token's
+    /// own decimals() rather than trusting anyone to count the zeros.
+    uint256 public immutable tokenPricePerCultist;
 
     /// Most Cultists one Bloodline may hold.
     uint256 public constant MAX_CULTISTS = 20;
@@ -89,22 +112,37 @@ contract ThrobbinAbbeyBloodline is ERC721Enumerable, Ownable, IERC5192 {
     error Soulbound();
 
     event Minted(address indexed to, uint256 indexed tokenId, uint256 cultists, uint256 paid);
+    /// A mint paid for in payToken. Separate from Minted's `paid`, which is the
+    /// chain's own coin — one event carrying "an amount" of either would make
+    /// every reader guess which.
+    event MintedWithToken(address indexed to, uint256 indexed tokenId, uint256 cultists, uint256 paidToken);
     event Withdrawn(uint256 toTeam, uint256 toTreasury);
+    event WithdrawnToken(uint256 toTeam, uint256 toTreasury);
 
     constructor(
         uint256 _pricePerCultist,
         uint256 _maxSupply,
         address _team,
         address _treasury,
-        string memory baseURI_
+        string memory baseURI_,
+        address _payToken,
+        uint256 _tokenPricePerCultist
     ) ERC721("Throbbin Abbey Bloodline", "THROB") Ownable(msg.sender) {
         require(_team != address(0) && _treasury != address(0), "zero payout address");
         require(_maxSupply > 0, "zero supply");
+        // Either both or neither. A token address with no price would mint for
+        // free; a price with no token is a setting nothing can ever read.
+        require(
+            (_payToken == address(0)) == (_tokenPricePerCultist == 0),
+            "token needs both address and price"
+        );
         pricePerCultist = _pricePerCultist;
         maxSupply = _maxSupply;
         team = _team;
         treasury = _treasury;
         _base = baseURI_;
+        payToken = IERC20(_payToken);
+        tokenPricePerCultist = _tokenPricePerCultist;
     }
 
     /**
@@ -124,6 +162,44 @@ contract ThrobbinAbbeyBloodline is ERC721Enumerable, Ownable, IERC5192 {
         cultistsOf[tokenId] = cultists;
         _safeMint(msg.sender, tokenId);
         emit Minted(msg.sender, tokenId, cultists, msg.value);
+        emit Locked(tokenId);
+    }
+
+    /**
+     * @notice Mint one Bloodline, paying in payToken instead of the chain's coin.
+     * @dev The caller must approve() this contract for `cultists *
+     *      tokenPricePerCultist` first. That is two transactions rather than
+     *      one, and there is no way around it for a plain ERC-20 — the token
+     *      has to be told before it will let anyone move it.
+     *
+     *      WHAT ARRIVED IS WHAT COUNTS. The balance is measured either side of
+     *      the pull rather than trusting the amount asked for, so a token that
+     *      takes a fee on transfer reverts here instead of quietly buying a
+     *      Bloodline for less than the price. Written for a token this contract
+     *      cannot inspect at deploy time.
+     */
+    function mintWithToken(uint256 cultists) external nonReentrant returns (uint256 tokenId) {
+        require(mintOpen, "mint closed");
+        require(address(payToken) != address(0), "token minting is off");
+        require(cultists >= 1 && cultists <= MAX_CULTISTS, "1-20 cultists");
+        require(_nextId <= maxSupply, "sold out");
+
+        uint256 cost = cultists * tokenPricePerCultist;
+
+        // Effects before the two external calls: a token that calls back finds
+        // the id already spent, so a reentrant mint is another ordinary mint
+        // that the caller pays for again, not a free one.
+        tokenId = _nextId++;
+        cultistsOf[tokenId] = cultists;
+
+        uint256 before = payToken.balanceOf(address(this));
+        payToken.safeTransferFrom(msg.sender, address(this), cost);
+        uint256 received = payToken.balanceOf(address(this)) - before;
+        require(received >= cost, "token short - fee on transfer?");
+
+        _safeMint(msg.sender, tokenId);
+        emit MintedWithToken(msg.sender, tokenId, cultists, received);
+        emit Minted(msg.sender, tokenId, cultists, 0);   // paid no coin, and says so
         emit Locked(tokenId);
     }
 
@@ -220,6 +296,28 @@ contract ThrobbinAbbeyBloodline is ERC721Enumerable, Ownable, IERC5192 {
         (bool b, ) = payable(treasury).call{value: toTreasury}("");
         require(b, "treasury transfer failed");
         emit Withdrawn(toTeam, toTreasury);
+    }
+
+    /**
+     * @notice The same sweep, for whatever payToken the mint has taken in.
+     * @dev A second function rather than a branch in withdraw(), because
+     *      withdraw() must keep working when the token balance is zero and vice
+     *      versa — one function that required both to be non-zero would strand
+     *      whichever arrived first.
+     *
+     *      Callable by anyone, to the same two immutable addresses, for the same
+     *      reason: a lost owner key must not be able to strand the treasury.
+     */
+    function withdrawToken() external nonReentrant {
+        require(address(payToken) != address(0), "no token");
+        uint256 bal = payToken.balanceOf(address(this));
+        require(bal > 0, "nothing to withdraw");
+        uint256 toTeam = (bal * TEAM_BPS) / 10000;
+        uint256 toTreasury = bal - toTeam;
+
+        payToken.safeTransfer(team, toTeam);
+        payToken.safeTransfer(treasury, toTreasury);
+        emit WithdrawnToken(toTeam, toTreasury);
     }
 
     // ---- owner controls: opening the mint, and where metadata is served ----
