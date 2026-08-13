@@ -190,7 +190,7 @@ export function weiToAvax(wei, dp = 4) {
 // restarted the run from week 1 — the previous collection's 2026-08-02T02:29:39Z
 // anchor went with it. Change this and contracts/deployments/avalanche.json
 // together or the abbey's clock and the contract it is meant to track disagree.
-const DEPLOYED_AT = '2026-08-09T02:53:08Z';    // contracts/deployments/avalanche.json
+const DEPLOYED_AT = '2026-08-13T09:57:31.542Z';    // contracts/deployments/robinhood.json
 
 // ── HELD AT DAY 0 UNTIL SOMEBODY SAYS BEGIN ─────────────────────────────────
 //

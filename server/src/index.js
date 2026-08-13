@@ -210,11 +210,11 @@ const AVAX_RPC = process.env.CHAIN_RPC || process.env.AVAX_RPC
 // silently 503s on every server that was updated without someone remembering
 // to hand-edit a file on the box.
 const BLOODLINE_ADDRESS = process.env.BLOODLINE_ADDRESS
-  || '0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878';
+  || '0x95819A1623308C06ddA8947b87d6CfA482EEb9DE';
 // Reported by /collection, which is how a cached page finds out it is reading
 // the wrong collection. It has to match web/index.html's bloodline-chain-id;
 // the launch workflow rewrites both in the same commit.
-const CHAIN_ID = Number(process.env.CHAIN_ID || 43114);
+const CHAIN_ID = Number(process.env.CHAIN_ID || 4663);
 // The gas token's ticker, for the two price errors a player can read. A label,
 // never used for arithmetic — both tokens are 18 decimals.
 const COIN = process.env.CHAIN_SYMBOL || 'AVAX';

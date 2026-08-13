@@ -1,0 +1,19 @@
+{
+  "network": "robinhood",
+  "address": "0x95819A1623308C06ddA8947b87d6CfA482EEb9DE",
+  "deployer": "0x91596DFCD3aA33cBB6a20D1BaAA82c072c40b2A2",
+  "pricePerCultistWei": "10000000000000000",
+  "maxSupply": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+  "team": "0xe8C03A96fEC88E51f7BB1315bF58F38321B5aCaB",
+  "treasury": "0x018B025A1f4d4C049CE4B24ACC080E6f922e67e8",
+  "baseURI": "https://membersonly.cc/nft/",
+  "chainId": 4663,
+  "payToken": "0xe8fB470E0685437d7739BD2AacBA60b228800335",
+  "tokenPricePerCultist": "30000000000000000000000",
+  "tokenSymbol": "THROBBIN",
+  "tokenDecimals": 18,
+  "deployedAt": "2026-08-13T09:57:31.542Z",
+  "founderTokenId": 1,
+  "founderCultists": 1,
+  "tolls": "0x1FaB0729aFCFdce2c3Ba83725B1974cD2518754b"
+}

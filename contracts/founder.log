@@ -1,0 +1,9 @@
+contract   0x95819A1623308C06ddA8947b87d6CfA482EEb9DE
+owner      0x91596DFCD3aA33cBB6a20D1BaAA82c072c40b2A2
+signer     0x91596DFCD3aA33cBB6a20D1BaAA82c072c40b2A2
+cultists   1
+tx         0x4b59467f202fce37244cbf9831791044fa4de92d2c700bcf53756043c463f819
+
+founderTokenId 1
+Set FOUNDER_TOKEN_ID to that on the server, or the founder line is not excluded from the payout.
+recorded in deployments/robinhood.json

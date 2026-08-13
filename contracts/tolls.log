@@ -1,0 +1,16 @@
+from collection  0x95819A1623308C06ddA8947b87d6CfA482EEb9DE
+network          robinhood  (chain 4663)
+deployer         0x91596DFCD3aA33cBB6a20D1BaAA82c072c40b2A2
+team    (20%)    0xe8C03A96fEC88E51f7BB1315bF58F38321B5aCaB
+treasury (80%)   0x018B025A1f4d4C049CE4B24ACC080E6f922e67e8
+token            0xe8fB470E0685437d7739BD2AacBA60b228800335
+
+tolls deployed   0x1FaB0729aFCFdce2c3Ba83725B1974cD2518754b
+No tolls are named yet. Add one with scripts/setToll.js — that is a
+transaction, not a deploy, and it is all a new priced thing needs.
+recorded in deployments/robinhood.json
+
+Put this in web/index.html:
+  <meta name="tolls-address" content="0x1FaB0729aFCFdce2c3Ba83725B1974cD2518754b" />
+
+Verify:  npx hardhat verify --network robinhood 0x1FaB0729aFCFdce2c3Ba83725B1974cD2518754b 0xe8C03A96fEC88E51f7BB1315bF58F38321B5aCaB 0x018B025A1f4d4C049CE4B24ACC080E6f922e67e8 0xe8fB470E0685437d7739BD2AacBA60b228800335
