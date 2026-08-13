@@ -1664,6 +1664,13 @@ async function openMintPicker(menu) {
       const why = {
         MINT_CLOSED: 'The mint is not open yet.',
         BAD_CULTISTS: 'A Bloodline holds between 1 and 20 Cultists.',
+        // Paying in the token is still two transactions on this chain, and
+        // both burn the chain's own coin.
+        NO_GAS: `Raising a line costs ${COIN} for gas even when you pay in ${payTok ? payTok.symbol : 'the token'}, and you hold none.`,
+        NOT_ENOUGH_TOKEN: payTok
+          ? `You do not hold enough ${payTok.symbol} for that many Cultists.`
+          : 'You do not hold enough.',
+        NO_TOKEN: 'This collection does not take the token.',
         NO_WALLET: 'No wallet connected.',
         NO_CONTRACT: 'The collection is not configured.',
         WRONG_CHAIN: `Switch your wallet to ${CHAIN_PARAMS.chainName} and try again.`,
@@ -1731,6 +1738,7 @@ async function payForConfession(quote) {
       NOT_ENOUGH_TOKEN: tok
         ? `You do not hold ${formatUnits(tok.wei, tok.decimals)} ${tok.symbol}. Nothing was paid.`
         : 'You do not hold enough. Nothing was paid.',
+      NO_GAS: `Paying in ${tok ? tok.symbol : 'the token'} still costs ${COIN} for gas, and you hold none. Nothing was paid.`,
       WRONG_CHAIN: `Switch your wallet to ${CHAIN_PARAMS.chainName} and try again.`,
     }[e && e.message] || (e && e.message) || 'The payment was not sent.';
     showToast(why, { size: 't-mid' });

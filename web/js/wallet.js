@@ -481,6 +481,24 @@ export function formatUnits(raw, dp) {
   return `${neg ? '-' : ''}${grouped}${frac ? '.' + frac : ''}`;
 }
 
+/**
+ * The chain's own coin, held by this wallet.
+ *
+ * Needed because PAYING IN THE TOKEN STILL COSTS GAS, and gas is never the
+ * token. Somebody who bought THROBBIN and holds no ETH can afford the price and
+ * still cannot send the transaction — and the wallet's own error for that is
+ * unreadable. Checked here so the game can say what is actually wrong.
+ */
+export async function fetchCoinBalance(address) {
+  const p = activeProvider();
+  if (!p) return null;
+  try {
+    return hexToBig(await p.request({ method: 'eth_getBalance', params: [address, 'latest'] }));
+  } catch {
+    return null;                       // unknown is not zero — do not block on it
+  }
+}
+
 export async function fetchTokenBalance(address) {
   const t = await fetchPayToken();
   if (!t) return null;
@@ -521,6 +539,10 @@ export async function mintBloodlineWithToken(address, cultists, onStep = () => {
   const cost = t.price * BigInt(n);
   const held = await fetchTokenBalance(address);
   if (held !== null && held < cost) throw new Error('NOT_ENOUGH_TOKEN');
+  // Two transactions to sign, and both burn the chain's coin. A wallet with
+  // none cannot mint however much of the token it holds.
+  const gas = await fetchCoinBalance(address);
+  if (gas !== null && gas === 0n) throw new Error('NO_GAS');
 
   // Skip the approval when a previous one already covers it — a mint abandoned
   // between the two signatures leaves an allowance behind, and asking for it
@@ -566,6 +588,8 @@ export async function payConfessionWithToken(address, token, to, raw) {
 
   const held = await fetchTokenBalance(address);
   if (held !== null && held < amount) throw new Error('NOT_ENOUGH_TOKEN');
+  const gas = await fetchCoinBalance(address);
+  if (gas !== null && gas === 0n) throw new Error('NO_GAS');
 
   beginWait();
   try {

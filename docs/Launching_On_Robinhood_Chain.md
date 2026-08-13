@@ -343,6 +343,11 @@ by hand.
   same addresses — but they are set immutably at deploy, so confirm they are
   the intended ones and that you control them **on this chain**. Currently held
   as the `TEAM_ADDRESS` and `TREASURY_ADDRESS` repo secrets.
+- **Paying in $THROBBIN still costs ETH for gas**, and paying in the token is
+  TWO transactions (approve, then mint). A wallet holding 600,000 THROBBIN and
+  no ETH cannot raise a line. The game now says so plainly instead of surfacing
+  the wallet's own error, but it is still the likeliest thing anyone will be
+  confused by on launch day — say it wherever the token is advertised.
 - **Players need ETH on Robinhood Chain to mint.** They cannot pay from
   Ethereum mainnet. Whatever the bridging route is, it needs to be written down
   somewhere a player will find it, or the mint screen is a dead end for anyone
