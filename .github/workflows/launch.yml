@@ -127,6 +127,28 @@ jobs:
           echo "::error::await_begin is true but ADMIN_TOKEN is not set. The run would be held at day 0 with no way to start it — /admin/begin needs that token and answers 404 without it. Set the secret (any long random string), or set await_begin to false."
           exit 1
 
+      # THE ADMIN TOKEN GOES ON THE WEB SERVER. The deploy key deliberately
+      # does not — see the note in contracts/hardhat.config.js — so that a
+      # compromised web host cannot reach the wallet that owns the collection.
+      # Making them the same value hands that property away.
+      - name: Refuse to put the deploy key on the web server
+        if: secrets.ADMIN_TOKEN != '' && secrets.DEPLOYER_KEY != ''
+        env:
+          A: ${{ secrets.ADMIN_TOKEN }}
+          D: ${{ secrets.DEPLOYER_KEY }}
+        run: |
+          # Compared as hashes so neither value can reach the log even by
+          # accident, and with whitespace stripped so "the same but for a
+          # newline" is caught too.
+          ha=$(printf '%s' "$A" | tr -d '[:space:]' | sha256sum | cut -d' ' -f1)
+          hd=$(printf '%s' "$D" | tr -d '[:space:]' | sha256sum | cut -d' ' -f1)
+          hd2=$(printf '%s' "$D" | tr -d '[:space:]' | sed 's/^0[xX]//' | sha256sum | cut -d' ' -f1)
+          if [ "$ha" = "$hd" ] || [ "$ha" = "$hd2" ]; then
+            echo "::error::ADMIN_TOKEN is the same value as DEPLOYER_KEY. The admin token is written to /etc/aeterna-server.env on the web server and sent in a header on every admin call; the deploy key is deliberately kept off that machine. Use a separate random string for ADMIN_TOKEN."
+            exit 1
+          fi
+          echo "ok  the admin token and the deploy key are different values"
+
       - name: Say what is about to happen
         run: |
           {

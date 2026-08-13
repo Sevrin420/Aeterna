@@ -215,6 +215,13 @@ server means the endpoint does not exist:
 Lose it and you can put a new one in `/etc/aeterna-server.env` on the box, so it
 is recoverable — but only by someone who can ssh in.
 
+**Do not reuse the deploy wallet's key or passphrase for this.** The admin token
+is written to `/etc/aeterna-server.env` on the web server and sent in a header
+on every admin call; the deploy key is deliberately kept off that machine
+entirely, so that a compromised web host cannot reach the wallet that owns the
+collection. One value for both hands that away. LAUNCH refuses the combination —
+compared as hashes, so neither value can reach a log.
+
 
 Launching does **not** start the run. With `await_begin` true the mint opens,
 people connect, raise lines, name them and walk the abbey — and **nothing is
