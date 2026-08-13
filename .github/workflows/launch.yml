@@ -54,15 +54,15 @@ on:
       expect_deployer:
         description: 'The deployer WALLET ADDRESS you expect (public). Fails if DEPLOYER_KEY is a different key. Never paste the key.'
         required: false
-        default: '0x2cBf16f9AdBE5e1145c87319ECc2aFc0274Eac64'
+        default: '0x91596DFCD3aA33cBB6a20D1BaAA82c072c40b2A2'
       team_address:
         description: 'Where the 20% goes. IMMUTABLE. Blank falls back to the TEAM_ADDRESS secret.'
         required: false
-        default: ''
+        default: '0xe8C03A96fEC88E51f7BB1315bF58F38321B5aCaB'
       treasury_address:
         description: 'Where the 80% goes — the pot. IMMUTABLE. Blank falls back to the TREASURY_ADDRESS secret.'
         required: false
-        default: ''
+        default: '0x018B025A1f4d4C049CE4B24ACC080E6f922e67e8'
       await_begin:
         description: 'Open the doors but HOLD AT DAY 0 until you call /admin/begin. Almost always true.'
         required: false
@@ -231,18 +231,32 @@ jobs:
       # chain being launched to. Running these against `network` pointed them at
       # an address with no contract on it: the launch would have died here, and
       # the old collection would have been left open and unswept.
+      # A DIFFERENT KEY, WHEN THE OLD COLLECTION HAS A DIFFERENT OWNER.
+      # setMintOpen is onlyOwner, and the wallet that deployed the Avalanche
+      # collection is not the wallet launching this one. OLD_DEPLOYER_KEY is
+      # used here and nowhere else; without it this falls back to DEPLOYER_KEY,
+      # which is right only when the same wallet owns both.
+      #
+      # A step-level env var wins over contracts/.env — dotenv does not
+      # overwrite what is already set — so this key applies to these two steps
+      # and the deploy below still signs with the new one.
       - name: Close the old mint
         if: inputs.old_contract != ''
         working-directory: contracts
         env:
+          DEPLOYER_KEY: ${{ secrets.OLD_DEPLOYER_KEY || secrets.DEPLOYER_KEY }}
           MINT_OPEN: 'false'
           CONTRACT_ADDRESS: ${{ inputs.old_contract }}
         run: npx hardhat run scripts/setMint.js --network ${{ inputs.old_network }}
 
+      # withdraw() is callable by ANYONE — see the contract — so this one works
+      # with either key. It still takes the old one when there is one, so both
+      # old-chain steps are signed by the same wallet.
       - name: Sweep the old collection
         if: inputs.old_contract != ''
         working-directory: contracts
         env:
+          DEPLOYER_KEY: ${{ secrets.OLD_DEPLOYER_KEY || secrets.DEPLOYER_KEY }}
           CONTRACT_ADDRESS: ${{ inputs.old_contract }}
         run: npx hardhat run scripts/withdraw.js --network ${{ inputs.old_network }}
 

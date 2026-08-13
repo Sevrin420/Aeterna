@@ -36,15 +36,15 @@ on:
       expect_deployer:
         description: 'The deployer WALLET ADDRESS you expect (public). Fails if DEPLOYER_KEY is a different key. Never paste the key.'
         required: false
-        default: '0x2cBf16f9AdBE5e1145c87319ECc2aFc0274Eac64'
+        default: '0x91596DFCD3aA33cBB6a20D1BaAA82c072c40b2A2'
       team_address:
         description: 'Where the 20% will go. Blank falls back to the TEAM_ADDRESS secret.'
         required: false
-        default: ''
+        default: '0xe8C03A96fEC88E51f7BB1315bF58F38321B5aCaB'
       treasury_address:
         description: 'Where the 80% will go. Blank falls back to the TREASURY_ADDRESS secret.'
         required: false
-        default: ''
+        default: '0x018B025A1f4d4C049CE4B24ACC080E6f922e67e8'
       old_contract:
         description: 'The PREVIOUS collection, to check it is reachable and sweepable.'
         required: false
@@ -134,7 +134,7 @@ jobs:
         if: inputs.old_contract != ''
         working-directory: contracts
         env:
-          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+          DEPLOYER_KEY: ${{ secrets.OLD_DEPLOYER_KEY || secrets.DEPLOYER_KEY }}
           OLD_ONLY: '1'
           OLD_CONTRACT: ${{ inputs.old_contract }}
         run: |

@@ -14,10 +14,27 @@ missing rather than letting the launch find out.
 | | |
 |---|---|
 | **Real secrets** | `DEPLOYER_KEY`, `VPS_SSH_KEY`, `VPS_HOST`, `VPS_USER`, `ADMIN_TOKEN` — credentials. These must be repo secrets and must never be pasted anywhere. |
+| **`OLD_DEPLOYER_KEY`** | The key for `0x2cBf16…`, which owns the Avalanche collection. **Needed to close the old mint**, because the new deployer does not own it. Also a secret. |
 | **Addresses** | `TEAM_ADDRESS`, `TREASURY_ADDRESS`, and the deployer's own address — **public**, and readable off the chain by anyone. Keep them as secrets, or type them straight into the workflow inputs. Typed wins; the secret is the fallback. |
 | **`ADMIN_TOKEN`** | Any long random string. Without it the final standings can never be read, and there is no second chance to want it. |
 | **Gas** | ETH in the deployer wallet **on Robinhood Chain**. Bridged in ahead of time. |
 | **Team + treasury** | Must be addresses you control **on Robinhood Chain**. Both are immutable at deploy. |
+
+### The wallets, as configured
+
+| Role | Address |
+|---|---|
+| Deployer / owner | `0x91596DFCD3aA33cBB6a20D1BaAA82c072c40b2A2` |
+| Team (20%) | `0xe8C03A96fEC88E51f7BB1315bF58F38321B5aCaB` |
+| Treasury (80%) | `0x018B025A1f4d4C049CE4B24ACC080E6f922e67e8` |
+| $THROBBIN | `0xe8fB470E0685437d7739BD2AacBA60b228800335` |
+
+All four are distinct — checked, not assumed. They are the workflow defaults, so
+nothing needs typing at the button.
+
+**`DEPLOYER_KEY` must be the key for `0x91596D…`.** It is a *new* wallet: the
+Avalanche collection was deployed by `0x2cBf16…`, which is why the old chain
+needs its own key — see below.
 
 ### The four wallets, and which are which
 
@@ -109,9 +126,9 @@ be got wrong at no cost.
 | `price_per_cultist_wei` | `10000000000000000` — **0.01 ETH.** Read this before pressing. |
 | `pay_token` | `0xe8fB470E0685437d7739BD2AacBA60b228800335` |
 | `pay_token_per_cultist` | `30000` |
-| `expect_deployer` | `0x2cBf16f9AdBE5e1145c87319ECc2aFc0274Eac64` — the wallet `DEPLOYER_KEY` must belong to |
-| `team_address` | blank to use the secret, or paste the address |
-| `treasury_address` | blank to use the secret, or paste the address |
+| `expect_deployer` | `0x91596DFCD3aA33cBB6a20D1BaAA82c072c40b2A2` (defaulted) |
+| `team_address` | `0xe8C03A96fEC88E51f7BB1315bF58F38321B5aCaB` (defaulted) |
+| `treasury_address` | `0x018B025A1f4d4C049CE4B24ACC080E6f922e67e8` (defaulted) |
 | `await_begin` | `true` — **opens the doors, holds the clock at day 0** |
 | `deploy_tolls` | `true` |
 | `founder_cultists` | `1` |
@@ -127,6 +144,16 @@ AVAX, and it is now 0.01 **ETH**. A 20-Cultist line costs **0.2 ETH**.
 `old_network` is `avalanche` on purpose. The collection being shut down is not
 on the chain being launched to, and closing and sweeping it has to happen on
 **its** chain.
+
+**The old chain also needs its own key.** `setMintOpen` is `onlyOwner`, and the
+Avalanche collection is owned by `0x2cBf16…` — not by the new deployer. Set
+`OLD_DEPLOYER_KEY` to that wallet's key and the close and sweep use it; leave it
+unset and the close will revert. Sweeping works either way, because `withdraw()`
+is callable by anyone.
+
+If you would rather not put the old key in this repo at all, close the Avalanche
+mint by hand first and run LAUNCH with `old_contract` blank. The money can still
+be swept afterwards by anybody.
 
 ### What the button does, in order
 
