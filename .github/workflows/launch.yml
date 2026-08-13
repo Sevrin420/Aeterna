@@ -122,17 +122,24 @@ jobs:
       # endpoint is a 404 — so this combination launches an abbey whose clock
       # nothing can start short of editing a file on the box by hand.
       - name: Refuse to hold a clock nothing can start
-        if: inputs.await_begin != 'false' && secrets.ADMIN_TOKEN == ''
+        env:
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          AWAIT: ${{ inputs.await_begin }}
         run: |
-          echo "::error::await_begin is true but ADMIN_TOKEN is not set. The run would be held at day 0 with no way to start it — /admin/begin needs that token and answers 404 without it. Set the secret (any long random string), or set await_begin to false."
-          exit 1
+          # The condition lives here rather than in `if:` because `secrets` is
+          # not a context GitHub allows there — it refuses to parse the whole
+          # workflow, which is how this was found.
+          if [ "$AWAIT" != "false" ] && [ -z "$ADMIN_TOKEN" ]; then
+            echo "::error::await_begin is true but ADMIN_TOKEN is not set. The run would be held at day 0 with no way to start it — /admin/begin needs that token and answers 404 without it. Set the secret (any long random string), or set await_begin to false."
+            exit 1
+          fi
+          echo "ok  the run can be started once it is launched"
 
       # THE ADMIN TOKEN GOES ON THE WEB SERVER. The deploy key deliberately
       # does not — see the note in contracts/hardhat.config.js — so that a
       # compromised web host cannot reach the wallet that owns the collection.
       # Making them the same value hands that property away.
       - name: Refuse to put the deploy key on the web server
-        if: secrets.ADMIN_TOKEN != '' && secrets.DEPLOYER_KEY != ''
         env:
           A: ${{ secrets.ADMIN_TOKEN }}
           D: ${{ secrets.DEPLOYER_KEY }}
@@ -140,6 +147,7 @@ jobs:
           # Compared as hashes so neither value can reach the log even by
           # accident, and with whitespace stripped so "the same but for a
           # newline" is caught too.
+          if [ -z "$A" ] || [ -z "$D" ]; then echo "ok  nothing to compare"; exit 0; fi
           ha=$(printf '%s' "$A" | tr -d '[:space:]' | sha256sum | cut -d' ' -f1)
           hd=$(printf '%s' "$D" | tr -d '[:space:]' | sha256sum | cut -d' ' -f1)
           hd2=$(printf '%s' "$D" | tr -d '[:space:]' | sed 's/^0[xX]//' | sha256sum | cut -d' ' -f1)
