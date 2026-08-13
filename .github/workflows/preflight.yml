@@ -33,6 +33,10 @@ on:
         description: 'To show what a line will actually cost.'
         required: true
         default: '10000000000000000'
+      expect_deployer:
+        description: 'The deployer WALLET ADDRESS you expect (public). Fails if DEPLOYER_KEY is a different key. Never paste the key.'
+        required: false
+        default: '0x2cBf16f9AdBE5e1145c87319ECc2aFc0274Eac64'
       team_address:
         description: 'Where the 20% will go. Blank falls back to the TEAM_ADDRESS secret.'
         required: false
@@ -118,6 +122,7 @@ jobs:
           PAY_TOKEN: ${{ inputs.pay_token }}
           PAY_TOKEN_PER_CULTIST: ${{ inputs.pay_token_per_cultist }}
           PRICE_PER_CULTIST_WEI: ${{ inputs.price_per_cultist_wei }}
+          EXPECT_DEPLOYER: ${{ inputs.expect_deployer }}
           OLD_CONTRACT: ${{ inputs.old_contract }}
         run: |
           echo "DEPLOYER_KEY=${DEPLOYER_KEY}" > .env

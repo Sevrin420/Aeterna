@@ -46,6 +46,28 @@ async function main() {
   // ---- the deployer ---------------------------------------------------------
   const bal = await hre.ethers.provider.getBalance(signer.address);
   console.log(`deployer  ${signer.address}`);
+
+  // IS THE KEY IN THE SECRET THE KEY YOU THINK IT IS?
+  //
+  // The address is not configured anywhere — it is derived from DEPLOYER_KEY,
+  // so the runner will happily deploy with whatever key it was given. EXPECT_
+  // DEPLOYER is the second source: state the wallet you MEAN, and a secret
+  // holding a different key fails here instead of producing a collection owned
+  // by a wallet you do not control and an old mint that cannot be closed.
+  //
+  // The address is public. The key is not, and never appears here.
+  const expect = (process.env.EXPECT_DEPLOYER || '').trim();
+  if (expect) {
+    if (!hre.ethers.isAddress(expect)) {
+      fail(`EXPECT_DEPLOYER is not an address: ${expect}`);
+    } else if (expect.toLowerCase() !== signer.address.toLowerCase()) {
+      fail(`DEPLOYER_KEY is the key for ${signer.address}, but you expected ${expect} — the wrong key is in the secret`);
+    } else {
+      ok('DEPLOYER_KEY is the key for the wallet you expected');
+    }
+  } else {
+    note('no EXPECT_DEPLOYER given — nothing is checking that the secret holds the key you think it does');
+  }
   console.log(`balance   ${hre.ethers.formatEther(bal)} ${coin}`);
   // Not a precise gas estimate — a floor. Two deploys, a founder mint and two
   // setMintOpen calls all have to fit, and being told "you have none" after the

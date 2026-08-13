@@ -51,6 +51,10 @@ on:
         description: 'IMMUTABLE. Whole tokens per Cultist, written plainly: 30000. Decimals are read off the token.'
         required: false
         default: '30000'
+      expect_deployer:
+        description: 'The deployer WALLET ADDRESS you expect (public). Fails if DEPLOYER_KEY is a different key. Never paste the key.'
+        required: false
+        default: '0x2cBf16f9AdBE5e1145c87319ECc2aFc0274Eac64'
       team_address:
         description: 'Where the 20% goes. IMMUTABLE. Blank falls back to the TEAM_ADDRESS secret.'
         required: false
@@ -172,6 +176,29 @@ jobs:
       - name: Install
         working-directory: contracts
         run: npm install --no-audit --no-fund
+
+      # IS THE KEY IN THE SECRET THE KEY YOU THINK IT IS? The deployer address
+      # is derived from DEPLOYER_KEY and configured nowhere, so without this the
+      # runner deploys with whatever key it holds — and the first sign that it
+      # was the wrong one is a collection owned by a wallet you do not control.
+      - name: The deployer is who you expect
+        if: inputs.expect_deployer != ''
+        working-directory: contracts
+        env:
+          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+          EXPECT: ${{ inputs.expect_deployer }}
+        run: |
+          # The address is derived and printed. The key never is.
+          GOT=$(node -e "
+            const { Wallet } = require('ethers');
+            process.stdout.write(new Wallet(process.env.DEPLOYER_KEY).address);
+          ")
+          echo "expected  ${EXPECT}"
+          echo "the key is for  ${GOT}"
+          if [ "$(printf '%s' "$GOT" | tr A-Z a-z)" != "$(printf '%s' "$EXPECT" | tr A-Z a-z)" ]; then
+            echo "::error::DEPLOYER_KEY is the key for ${GOT}, not ${EXPECT}. Nothing was signed."
+            exit 1
+          fi
 
       # THE GATE. Nothing below signs anything if a single assertion fails.
       - name: Test the contract

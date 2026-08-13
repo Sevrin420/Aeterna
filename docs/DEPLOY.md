@@ -14,7 +14,7 @@ missing rather than letting the launch find out.
 | | |
 |---|---|
 | **Real secrets** | `DEPLOYER_KEY`, `VPS_SSH_KEY`, `VPS_HOST`, `VPS_USER`, `ADMIN_TOKEN` — credentials. These must be repo secrets and must never be pasted anywhere. |
-| **Addresses** | `TEAM_ADDRESS`, `TREASURY_ADDRESS` — **public**, and readable off the chain by anyone with `team()` / `treasury()`. Keep them as secrets, or type them straight into the workflow inputs. Typed wins; the secret is the fallback. |
+| **Addresses** | `TEAM_ADDRESS`, `TREASURY_ADDRESS`, and the deployer's own address — **public**, and readable off the chain by anyone. Keep them as secrets, or type them straight into the workflow inputs. Typed wins; the secret is the fallback. |
 | **`ADMIN_TOKEN`** | Any long random string. Without it the final standings can never be read, and there is no second chance to want it. |
 | **Gas** | ETH in the deployer wallet **on Robinhood Chain**. Bridged in ahead of time. |
 | **Team + treasury** | Must be addresses you control **on Robinhood Chain**. Both are immutable at deploy. |
@@ -44,6 +44,14 @@ before it signs, since both are immutable the moment the constructor runs.
 
 **`DEPLOYER_KEY` is a private key and is different in kind.** It must stay a
 repo secret. So must `VPS_SSH_KEY` and `ADMIN_TOKEN`.
+
+**The deployer's ADDRESS is public, and worth stating.** It is derived from the
+key and configured nowhere, so without a second source the runner deploys with
+whatever key it holds — and the first sign it was the wrong one is a collection
+owned by a wallet you do not control and an old mint that cannot be closed.
+`expect_deployer` is that second source: name the wallet you mean, and a secret
+holding a different key fails **before anything is signed**, in both PREFLIGHT
+and LAUNCH. The key itself never appears in a log.
 
 `EXPLORER_KEY` is optional — Blockscout takes any key.
 
@@ -101,6 +109,7 @@ be got wrong at no cost.
 | `price_per_cultist_wei` | `10000000000000000` — **0.01 ETH.** Read this before pressing. |
 | `pay_token` | `0xe8fB470E0685437d7739BD2AacBA60b228800335` |
 | `pay_token_per_cultist` | `30000` |
+| `expect_deployer` | `0x2cBf16f9AdBE5e1145c87319ECc2aFc0274Eac64` — the wallet `DEPLOYER_KEY` must belong to |
 | `team_address` | blank to use the secret, or paste the address |
 | `treasury_address` | blank to use the secret, or paste the address |
 | `await_begin` | `true` — **opens the doors, holds the clock at day 0** |
