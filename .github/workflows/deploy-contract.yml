@@ -1,4 +1,10 @@
-# Deploy the Throbbin Abbey Bloodline collection to Avalanche.
+# One contract action at a time, by hand.
+#
+# THIS IS NOT THE LAUNCH. `launch.yml` is: it runs the whole nine-step sequence
+# in the one order that works and wires the result into the game. This workflow
+# is the escape hatch for a single operation on a collection that already
+# exists — closing a mint, sweeping a balance, reopening after a pause — and for
+# a deploy that is deliberately NOT going to be wired in.
 #
 # Manual only. A contract deploy must never ride along on a push — this fires
 # when you go to the Actions tab and press Run, and not otherwise.
@@ -14,9 +20,9 @@ on:
       network:
         description: 'Which chain'
         required: true
-        default: fuji
+        default: robinhoodTestnet
         type: choice
-        options: [fuji, avalanche]
+        options: [robinhoodTestnet, robinhood, fuji, avalanche]
       action:
         description: 'deploy = new contract | open-mint / close-mint = start or stop selling | withdraw = sweep the balance to team + treasury'
         required: true
@@ -28,9 +34,21 @@ on:
         required: false
         default: ''
       confirm:
-        description: 'For avalanche (mainnet) ONLY: type DEPLOY to confirm — for every action, including withdraw. Ignored on fuji.'
+        description: 'On a MAINNET (robinhood, avalanche) ONLY: type DEPLOY to confirm — for every action, including withdraw. Ignored on a testnet.'
         required: false
         default: ''
+      team_address:
+        description: 'Where the 20% goes, for a deploy. IMMUTABLE. Blank falls back to the TEAM_ADDRESS secret.'
+        required: false
+        default: '0xe8C03A96fEC88E51f7BB1315bF58F38321B5aCaB'
+      treasury_address:
+        description: 'Where the 80% goes, for a deploy. IMMUTABLE. Blank falls back to the TREASURY_ADDRESS secret.'
+        required: false
+        default: '0x018B025A1f4d4C049CE4B24ACC080E6f922e67e8'
+      price_per_cultist_wei:
+        description: 'For deploy only. IMMUTABLE. 0.01 = 10000000000000000. A 20-Cultist line costs 20x this.'
+        required: true
+        default: '10000000000000000'
       max_supply:
         description: 'Hard cap on Bloodlines. IMMUTABLE — cannot be raised later. The default is 2^256-1, i.e. uncapped.'
         required: true
@@ -48,7 +66,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Refuse an unconfirmed mainnet run
-        if: inputs.network == 'avalanche' && inputs.confirm != 'DEPLOY'
+        if: (inputs.network == 'avalanche' || inputs.network == 'robinhood') && inputs.confirm != 'DEPLOY'
         run: |
           echo "::error::Mainnet run without confirmation. Re-run and type DEPLOY in the confirm box."
           exit 1
@@ -56,11 +74,15 @@ jobs:
       - name: Check the secrets are present
         env:
           KEY: ${{ secrets.DEPLOYER_KEY }}
-          TEAM: ${{ secrets.TEAM_ADDRESS }}
-          TREASURY: ${{ secrets.TREASURY_ADDRESS }}
+          TEAM: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
         run: |
-          for v in KEY TEAM TREASURY; do
-            if [ -z "${!v}" ]; then echo "::error::Missing repository secret for $v"; exit 1; fi
+          NEED="KEY"
+          # Only a deploy fixes these into a constructor. open-mint, close-mint
+          # and withdraw read team and treasury off the contract itself.
+          if [ "${{ inputs.action }}" = "deploy" ]; then NEED="KEY TEAM TREASURY"; fi
+          for v in $NEED; do
+            if [ -z "${!v}" ]; then echo "::error::No value for $v — set the repo secret, or type it into the workflow inputs."; exit 1; fi
           done
           echo "team     ${TEAM}"
           echo "treasury ${TREASURY}"
@@ -84,16 +106,18 @@ jobs:
         working-directory: contracts
         env:
           DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
-          TEAM_ADDRESS: ${{ secrets.TEAM_ADDRESS }}
-          TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
+          TEAM_ADDRESS: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
           SNOWTRACE_KEY: ${{ secrets.SNOWTRACE_KEY }}
+          EXPLORER_KEY: ${{ secrets.EXPLORER_KEY }}
         run: |
           {
             echo "DEPLOYER_KEY=${DEPLOYER_KEY}"
             echo "TEAM_ADDRESS=${TEAM_ADDRESS}"
             echo "TREASURY_ADDRESS=${TREASURY_ADDRESS}"
             echo "SNOWTRACE_KEY=${SNOWTRACE_KEY}"
-            echo "PRICE_PER_CULTIST_WEI=10000000000000000"
+            echo "EXPLORER_KEY=${EXPLORER_KEY}"
+            echo "PRICE_PER_CULTIST_WEI=${{ inputs.price_per_cultist_wei }}"
             echo "MAX_SUPPLY=${{ inputs.max_supply }}"
             echo "BASE_URI=${{ inputs.base_uri }}"
           } > .env

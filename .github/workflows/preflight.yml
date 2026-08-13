@@ -1,0 +1,259 @@
+# EVERYTHING THE LAUNCH NEEDS, CHECKED WITHOUT SIGNING ANYTHING.
+#
+# Run this before LAUNCH, as often as you like, at no cost and no risk. It sends
+# no transaction, touches no contract and changes nothing on the box — every
+# call it makes is a read.
+#
+# It exists because the launch is irreversible and its failures are expensive in
+# the wrong order: a missing secret stops it before anything is signed, but an
+# unreachable VPS stops it AFTER a contract is deployed and the clock has
+# started. This puts all of those checks first, where they cost nothing.
+#
+# It ends with either GO or NO-GO and a table of what was actually found.
+name: PREFLIGHT — check the launch will work
+
+on:
+  workflow_dispatch:
+    inputs:
+      await_begin:
+        description: 'Matches the LAUNCH input. True means the run is held at day 0 and ADMIN_TOKEN becomes REQUIRED.'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+      network:
+        description: 'Which chain the launch will go to.'
+        required: true
+        default: robinhoodTestnet
+        type: choice
+        options: [robinhoodTestnet, robinhood, fuji, avalanche]
+      pay_token:
+        description: 'The ERC-20, to check it really is one on that chain. Blank = coin only.'
+        required: false
+        default: '0xe8fB470E0685437d7739BD2AacBA60b228800335'
+      pay_token_per_cultist:
+        description: 'Whole tokens per Cultist, to show what it works out to.'
+        required: false
+        default: '30000'
+      price_per_cultist_wei:
+        description: 'To show what a line will actually cost.'
+        required: true
+        default: '10000000000000000'
+      expect_deployer:
+        description: 'The deployer WALLET ADDRESS you expect (public). Fails if DEPLOYER_KEY is a different key. Never paste the key.'
+        required: false
+        default: '0x91596DFCD3aA33cBB6a20D1BaAA82c072c40b2A2'
+      team_address:
+        description: 'Where the 20% will go. Blank falls back to the TEAM_ADDRESS secret.'
+        required: false
+        default: '0xe8C03A96fEC88E51f7BB1315bF58F38321B5aCaB'
+      treasury_address:
+        description: 'Where the 80% will go. Blank falls back to the TREASURY_ADDRESS secret.'
+        required: false
+        default: '0x018B025A1f4d4C049CE4B24ACC080E6f922e67e8'
+      old_contract:
+        description: 'The PREVIOUS collection, to check it is reachable and sweepable.'
+        required: false
+        default: '0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878'
+      old_network:
+        description: 'Which chain that one is on.'
+        required: false
+        default: avalanche
+        type: choice
+        options: [avalanche, fuji, robinhood, robinhoodTestnet]
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.network }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+
+      - name: Install
+        working-directory: contracts
+        run: npm install --no-audit --no-fund
+
+      # Not a gate here — it is a gate in LAUNCH. Run so a red suite is known
+      # about before the button is pressed rather than at it.
+      - name: The contract tests
+        id: tests
+        continue-on-error: true
+        working-directory: contracts
+        run: npx hardhat test
+
+      - name: Secrets
+        id: secrets
+        continue-on-error: true
+        env:
+          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+          TEAM_ADDRESS: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          EXPLORER_KEY: ${{ secrets.EXPLORER_KEY }}
+        run: |
+          bad=0
+          # Never the value, only whether there is one — this log is readable by
+          # anyone who can see the run.
+          for v in DEPLOYER_KEY TEAM_ADDRESS TREASURY_ADDRESS VPS_HOST VPS_USER VPS_SSH_KEY; do
+            if [ -z "${!v}" ]; then echo "::error::MISSING $v — no secret, and no value typed in"; bad=1; else echo "ok        $v"; fi
+          done
+          # Shape only, never the value. A key with a stray newline fails deep
+          # inside hardhat as "errors in your config file", which names nothing.
+          if [ -n "$DEPLOYER_KEY" ]; then
+            if printf '%s' "$DEPLOYER_KEY" | grep -qiE '^(0x)?[0-9a-f]{64}$'; then
+              echo "ok        DEPLOYER_KEY is a well-formed 32-byte key"
+            else
+              echo "::error::DEPLOYER_KEY is not a 32-byte hex private key — check for a stray space or newline"; bad=1
+            fi
+          fi
+          # ADMIN_TOKEN does two things and one of them is not optional. It
+          # reads the final standings at the end — and it FIRES THE STARTING
+          # GUN. Held at day 0 with no token, /admin/begin is a 404 and the run
+          # can never be started at all.
+          if [ -z "$ADMIN_TOKEN" ]; then
+            if [ "${{ inputs.await_begin }}" != "false" ]; then
+              echo "::error::MISSING ADMIN_TOKEN. With await_begin true the run is held at day 0 and /admin/begin is the only way to start it — and that endpoint needs this token."
+              bad=1
+            else
+              echo "::warning::ADMIN_TOKEN is not set. The run will launch, but the final standings cannot be read when it ends."
+            fi
+          else echo "ok        ADMIN_TOKEN"; fi
+          if [ -z "$EXPLORER_KEY" ]; then
+            echo "::notice::EXPLORER_KEY unset — fine, Blockscout takes any key."
+          else echo "ok        EXPLORER_KEY"; fi
+          echo "team      $TEAM_ADDRESS"
+          echo "treasury  $TREASURY_ADDRESS"
+          exit $bad
+
+      - name: The chain, the wallet and the token
+        id: chain
+        continue-on-error: true
+        working-directory: contracts
+        env:
+          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+          TEAM_ADDRESS: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
+          PAY_TOKEN: ${{ inputs.pay_token }}
+          PAY_TOKEN_PER_CULTIST: ${{ inputs.pay_token_per_cultist }}
+          PRICE_PER_CULTIST_WEI: ${{ inputs.price_per_cultist_wei }}
+          EXPECT_DEPLOYER: ${{ inputs.expect_deployer }}
+          OLD_CONTRACT: ${{ inputs.old_contract }}
+        run: |
+          echo "DEPLOYER_KEY=$(printf '%s' "${DEPLOYER_KEY}" | tr -d '[:space:]')" > .env
+          npx hardhat run scripts/preflight.js --network ${{ inputs.network }}
+
+      - name: The old collection, on its own chain
+        id: old
+        continue-on-error: true
+        if: inputs.old_contract != ''
+        working-directory: contracts
+        env:
+          DEPLOYER_KEY: ${{ secrets.OLD_DEPLOYER_KEY || secrets.DEPLOYER_KEY }}
+          OLD_ONLY: '1'
+          OLD_CONTRACT: ${{ inputs.old_contract }}
+        run: |
+          echo "DEPLOYER_KEY=$(printf '%s' "${DEPLOYER_KEY}" | tr -d '[:space:]')" > .env
+          npx hardhat run scripts/preflight.js --network ${{ inputs.old_network }}
+
+      - name: The box
+        id: vps
+        continue-on-error: true
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking accept-new
+            ConnectTimeout 15
+          EOF
+          # Everything the launch will do to this box, asked about rather than
+          # done: can we log in, is the service there, is there room to write,
+          # and will systemctl take our word for it.
+          ssh vps bash -s <<'REMOTE'
+            set -e
+            echo "host      $(hostname)"
+            echo "whoami    $(whoami)"
+            systemctl is-enabled aeterna-server >/dev/null 2>&1 \
+              && echo "ok        aeterna-server is a known service" \
+              || { echo "MISSING   aeterna-server service unit"; exit 1; }
+            systemctl is-active aeterna-server >/dev/null 2>&1 \
+              && echo "ok        aeterna-server is running" \
+              || echo "note      aeterna-server is not running right now"
+            [ -d /opt/aeterna-server ] && echo "ok        /opt/aeterna-server" || { echo "MISSING   /opt/aeterna-server"; exit 1; }
+            [ -d /opt/web ] && echo "ok        /opt/web" || { echo "MISSING   /opt/web"; exit 1; }
+            [ -w /etc ] && echo "ok        can write /etc/aeterna-server.env" || { echo "MISSING   cannot write /etc"; exit 1; }
+            command -v rsync >/dev/null && echo "ok        rsync" || { echo "MISSING   rsync on the box"; exit 1; }
+            command -v npm >/dev/null && echo "ok        npm" || { echo "MISSING   npm on the box"; exit 1; }
+            FREE=$(df -Pm /opt | awk 'NR==2{print $4}')
+            echo "free      ${FREE} MB on /opt"
+            [ "$FREE" -gt 500 ] || { echo "MISSING   under 500 MB free on /opt"; exit 1; }
+            # The database the launch will archive. Its absence is fine on a
+            # first launch and worth knowing about on any other.
+            if [ -f /opt/aeterna-server/data/aeterna.db ]; then
+              echo "ok        a player database exists, and WILL BE ARCHIVED: $(du -h /opt/aeterna-server/data/aeterna.db | cut -f1)"
+            else
+              echo "note      no player database yet — nothing to archive"
+            fi
+          REMOTE
+
+      - name: The live abbey
+        id: live
+        continue-on-error: true
+        run: |
+          curl -fsS --max-time 15 https://membersonly.cc/health && echo "  <- health"
+          echo ""
+          curl -fsS --max-time 15 https://membersonly.cc/collection && echo "  <- collection (this is what will change)"
+
+      - name: GO / NO-GO
+        run: |
+          go=1
+          row () {
+            # $1 outcome, $2 label, $3 what it means
+            case "$1" in
+              success) echo "| ✅ | $2 | $3 |" ;;
+              skipped) echo "| ⏭️ | $2 | skipped |" ;;
+              *)       echo "| ❌ | $2 | $3 |"; go=0 ;;
+            esac
+          }
+          {
+            echo "## Preflight — \`${{ inputs.network }}\`"
+            echo ""
+            echo "| | | |"
+            echo "|---|---|---|"
+            row "${{ steps.tests.outcome }}"   "Contract tests"            "the hard gate in LAUNCH"
+            row "${{ steps.secrets.outcome }}" "Secrets"                   "everything LAUNCH reads"
+            row "${{ steps.chain.outcome }}"   "Chain, wallet, token"      "gas to deploy, and the ERC-20 is real here"
+            row "${{ steps.old.outcome }}"     "Old collection"            "reachable on its own chain, and sweepable"
+            row "${{ steps.vps.outcome }}"     "The box"                   "ssh, service, disk, rsync"
+            row "${{ steps.live.outcome }}"    "The live abbey"            "answering now"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$go" = "1" ]; then
+            echo "### ✅ GO" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Nothing here signs anything. Run **LAUNCH** with the same inputs when ready." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ❌ NO-GO" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Open the failed step above — it names exactly what is missing. Nothing was signed and nothing changed." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Shred the key
+        if: always()
+        working-directory: contracts
+        run: rm -f .env

@@ -36,7 +36,27 @@ module.exports = {
     settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: 'cancun' },
   },
   networks: {
-    // Avalanche C-Chain.
+    // Robinhood Chain. Gas is ETH, not AVAX — an Arbitrum Orbit chain, so the
+    // contract itself needs no change, only where it is sent.
+    //
+    // Every value is overridable from the environment. The public RPC is
+    // documented as rate-limited, so a launch that starts failing mid-flight
+    // can be pointed at a private endpoint without a code change.
+    robinhood: {
+      url: process.env.CHAIN_RPC || 'https://rpc.mainnet.chain.robinhood.com/',
+      chainId: Number(process.env.CHAIN_ID || 4663),
+      accounts: KEY,
+    },
+    // Robinhood's testnet. Free ETH from faucet.testnet.chain.robinhood.com.
+    // Launch here first: the price and the payout addresses are immutable, and
+    // this is the only place they can be got wrong for free.
+    robinhoodTestnet: {
+      url: process.env.CHAIN_TESTNET_RPC || 'https://rpc.testnet.chain.robinhood.com/',
+      chainId: Number(process.env.CHAIN_TESTNET_ID || 46630),
+      accounts: KEY,
+    },
+    // Avalanche C-Chain — where the first run was held. Kept so the old
+    // collection can still be closed and swept when the game moves.
     avalanche: {
       url: process.env.AVAX_RPC || 'https://api.avax.network/ext/bc/C/rpc',
       chainId: 43114,
@@ -52,6 +72,30 @@ module.exports = {
     },
   },
   etherscan: {
-    apiKey: { avalanche: process.env.SNOWTRACE_KEY || '', avalancheFujiTestnet: process.env.SNOWTRACE_KEY || '' },
+    // Blockscout takes any non-empty key, which is why these are not blank.
+    apiKey: {
+      robinhood: process.env.EXPLORER_KEY || 'blockscout',
+      robinhoodTestnet: process.env.EXPLORER_KEY || 'blockscout',
+      avalanche: process.env.SNOWTRACE_KEY || '',
+      avalancheFujiTestnet: process.env.SNOWTRACE_KEY || '',
+    },
+    customChains: [
+      {
+        network: 'robinhood',
+        chainId: Number(process.env.CHAIN_ID || 4663),
+        urls: {
+          apiURL: process.env.EXPLORER_API || 'https://robinhoodchain.blockscout.com/api',
+          browserURL: process.env.EXPLORER_URL || 'https://robinhoodchain.blockscout.com',
+        },
+      },
+      {
+        network: 'robinhoodTestnet',
+        chainId: Number(process.env.CHAIN_TESTNET_ID || 46630),
+        urls: {
+          apiURL: process.env.EXPLORER_TESTNET_API || 'https://explorer.testnet.chain.robinhood.com/api',
+          browserURL: process.env.EXPLORER_TESTNET_URL || 'https://explorer.testnet.chain.robinhood.com',
+        },
+      },
+    ],
   },
 };

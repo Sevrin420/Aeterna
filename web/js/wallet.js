@@ -52,10 +52,19 @@ export function hasInjectedWallet() {
 const _meta = (n) => (typeof document !== 'undefined'
   ? (document.querySelector(`meta[name="${n}"]`) || {}).content || '' : '');
 export const WC_PROJECT_ID = _meta('wc-project-id');
-const WC_CHAIN = Number(_meta('wc-chain-id')) || 43114;      // Avalanche C-Chain
 // The deployed collection. Both are read by fetchCultists() below.
 export const BLOODLINE_ADDRESS = _meta('bloodline-address');
 export const BLOODLINE_CHAIN_ID = Number(_meta('bloodline-chain-id')) || 43114;
+// WalletConnect opens on the same chain the collection lives on. It used to be
+// a second number that could drift out of step with the first.
+const WC_CHAIN = Number(_meta('wc-chain-id')) || BLOODLINE_CHAIN_ID;
+// The gas token's ticker, shown wherever a price is. ETH on Robinhood Chain,
+// AVAX on Avalanche — a label, never used for arithmetic.
+export const COIN = _meta('chain-symbol') || 'AVAX';
+// Everything priced that is not the mint — mini games and whatever else gets
+// built. Empty until the tolls contract is deployed, and empty must read as
+// "nothing is priced yet", never as an error.
+export const TOLLS_ADDRESS = _meta('tolls-address') || '';
 const WC_SRC = 'https://esm.sh/@walletconnect/ethereum-provider@2.17.2';
 
 export function hasWalletConnect() { return !!WC_PROJECT_ID; }
@@ -144,6 +153,17 @@ const SEL = {
   mintOpen: '0x24bbd049',
   mint: '0xa0712d68',
   ownerOf: '0x6352211e',
+  // The second door: paying in the collection's ERC-20 instead of the coin.
+  payToken: '0x96336b30',
+  tokenPricePerCultist: '0xa157c70f',
+  mintWithToken: '0xb3eaff8b',
+  // …and the token's own surface, called AT THE TOKEN, not at the collection.
+  decimals: '0x313ce567',
+  symbol: '0x95d89b41',
+  balanceOf: '0x70a08231',
+  allowance: '0xdd62ed3e',
+  approve: '0x095ea7b3',
+  transfer: '0xa9059cbb',
 };
 
 const padAddr = (a) => a.toLowerCase().replace(/^0x/, '').padStart(64, '0');
@@ -169,15 +189,25 @@ export async function currentChainId() {
   }
 }
 
-const AVALANCHE_PARAMS = {
-  chainId: '0xa86a',                       // 43114
-  chainName: 'Avalanche C-Chain',
-  nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
-  rpcUrls: ['https://api.avax.network/ext/bc/C/rpc'],
-  blockExplorerUrls: ['https://snowtrace.io'],
+// Everything the wallet needs to be told about the chain, from the same meta
+// tags a deploy rewrites. The hex id is DERIVED from BLOODLINE_CHAIN_ID rather
+// than written out again: when those two were separate values, moving the game
+// to another chain switched the wallet to Avalanche and then compared the
+// result against the new chain, so ensureChain() could only ever throw.
+export const CHAIN_PARAMS = {
+  chainId: '0x' + BLOODLINE_CHAIN_ID.toString(16),
+  chainName: _meta('chain-name') || 'Avalanche C-Chain',
+  nativeCurrency: {
+    name: _meta('chain-currency') || 'Avalanche',
+    symbol: COIN,
+    decimals: 18,
+  },
+  rpcUrls: [_meta('chain-rpc') || 'https://api.avax.network/ext/bc/C/rpc'],
+  blockExplorerUrls: [_meta('chain-explorer') || 'https://snowtrace.io'],
 };
 
-// Ask the wallet to move to Avalanche, adding it if it has never heard of it.
+// Ask the wallet to move to the collection's chain, adding it if it has never
+// heard of it.
 // MetaMask opens on whichever chain the player last used — usually Ethereum —
 // and every read below would then be answered by a chain that has never heard
 // of this contract.
@@ -191,14 +221,14 @@ export async function ensureChain() {
   if (!p) throw new Error('NO_WALLET');
   if ((await currentChainId()) === BLOODLINE_CHAIN_ID) return true;
   try {
-    await p.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: AVALANCHE_PARAMS.chainId }] });
+    await p.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_PARAMS.chainId }] });
   } catch (e) {
     // 4902: the wallet does not know this chain yet. Anything else is the
     // player declining, and declining is their right — it is not an error to
     // shout about, but nothing on-chain can be read until they relent.
     if (e && (e.code === 4902 || e.code === -32603)) {
       try {
-        await p.request({ method: 'wallet_addEthereumChain', params: [AVALANCHE_PARAMS] });
+        await p.request({ method: 'wallet_addEthereumChain', params: [CHAIN_PARAMS] });
       } catch {
         throw new Error('WRONG_CHAIN');
       }
@@ -214,16 +244,19 @@ export async function ensureChain() {
 // for NFTs" the player waits through. Same treatment as req() in api.js: the
 // PLEASE WAIT is raised here, once, rather than at the several call sites that
 // read the contract.
-async function ethCall(data) {
+// `to` defaults to the collection. It is passed explicitly only to read the
+// payment token's own decimals/symbol/balanceOf/allowance, which belong to the
+// token contract and not to this one.
+async function ethCall(data, to) {
   beginWait();
-  try { return await _ethCall(data); }
+  try { return await _ethCall(data, to); }
   finally { endWait(); }
 }
 
-async function _ethCall(data) {
+async function _ethCall(data, to = BLOODLINE_ADDRESS) {
   const p = activeProvider();
   if (!p) throw new Error('NO_WALLET');
-  if (!BLOODLINE_ADDRESS) throw new Error('NO_CONTRACT');
+  if (!to) throw new Error('NO_CONTRACT');
 
   // Ask what chain we are on BEFORE trusting an answer from it. A wallet
   // sitting on Ethereum answers every one of these calls with '0x' — there is
@@ -235,7 +268,7 @@ async function _ethCall(data) {
 
   const out = await p.request({
     method: 'eth_call',
-    params: [{ to: BLOODLINE_ADDRESS, data }, 'latest'],
+    params: [{ to, data }, 'latest'],
   });
   // Right chain, no code at the address: a misconfigured meta tag, not a false.
   if (!out || out === '0x') throw new Error('NO_CONTRACT_HERE');
@@ -369,7 +402,207 @@ export async function mintBloodline(address, cultists) {
   });
 }
 
-// Pay for a confession: a plain AVAX transfer to the abbey's treasury.
+// ── THE SECOND DOOR: $THROBBIN ──────────────────────────────────────────────
+//
+// The collection takes an ERC-20 as well as the chain's coin, at a flat price
+// of its own. TWO PRICES, NOT A CONVERSION — there is no oracle and no rate
+// anywhere in this file. Both are read off the contract; neither is derived
+// from the other.
+//
+// Everything here fails SOFT. A collection deployed with the token door shut
+// has no payToken(), and an older one has no such function at all — both must
+// come back as "no token door", never as an error that stops a coin mint.
+
+let _tokenInfo = undefined;     // undefined = unread, null = no token door
+
+/**
+ * The payment token, or null. Cached: all of it is immutable on the contract.
+ * Shape: { address, price (BigInt, smallest units), symbol, decimals }.
+ */
+export async function fetchPayToken() {
+  if (_tokenInfo !== undefined) return _tokenInfo;
+  if (!BLOODLINE_ADDRESS) { _tokenInfo = null; return null; }
+  try {
+    const raw = await ethCall(SEL.payToken);
+    const addr = '0x' + String(raw).replace(/^0x/, '').slice(-40).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(addr) || /^0x0{40}$/.test(addr)) { _tokenInfo = null; return null; }
+
+    const price = hexToBig(await ethCall(SEL.tokenPricePerCultist));
+    if (price <= 0n) { _tokenInfo = null; return null; }
+
+    const decimals = Number(hexToBig(await ethCall(SEL.decimals, addr)));
+    let symbol = 'TOKEN';
+    try { symbol = decodeAbiString(await ethCall(SEL.symbol, addr)) || 'TOKEN'; } catch { /* keep it */ }
+
+    _tokenInfo = {
+      address: addr,
+      price,
+      symbol,
+      decimals: Number.isFinite(decimals) && decimals >= 0 && decimals <= 36 ? decimals : 18,
+    };
+    return _tokenInfo;
+  } catch {
+    // An older collection has no payToken() at all and reverts. That is "no
+    // token door", not an outage — and it must not be cached as such if the
+    // cause was actually a dead RPC, so this one is left unset to retry.
+    return null;
+  }
+}
+
+/// A `string` return: [offset][length][bytes]. Some older tokens answer with a
+/// bare bytes32 instead, which is read as NUL-padded ASCII rather than refused —
+/// a missing ticker must never stop a payment.
+function decodeAbiString(hex) {
+  const b = String(hex || '').replace(/^0x/, '');
+  if (!b) return null;
+  if (b.length === 64) {
+    const s = (b.match(/.{2}/g) || []).map((h) => String.fromCharCode(parseInt(h, 16)))
+      .join('').replace(/\0+$/, '').trim();
+    return /^[\x20-\x7e]{1,32}$/.test(s) ? s : null;
+  }
+  const off = Number(BigInt('0x' + b.slice(0, 64))) * 2;
+  const len = Number(BigInt('0x' + b.slice(off, off + 64)));
+  if (!len || len > 128) return null;
+  return (b.slice(off + 64, off + 64 + len * 2).match(/.{2}/g) || [])
+    .map((h) => String.fromCharCode(parseInt(h, 16))).join('').trim();
+}
+
+/// Smallest units -> a human string. BigInt throughout: a Number cannot hold
+/// 30,000 tokens at 18 decimals without losing the low digits.
+export function formatUnits(raw, dp) {
+  const v = BigInt(raw || 0);
+  const neg = v < 0n;
+  const a = neg ? -v : v;
+  const scale = 10n ** BigInt(dp);
+  const whole = (a / scale).toString();
+  const frac = (a % scale).toString().padStart(dp, '0').replace(/0+$/, '');
+  // Thousands separators: 30000 THROBBIN is a number people read in groups.
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${neg ? '-' : ''}${grouped}${frac ? '.' + frac : ''}`;
+}
+
+/**
+ * The chain's own coin, held by this wallet.
+ *
+ * Needed because PAYING IN THE TOKEN STILL COSTS GAS, and gas is never the
+ * token. Somebody who bought THROBBIN and holds no ETH can afford the price and
+ * still cannot send the transaction — and the wallet's own error for that is
+ * unreadable. Checked here so the game can say what is actually wrong.
+ */
+export async function fetchCoinBalance(address) {
+  const p = activeProvider();
+  if (!p) return null;
+  try {
+    return hexToBig(await p.request({ method: 'eth_getBalance', params: [address, 'latest'] }));
+  } catch {
+    return null;                       // unknown is not zero — do not block on it
+  }
+}
+
+export async function fetchTokenBalance(address) {
+  const t = await fetchPayToken();
+  if (!t) return null;
+  return hexToBig(await ethCall(SEL.balanceOf + padAddr(address), t.address));
+}
+
+async function tokenAllowance(owner) {
+  const t = await fetchPayToken();
+  if (!t) return 0n;
+  return hexToBig(await ethCall(SEL.allowance + padAddr(owner) + padAddr(BLOODLINE_ADDRESS), t.address));
+}
+
+/**
+ * Mint paying in the token. TWO transactions, and there is no way around it:
+ * an ERC-20 has to be told before it will let anyone move it, so an approval is
+ * signed first and the mint second.
+ *
+ * The approval is for EXACTLY what this mint costs, not the unlimited approval
+ * most dapps ask for. It is one extra signature per mint and it means a
+ * Bloodline raised today leaves nothing standing that could move tokens
+ * tomorrow.
+ *
+ * `onStep` is called with 'approve' | 'mint' so the screen can say which of the
+ * two signatures a player is looking at — two unexplained wallet prompts in a
+ * row is how a mint gets abandoned half-done.
+ */
+export async function mintBloodlineWithToken(address, cultists, onStep = () => {}) {
+  const p = activeProvider();
+  if (!p) throw new Error('NO_WALLET');
+  if (!BLOODLINE_ADDRESS) throw new Error('NO_CONTRACT');
+  const n = Math.floor(Number(cultists));
+  if (!Number.isFinite(n) || n < 1 || n > 20) throw new Error('BAD_CULTISTS');
+
+  const t = await fetchPayToken();
+  if (!t) throw new Error('NO_TOKEN');
+  if (!(await fetchMintOpen())) throw new Error('MINT_CLOSED');
+
+  const cost = t.price * BigInt(n);
+  const held = await fetchTokenBalance(address);
+  if (held !== null && held < cost) throw new Error('NOT_ENOUGH_TOKEN');
+  // Two transactions to sign, and both burn the chain's coin. A wallet with
+  // none cannot mint however much of the token it holds.
+  const gas = await fetchCoinBalance(address);
+  if (gas !== null && gas === 0n) throw new Error('NO_GAS');
+
+  // Skip the approval when a previous one already covers it — a mint abandoned
+  // between the two signatures leaves an allowance behind, and asking for it
+  // again would be a second signature for nothing.
+  if ((await tokenAllowance(address)) < cost) {
+    onStep('approve');
+    const approveHash = await p.request({
+      method: 'eth_sendTransaction',
+      params: [{
+        from: address,
+        to: t.address,
+        data: SEL.approve + padAddr(BLOODLINE_ADDRESS) + padUint(cost),
+      }],
+    });
+    // The mint reverts if it is mined before the approval lands, so this waits
+    // rather than firing both and hoping the ordering holds.
+    await waitForTx(approveHash);
+  }
+
+  onStep('mint');
+  return p.request({
+    method: 'eth_sendTransaction',
+    params: [{ from: address, to: BLOODLINE_ADDRESS, data: SEL.mintWithToken + padUint(n) }],
+  });
+}
+
+/**
+ * Pay for a confession in the token: a plain ERC-20 transfer to the treasury.
+ *
+ * No approval here — a transfer moves the caller's own tokens and needs no
+ * permission from anybody. Like the coin version below, both the destination
+ * and the amount are the SERVER's, and the server checks the chain again before
+ * it forgives anything.
+ */
+export async function payConfessionWithToken(address, token, to, raw) {
+  const p = activeProvider();
+  if (!p) throw new Error('NO_WALLET');
+  if (!/^0x[0-9a-fA-F]{40}$/.test(String(to || ''))) throw new Error('NO_TREASURY');
+  if (!/^0x[0-9a-fA-F]{40}$/.test(String(token || ''))) throw new Error('NO_TOKEN');
+  const amount = BigInt(raw || 0);
+  if (amount <= 0n) throw new Error('BAD_AMOUNT');
+  await ensureChain();
+
+  const held = await fetchTokenBalance(address);
+  if (held !== null && held < amount) throw new Error('NOT_ENOUGH_TOKEN');
+  const gas = await fetchCoinBalance(address);
+  if (gas !== null && gas === 0n) throw new Error('NO_GAS');
+
+  beginWait();
+  try {
+    return await p.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: address, to: token, data: SEL.transfer + padAddr(to) + padUint(amount) }],
+    });
+  } finally {
+    endWait();
+  }
+}
+
+// Pay for a confession: a plain coin transfer to the abbey's treasury.
 //
 // `to` and `wei` are BOTH the server's, quoted by /confession, and neither is
 // computed here. The treasury the server quotes is read from the contract's own

@@ -8,12 +8,28 @@
        Get one free at https://cloud.reown.com. Left empty, the WalletConnect
        path stays shut and Connect falls back to whatever the browser injects. -->
   <meta name="wc-project-id" content="3c2c511cf428c6b19e1478d7e93c4bc0" />
-  <meta name="wc-chain-id" content="43114" />
-  <!-- The deployed Bloodline collection, Avalanche C-Chain. Public by nature:
-       anyone can read the same values off the chain. The client needs both to
-       call bloodlinesOf()/cultistsOf() and to know which chain to ask. -->
+  <!-- The deployed Bloodline collection. Public by nature: anyone can read the
+       same values off the chain. The client needs both to call
+       bloodlinesOf()/cultistsOf() and to know which chain to ask. -->
   <meta name="bloodline-address" content="0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878" />
   <meta name="bloodline-chain-id" content="43114" />
+  <!-- Everything the wallet must be TOLD about that chain, for the case where
+       it has never heard of it — wallet_addEthereumChain is built from these.
+       The launch workflow rewrites all five together, so moving the game to
+       another chain is a deploy and not an edit. -->
+  <meta name="chain-name" content="Avalanche C-Chain" />
+  <meta name="chain-currency" content="Avalanche" />
+  <meta name="chain-symbol" content="AVAX" />
+  <meta name="chain-rpc" content="https://api.avax.network/ext/bc/C/rpc" />
+  <meta name="chain-explorer" content="https://snowtrace.io" />
+  <!-- The second way to pay. Read off the CONTRACT at runtime, not from here —
+       these two exist only so a page can show the ticker before a wallet is
+       connected. Blank means the collection was deployed coin-only. -->
+  <meta name="pay-token" content="" />
+  <meta name="pay-token-symbol" content="" />
+  <!-- Everything priced that is not the mint: mini games, entries, anything
+       added later. Blank until the tolls contract is deployed. -->
+  <meta name="tolls-address" content="" />
   <title>Throbbin Abbey — Eternal Life</title>
   <link rel="icon" href="data:," />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -97,7 +113,9 @@
                forever the moment it is raised. -->
           <div class="cultist-slider" id="cultistSlider" hidden>
             <p class="cultist-count" id="cultistCount">1 Cultist</p>
-            <p class="cultist-cost" id="cultistCost">0.01 AVAX</p>
+            <!-- Overwritten by paint() with the real price and ticker the
+                 moment the mint rite opens. -->
+            <p class="cultist-cost" id="cultistCost">—</p>
             <input type="range" id="cultistRange" min="1" max="20" step="1" value="1"
                    aria-label="Cultists in this Bloodline" />
             <p class="cultist-ticks"><span>1</span><span>20</span></p>

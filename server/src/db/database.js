@@ -46,6 +46,13 @@ for (const ddl of [
   // different wallets used in one browser share it. Anything that asks "is this
   // the same person" has to ask this column — see /referral.
   'ALTER TABLE players ADD COLUMN address TEXT',
+  // A confession may be paid in the chain's coin or in the collection's ERC-20,
+  // and cost_eth can only hold one of them. It keeps its meaning — the coin
+  // amount — and is left NULL for a token payment rather than filled with the
+  // coin price of something nobody paid in coin. These two say what actually
+  // moved, which is what a dispute about a payment needs.
+  "ALTER TABLE streak_logs ADD COLUMN paid_currency TEXT",
+  'ALTER TABLE streak_logs ADD COLUMN paid_amount TEXT',
 ]) {
   try {
     db.exec(ddl);

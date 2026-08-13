@@ -70,7 +70,9 @@ CREATE TABLE IF NOT EXISTS streak_logs (
   broke         INTEGER DEFAULT 0,
   confessed     INTEGER DEFAULT 0,
   confessed_at  TEXT,
-  cost_eth      REAL,
+  cost_eth      REAL,          -- the COIN amount, NULL when paid in the token
+  paid_currency TEXT,          -- 'coin' or the token's ticker
+  paid_amount   TEXT,          -- what actually moved, in smallest units
   tx_hash       TEXT
 );
 
@@ -175,3 +177,40 @@ CREATE TABLE IF NOT EXISTS final_standings (
   frozen_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_final_standings_rank ON final_standings(rank);
+
+-- EVERY TOLL EVER PAID. Mini games, entries, wagers — anything priced that is
+-- not the mint.
+--
+-- One row per transaction, and the UNIQUE primary key is what actually stops a
+-- payment being spent twice: verifyToll() checks for a duplicate before it
+-- writes, but two requests arriving together would both pass that check and
+-- only one can win the insert.
+--
+-- Deliberately generic. A new priced thing adds rows here and nothing else —
+-- no column, no table, no migration.
+CREATE TABLE IF NOT EXISTS toll_payments (
+  tx_hash   TEXT PRIMARY KEY,
+  toll      TEXT NOT NULL,      -- the name, readable: 'dice', not a hash
+  player_id TEXT NOT NULL,
+  token_id  INTEGER,
+  payer     TEXT,               -- the chain address that signed it
+  in_token  INTEGER DEFAULT 0,  -- 0 = the chain's coin, 1 = the ERC-20
+  amount    TEXT,               -- smallest units, as text: it does not fit a REAL
+  ref       TEXT,               -- the caller's own reference, opaque here
+  paid_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_toll_payments_player ON toll_payments(player_id, toll);
+
+-- ONE ROW PER SETTING, for the few things the operator sets at RUNTIME rather
+-- than at deploy. Only one so far: abbey_start, the moment the run was begun.
+--
+-- In the database rather than the environment because it is written by a
+-- request, not by a person editing a file — and because it must survive a
+-- restart. Day 0 moving because a service bounced would be the whole run's
+-- schedule quietly changing.
+CREATE TABLE IF NOT EXISTS settings (
+  key     TEXT PRIMARY KEY,
+  value   TEXT,
+  set_at  TEXT
+);

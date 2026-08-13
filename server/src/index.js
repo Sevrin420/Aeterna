@@ -6,7 +6,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
-import { verifyMessage } from 'viem';
+import { verifyMessage, keccak256, toHex } from 'viem';
 import db from './db/database.js';
 // THE SAME MAP THE CLIENT DRAWS. abbeyMap.js is a pure constants module with no
 // imports and no browser globals, and it resolves identically in development
@@ -20,10 +20,19 @@ import {
   REFERRAL_CAP, X_COMMENT_DEVOTION, X_DAILY_CLAIMS, X_PHRASE, matchesPhrase,
   todayStr, streakMultiplier, taskAward, taskDevotionForWeek, ensureFreshDay, pendingConfession,
   abbeyWeek, abbeyClock, confessionPct, confessionCostWei, weiToAvax,
+  setAbbeyStart,
 } from './lib/gameLogic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.join(__dirname, '..', '..', 'web');
+
+// WHEN THE RUN BEGAN, if it has. Read once at boot and handed to the clock
+// before a single request is served — an endpoint answering with the wrong day
+// because this had not been loaded yet would be a schedule, not a glitch.
+{
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'abbey_start'").get();
+  if (row && row.value) setAbbeyStart(row.value);
+}
 
 const fastify = Fastify({ logger: true });
 await fastify.register(cors, { origin: true });
@@ -191,14 +200,24 @@ function requireBloodline(player, reply) {
 // check anywhere in this API (see server/README.md), so a caller can claim to
 // be any address — what this stops is claiming a token that address does not
 // hold. Signature auth is the remaining hole and it is not closed here.
-const AVAX_RPC = process.env.AVAX_RPC || 'https://api.avax.network/ext/bc/C/rpc';
-// The deployed collection on Avalanche C-Chain. Defaulted rather than required
-// because it is public — the same address is a meta tag in web/index.html — and
-// the deploy rsync deliberately excludes .env, so a required secret here would
-// mean /bind silently 503s on every server that was updated without someone
-// remembering to hand-edit a file on the box.
+// CHAIN_RPC is the name to set; AVAX_RPC is still read so a box that has the
+// old variable in its environment keeps working across the move.
+const AVAX_RPC = process.env.CHAIN_RPC || process.env.AVAX_RPC
+  || 'https://api.avax.network/ext/bc/C/rpc';
+// The deployed collection. Defaulted rather than required because it is public
+// — the same address is a meta tag in web/index.html — and the deploy rsync
+// deliberately excludes .env, so a required secret here would mean /bind
+// silently 503s on every server that was updated without someone remembering
+// to hand-edit a file on the box.
 const BLOODLINE_ADDRESS = process.env.BLOODLINE_ADDRESS
   || '0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878';
+// Reported by /collection, which is how a cached page finds out it is reading
+// the wrong collection. It has to match web/index.html's bloodline-chain-id;
+// the launch workflow rewrites both in the same commit.
+const CHAIN_ID = Number(process.env.CHAIN_ID || 43114);
+// The gas token's ticker, for the two price errors a player can read. A label,
+// never used for arithmetic — both tokens are 18 decimals.
+const COIN = process.env.CHAIN_SYMBOL || 'AVAX';
 
 // Two failures live here and they are NOT the same thing, so they are thrown
 // apart. A dead RPC must fail closed (nobody gets bound on an unverified
@@ -228,8 +247,10 @@ async function rpc(method, params) {
   return body.result;
 }
 
-async function chainCall(data) {
-  const result = await rpc('eth_call', [{ to: BLOODLINE_ADDRESS, data }, 'latest']);
+// `to` defaults to the collection. It is passed explicitly only to read the
+// payment token's own decimals() and symbol(), which belong to the token.
+async function chainCall(data, to = BLOODLINE_ADDRESS) {
+  const result = await rpc('eth_call', [{ to, data }, 'latest']);
   // ownerOf() reverts on an unminted id, and a bare '0x' is the same answer
   // from a node that would rather not say so.
   if (!result || result === '0x') throw new NoSuchToken('empty result');
@@ -237,6 +258,10 @@ async function chainCall(data) {
 }
 
 const padUint256 = (n) => BigInt(n).toString(16).padStart(64, '0');
+
+/// keccak256('Transfer(address,address,uint256)') — topic 0 on every ERC-20
+/// transfer, which is where a token payment to the treasury is recorded.
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
 // pricePerCultist(), cached for the life of the process.
 //
@@ -261,33 +286,376 @@ async function pricePerCultistWei() {
   }
 }
 
-// What mending this player's streak costs, right now. Both inputs are the
-// abbey's own: the week from the abbey's clock, the Cultists from the row that
-// /bind verified against the chain.
+// ── THE SECOND DOOR: paying in the collection's ERC-20 ──────────────────────
+//
+// The same immutability argument as the price above, so the same one-call-per-
+// boot cache. Null here means two different things and the caller must not
+// conflate them: `payToken` null after a successful read means the collection
+// was deployed with the token door shut, which is a permanent fact; a throw
+// means the chain could not be reached, which is not.
+let _payToken = undefined;          // undefined = unread, null = off, string = address
+let _tokenPricePerCultist = null;
+let _tokenSymbol = null;
+let _tokenDecimals = null;
+
+async function payTokenInfo() {
+  if (_payToken !== undefined) {
+    return _payToken === null ? null
+      : { address: _payToken, price: _tokenPricePerCultist, symbol: _tokenSymbol, decimals: _tokenDecimals };
+  }
+  try {
+    const raw = await chainCall('0x96336b30');                    // payToken()
+    const addr = '0x' + String(raw).replace(/^0x/, '').slice(-40).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(addr) || addr === `0x${'0'.repeat(40)}`) {
+      _payToken = null;                                            // deployed with the door shut
+      return null;
+    }
+    const price = BigInt(await chainCall('0xa157c70f') || '0x0');  // tokenPricePerCultist()
+    if (price <= 0n) { _payToken = null; return null; }
+
+    // Read off the TOKEN, not the collection — the ticker a player is shown and
+    // the decimals the amount is formatted with both belong to the token.
+    const dp = Number(BigInt(await chainCall('0x313ce567', addr) || '0x12'));
+    let sym = 'TOKEN';
+    try { sym = decodeAbiString(await chainCall('0x95d89b41', addr)) || 'TOKEN'; } catch { /* keep the fallback */ }
+
+    _payToken = addr;
+    _tokenPricePerCultist = price;
+    _tokenDecimals = Number.isFinite(dp) && dp >= 0 && dp <= 36 ? dp : 18;
+    _tokenSymbol = sym;
+    return { address: addr, price, symbol: sym, decimals: _tokenDecimals };
+  } catch {
+    return null;                                                   // not cached: retry next time
+  }
+}
+
+// A `string` return, ABI-encoded: [offset][length][bytes...]. Some older tokens
+// return a bytes32 instead; that case is read as a NUL-padded ASCII word rather
+// than refused, because a wrong ticker must not stop a payment.
+function decodeAbiString(hex) {
+  const b = String(hex || '').replace(/^0x/, '');
+  if (!b) return null;
+  if (b.length === 64) {
+    const s = Buffer.from(b, 'hex').toString('utf8').replace(/\0+$/, '').trim();
+    return /^[\x20-\x7e]{1,32}$/.test(s) ? s : null;
+  }
+  const off = Number(BigInt('0x' + b.slice(0, 64))) * 2;
+  const len = Number(BigInt('0x' + b.slice(off, off + 64)));
+  if (!len || len > 128) return null;
+  return Buffer.from(b.slice(off + 64, off + 64 + len * 2), 'hex').toString('utf8').trim();
+}
+
+// Smallest units -> a human string, without a float anywhere near it.
+function formatUnits(raw, dp) {
+  const v = BigInt(raw || 0);
+  const scale = 10n ** BigInt(dp);
+  const frac = (v % scale).toString().padStart(dp, '0').replace(/0+$/, '');
+  // Grouped, exactly as web/js/wallet.js groups it. The same amount printed by
+  // the two sides has to read the same way, and 30000 is a number people read
+  // in threes.
+  const whole = (v / scale).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return frac ? `${whole}.${frac}` : whole;
+}
+
+// What mending this player's streak costs, right now, in EITHER currency. Both
+// inputs are the abbey's own: the week from the abbey's clock, the Cultists from
+// the row that /bind verified against the chain.
+//
+// The two prices are independent — the same percentage applied to two flat mint
+// prices — so neither is converted from the other and there is no rate here.
 async function confessionPriceFor(player, now = new Date()) {
   const price = await pricePerCultistWei();
   if (price === null) return null;
   const week = abbeyWeek(now);
-  const wei = confessionCostWei(price, player.cultists || 0, week);
-  return {
+  const cultists = player.cultists || 0;
+  const wei = confessionCostWei(price, cultists, week);
+
+  const out = {
     week,
     pct: confessionPct(week),
-    cultists: player.cultists || 0,
+    cultists,
     wei: wei.toString(),
     avax: weiToAvax(wei),
+    coin: COIN,
+  };
+
+  const tok = await payTokenInfo();
+  if (tok) {
+    const raw = confessionCostWei(tok.price, cultists, week);
+    out.token = {
+      address: tok.address,
+      symbol: tok.symbol,
+      decimals: tok.decimals,
+      wei: raw.toString(),
+      amount: formatUnits(raw, tok.decimals),
+    };
+  }
+  return out;
+}
+
+// ── TOLLS: EVERYTHING PRICED THAT IS NOT THE MINT ───────────────────────────
+//
+// Mini games, entries, wagers — anything built later that costs money. The
+// contract is generic and so is this: a new priced thing is `setToll` on chain
+// and then ONE call to verifyToll() here. There is nothing per-game in this
+// block and there should never need to be.
+//
+// The shape a future endpoint takes:
+//
+//   const paid = await verifyToll(txHash, { toll: 'dice', player: fresh });
+//   if (!paid.ok) return reply.code(paid.status).send({ error: paid.error });
+//   // paid.amount / paid.inToken / paid.ref — then run the game.
+//
+// The three things that make it safe are already done there: the payment went
+// to the abbey's own tolls contract, it was signed by the wallet holding the
+// line, and the hash cannot be spent twice.
+const TOLLS_ADDRESS = (process.env.TOLLS_ADDRESS || '').toLowerCase();
+
+/// keccak256('Paid(bytes32,address,uint256,bool,uint256,bytes32)')
+const PAID_TOPIC = '0x76d84c1b54f42be49e84fdb77b44c167aae13ab2b62315640e6b72a012aef6e6';
+
+/// A toll's on-chain id is the hash of its name, so a name can be any length
+/// and still reads as itself wherever it is printed.
+export function tollId(name) {
+  return keccak256(toHex(String(name)));
+}
+
+/// Prices, straight off the contract. Null when no tolls contract is configured
+/// — which is the state before the first mini game exists, and must read as
+/// "nothing is priced", never as an error.
+async function readToll(name) {
+  if (!TOLLS_ADDRESS) return null;
+  try {
+    const id = tollId(name);
+    const hex = await chainCall('0xc8add869' + id.slice(2), TOLLS_ADDRESS);   // tolls(bytes32)
+    const w = String(hex).replace(/^0x/, '');
+    if (w.length < 192) return null;
+    const coin = BigInt('0x' + w.slice(0, 64));
+    const token = BigInt('0x' + w.slice(64, 128));
+    const open = BigInt('0x' + w.slice(128, 192)) !== 0n;
+    // An id that was never set reads back as three zeros rather than a revert,
+    // which is indistinguishable from a real toll priced at nothing. Both are
+    // "there is no such thing here", so both come back null — otherwise /tolls
+    // cheerfully lists every game nobody has built yet.
+    if (coin === 0n && token === 0n && !open) return null;
+    return { id, name, coin, token, open };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Was this transaction a real payment of this toll, by this player?
+ *
+ * Everything a future mini game needs to trust a payment, in one call. It reads
+ * the Paid event rather than the transaction, because that is the only place
+ * that carries WHICH toll and WHICH Bloodline — and a transaction to the tolls
+ * contract proves neither on its own.
+ *
+ * `spend` is what stops a hash being reused. It is a table lookup, not a chain
+ * read: the chain will happily confirm the same payment forever.
+ */
+async function verifyToll(txHash, { toll, player, log }) {
+  const fail = (status, error) => ({ ok: false, status, error });
+  if (!TOLLS_ADDRESS) return fail(503, 'Nothing is priced here yet.');
+  if (!/^0x[0-9a-fA-F]{64}$/.test(String(txHash || ''))) return fail(400, 'That is not a transaction hash.');
+  const hash = String(txHash).toLowerCase();
+
+  const spent = db.prepare('SELECT 1 FROM toll_payments WHERE tx_hash = ?').get(hash);
+  if (spent) return fail(409, 'That payment has already been spent.');
+
+  const priced = await readToll(toll);
+  if (!priced) return fail(503, 'The abbey cannot read its own prices. Try again in a moment.');
+  if (!priced.open) return fail(409, 'That is not open.');
+
+  let tx;
+  let receipt;
+  try {
+    tx = await rpc('eth_getTransactionByHash', [hash]);
+    receipt = await rpc('eth_getTransactionReceipt', [hash]);
+  } catch {
+    return fail(503, 'The chain could not be reached to check that payment. Nothing was taken.');
+  }
+  if (!tx) return fail(404, 'No such transaction.');
+  if (!receipt) return fail(425, 'That payment has not been sealed yet. Try again in a moment.');
+  if (String(receipt.status) !== '0x1') return fail(400, 'That transaction failed on the chain.');
+
+  // The event, from the abbey's own tolls contract, for THIS toll and THIS
+  // Bloodline. topics = [sig, id, payer, tokenId].
+  let found = null;
+  for (const l of receipt.logs || []) {
+    if (String(l.address || '').toLowerCase() !== TOLLS_ADDRESS) continue;
+    const t = l.topics || [];
+    if (t.length < 4) continue;
+    if (String(t[0]).toLowerCase() !== PAID_TOPIC) continue;
+    if (String(t[1]).toLowerCase() !== priced.id.toLowerCase()) continue;
+    if (BigInt(t[3]) !== BigInt(player.token_id)) continue;
+    const payer = '0x' + String(t[2]).replace(/^0x/, '').slice(-40).toLowerCase();
+    const d = String(l.data || '0x').replace(/^0x/, '');
+    found = {
+      payer,
+      inToken: BigInt('0x' + d.slice(0, 64)) !== 0n,
+      amount: BigInt('0x' + d.slice(64, 128)),
+      ref: '0x' + d.slice(128, 192),
+    };
+    break;
+  }
+  if (!found) return fail(400, 'That payment was not for this.');
+
+  // The price is checked here as well as on chain. The contract already refuses
+  // the wrong value, but a toll repriced between the two would otherwise let an
+  // old payment buy a dearer thing.
+  const owed = found.inToken ? priced.token : priced.coin;
+  if (owed === 0n) return fail(400, 'That is not payable that way.');
+  if (found.amount < owed) return fail(402, 'That is not enough.');
+
+  // Signed by the wallet holding the line. Same rule as the confession: a
+  // stranger's payment must not buy somebody else a turn.
+  const from = String(tx.from || '').toLowerCase();
+  if (from !== found.payer) return fail(403, 'That payment did not come from the wallet that signed it.');
+  try {
+    const onChain = await readTokenFromChain(player.token_id);
+    if (onChain.owner !== from) return fail(403, 'That payment did not come from the wallet holding this Bloodline.');
+  } catch (e) {
+    if (log) log.error({ err: e, tokenId: player.token_id }, 'toll: could not verify the holder');
+    return fail(503, 'The chain could not be reached to check that Bloodline. Nothing was taken.');
+  }
+
+  return {
+    ok: true,
+    hash,
+    toll,
+    id: priced.id,
+    payer: found.payer,
+    inToken: found.inToken,
+    amount: found.amount,
+    ref: found.ref,
+    /// Bank it. Call this once the thing paid for has actually been given —
+    /// the UNIQUE index is what holds under two requests arriving together.
+    spend: () => {
+      db.prepare(`
+        INSERT INTO toll_payments (tx_hash, toll, player_id, token_id, payer, in_token, amount, ref, paid_at)
+        VALUES (?,?,?,?,?,?,?,?,?)
+      `).run(hash, toll, player.id, player.token_id, found.payer,
+             found.inToken ? 1 : 0, found.amount.toString(), found.ref, new Date().toISOString());
+    },
   };
 }
+
+// The board of prices, for a client that wants to draw it. Named tolls only —
+// the caller says which it cares about, so an unbuilt game is simply absent.
+fastify.get('/tolls', async (req, reply) => {
+  reply.header('Cache-Control', 'no-store');
+  const names = String(req.query.names || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 20);
+  if (!TOLLS_ADDRESS || !names.length) return { address: TOLLS_ADDRESS || null, tolls: [] };
+  const tok = await payTokenInfo();
+  const out = [];
+  for (const n of names) {
+    const t = await readToll(n);
+    if (!t) continue;
+    out.push({
+      name: n,
+      id: t.id,
+      open: t.open,
+      coin: t.coin > 0n ? { wei: t.coin.toString(), amount: weiToAvax(t.coin), symbol: COIN } : null,
+      token: (t.token > 0n && tok)
+        ? { wei: t.token.toString(), amount: formatUnits(t.token, tok.decimals), symbol: tok.symbol, address: tok.address }
+        : null,
+    });
+  }
+  return { address: TOLLS_ADDRESS, tolls: out };
+});
+
+/**
+ * Bank a toll payment.
+ *
+ * The reference implementation of the pattern above, and a working endpoint in
+ * its own right: it checks a payment and records it, and grants nothing. What
+ * the payment BUYS is the game's business, and a game that has not been built
+ * yet has no business here.
+ *
+ * A mini game added later has two ways to use this. Either it calls
+ * verifyToll() itself and does the game in the same request — the right shape
+ * when the outcome must be decided at the moment of payment — or it lets the
+ * player bank the payment here first and then spends the banked row. The second
+ * is worth knowing about: it means the payment and the play can be separate
+ * requests without the payment being replayable in between.
+ */
+fastify.post('/toll/:name', async (req, reply) => {
+  const { wallet, tokenId, txHash } = req.body || {};
+  const name = String(req.params.name || '').slice(0, 40);
+  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+
+  const player = playerFor(wallet, tokenId);
+  if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (requireBloodline(player, reply)) return reply;
+  if (notBegun(reply)) return reply;
+  if (runClosed(reply)) return reply;
+
+  const priced = await readToll(name);
+  if (!priced || !priced.open) {
+    return reply.code(404).send({ error: 'Nothing here is priced by that name.' });
+  }
+
+  // No payment yet: quote both doors, the same shape the confession uses.
+  if (!txHash) {
+    const tok = await payTokenInfo();
+    return reply.code(402).send({
+      error: 'This costs something.',
+      toll: name,
+      id: priced.id,
+      payTo: TOLLS_ADDRESS,
+      price: {
+        coin: priced.coin > 0n ? { wei: priced.coin.toString(), amount: weiToAvax(priced.coin), symbol: COIN } : null,
+        token: (priced.token > 0n && tok)
+          ? { wei: priced.token.toString(), amount: formatUnits(priced.token, tok.decimals), symbol: tok.symbol, address: tok.address }
+          : null,
+      },
+    });
+  }
+
+  const paid = await verifyToll(txHash, { toll: name, player, log: req.log });
+  if (!paid.ok) return reply.code(paid.status).send({ error: paid.error });
+
+  try {
+    paid.spend();
+  } catch (e) {
+    // The primary key firing here means another request banked this same hash
+    // between the check and now. That is the race the key exists for.
+    if (e && typeof e.code === 'string' && e.code.startsWith('SQLITE_CONSTRAINT')) {
+      return reply.code(409).send({ error: 'That payment has already been spent.' });
+    }
+    throw e;
+  }
+
+  return {
+    success: true,
+    toll: name,
+    txHash: paid.hash,
+    inToken: paid.inToken,
+    amount: paid.amount.toString(),
+    ref: paid.ref,
+  };
+});
 
 // ── WHERE THE MONEY GOES ────────────────────────────────────────────────────
 //
 // The treasury address is READ FROM THE CONTRACT, not configured. `treasury` is
 // an immutable public on the deployed contract, so the chain is the authority
 // on where its money goes and there is no way for a wrong value in a file, or a
-// wrong value pasted into a chat, to send a player's AVAX somewhere else.
+// wrong value pasted into a chat, to send a player's coin somewhere else.
 //
 // CONFESSION_TREASURY is a cross-check, not the source: if the chain disagrees
 // with it the server refuses to take money at all and says so in the log. A
 // mismatch means one of the two is wrong and neither is safe to act on.
+//
+// SET IT AT EVERY DEPLOY. The fallback is the FIRST collection's treasury, and
+// it is only right by accident — deploy with a different TREASURY_ADDRESS and
+// leave this unset and every confession answers 503 forever, because the check
+// is comparing the new contract against the old address. The launch workflow
+// writes it from the same secret the contract is deployed with, which keeps two
+// independent sources (the repo secret, and the chain) rather than collapsing
+// the check into "the chain agrees with the chain".
 const CONFESSION_TREASURY = String(
   process.env.CONFESSION_TREASURY || '0xda74c09ec68a291287e92e7e0e68a17b824d6b0e',
 ).toLowerCase();
@@ -691,6 +1059,7 @@ fastify.post('/confession', async (req, reply) => {
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(player, reply)) return reply;
+  if (notBegun(reply)) return reply;
   if (runClosed(reply)) return reply;
 
   const fresh = ensureFreshDay(db, player);
@@ -710,12 +1079,16 @@ fastify.post('/confession', async (req, reply) => {
     return reply.code(503).send({ error: 'The abbey cannot say where its own coffer is. Nothing was taken.' });
   }
 
-  // No payment yet: quote, and say where to send it.
+  // No payment yet: quote, and say where to send it. Both prices go out; the
+  // player picks, and whichever they send is what gets checked below.
   if (!txHash) {
     return reply.code(402).send({
-      error: `The mending costs ${price.avax} AVAX.`,
+      error: price.token
+        ? `The mending costs ${price.avax} ${COIN}, or ${price.token.amount} ${price.token.symbol}.`
+        : `The mending costs ${price.avax} ${COIN}.`,
       price,
       payTo: treasury,
+      payToken: price.token || null,
     });
   }
 
@@ -744,21 +1117,57 @@ fastify.post('/confession', async (req, reply) => {
     return reply.code(400).send({ error: 'That transaction failed on the chain.' });
   }
 
+  // WHICH CURRENCY DID THEY SEND? A coin payment is a plain transfer to the
+  // treasury and shows up as tx.to + tx.value. A token payment goes TO THE
+  // TOKEN CONTRACT and the treasury never appears in the transaction itself —
+  // it appears in a Transfer log. Reading tx.value on one of those gives zero,
+  // so the two are told apart before either is judged.
   const to = String(tx.to || '').toLowerCase();
-  if (to !== treasury) {
+  const paidInToken = !!(price.token && to === price.token.address);
+
+  if (!paidInToken && to !== treasury) {
     req.log.warn({ hash, to, treasury }, 'confession: payment sent somewhere other than the treasury');
     return reply.code(400).send({ error: 'That payment did not go to the abbey.' });
   }
 
-  const paid = BigInt(tx.value || '0x0');
-  const owed = BigInt(price.wei);
-  if (paid < owed) {
-    return reply.code(402).send({
-      error: `That is not enough. The mending costs ${price.avax} AVAX.`,
-      price,
-      payTo: treasury,
-    });
+  const notEnough = () => reply.code(402).send({
+    error: paidInToken
+      ? `That is not enough. The mending costs ${price.token.amount} ${price.token.symbol}.`
+      : `That is not enough. The mending costs ${price.avax} ${COIN}.`,
+    price,
+    payTo: treasury,
+    payToken: price.token || null,
+  });
+
+  let paid;
+  let owed;
+  if (paidInToken) {
+    // Sum every Transfer of THIS token to the treasury in this transaction. A
+    // sum rather than a first-match: a token that splits a transfer across two
+    // events would otherwise look underpaid, and paying twice in one
+    // transaction is a player being generous, not an attack.
+    owed = BigInt(price.token.wei);
+    paid = 0n;
+    for (const log of receipt.logs || []) {
+      if (String(log.address || '').toLowerCase() !== price.token.address) continue;
+      const t = log.topics || [];
+      if (String(t[0] || '').toLowerCase() !== TRANSFER_TOPIC) continue;
+      // topics = [sig, from, to]; the recipient is the low 20 bytes of topic 2.
+      if (t.length < 3) continue;
+      if ('0x' + String(t[2]).replace(/^0x/, '').slice(-40).toLowerCase() !== treasury) continue;
+      paid += BigInt(log.data || '0x0');
+    }
+    if (paid === 0n) {
+      req.log.warn({ hash, token: price.token.address, treasury },
+        'confession: token transaction carried no transfer to the treasury');
+      return reply.code(400).send({ error: 'That payment did not go to the abbey.' });
+    }
+  } else {
+    paid = BigInt(tx.value || '0x0');
+    owed = BigInt(price.wei);
   }
+
+  if (paid < owed) return notEnough();
 
   // (4). The payer must still hold the line being mended — otherwise a
   // stranger's payment, or an old one from a wallet that has since sold up,
@@ -777,9 +1186,14 @@ fastify.post('/confession', async (req, reply) => {
   const now = new Date().toISOString();
   try {
     db.prepare(`
-      UPDATE streak_logs SET confessed = 1, confessed_at = ?, cost_eth = ?, tx_hash = ?
+      UPDATE streak_logs
+      SET confessed = 1, confessed_at = ?, cost_eth = ?, paid_currency = ?, paid_amount = ?, tx_hash = ?
       WHERE id = ?
-    `).run(now, price.avax, hash, pending.id);
+    `).run(now,
+           paidInToken ? null : price.avax,
+           paidInToken ? price.token.symbol : 'coin',
+           paid.toString(),
+           hash, pending.id);
   } catch (e) {
     // The UNIQUE index firing here means another request banked this same hash
     // between the check above and now. That is the race the index exists for.
@@ -799,7 +1213,11 @@ fastify.post('/confession', async (req, reply) => {
 
   return {
     success: true,
-    costPaid: price.avax,
+    // What was actually taken, in the currency it was actually taken in — the
+    // toast says this back to the player, and quoting a coin figure at somebody
+    // who paid in the token would be a lie about their own payment.
+    costPaid: paidInToken ? price.token.amount : price.avax,
+    paidCurrency: paidInToken ? price.token.symbol : COIN,
     price,
     txHash: hash,
     confessionCount: fresh.confession_count + 1,
@@ -947,6 +1365,27 @@ function freezeStandings() {
 // The guard every earning route sits behind. Returns the reply when the run is
 // over, so callers can `if (runClosed(reply)) return reply;` the same way they
 // already do for requireBloodline.
+// The other end of the same idea: the run has not STARTED yet.
+//
+// The abbey is open — people can mint, bind, name a line, walk it, read the
+// board and talk to each other. Nothing is counted. Duties do not pay, streaks
+// do not accrue and the Confessor has nothing to forgive, because there is no
+// day 1 to have missed.
+//
+// This is not politeness, it is fairness: without it, whoever minted first
+// would bank a week of Devotion before the last person could get in. Held here,
+// everybody's day 0 is the same instant.
+function notBegun(reply) {
+  const clock = abbeyClock();
+  if (clock.started) return null;
+  reply.code(425).send({
+    error: 'The abbey has not begun. Nothing is counted yet.',
+    started: false,
+    pending: true,
+  });
+  return reply;
+}
+
 function runClosed(reply) {
   const clock = abbeyClock();
   if (!clock.ended) return null;
@@ -957,6 +1396,50 @@ function runClosed(reply) {
   });
   return reply;
 }
+
+/**
+ * BEGIN THE RUN. The starting gun, fired by hand.
+ *
+ * The moment this returns, day 0 is now and the eight weeks are running for
+ * everybody at once. Before it, the abbey is open and nothing counts.
+ *
+ * FAILS CLOSED, exactly like /admin/standings: with no ADMIN_TOKEN in the
+ * server's environment there is no way to call this at all, and a wrong token
+ * is a 404 rather than a 401 — the endpoint does not admit to existing.
+ *
+ * It can be fired ONCE. Day 0 moving after people have started keeping streaks
+ * would rewrite every week boundary underneath them, so a second call is
+ * refused and says when the first one was.
+ */
+fastify.post('/admin/begin', async (req, reply) => {
+  const want = process.env.ADMIN_TOKEN;
+  if (!want || req.headers['x-admin-token'] !== want) return reply.code(404).send({ error: 'Not found' });
+
+  const already = db.prepare("SELECT value, set_at FROM settings WHERE key = 'abbey_start'").get();
+  if (already && already.value) {
+    return reply.code(409).send({
+      error: 'The run has already begun.',
+      startedAt: already.value,
+      clock: abbeyClock(),
+    });
+  }
+
+  const when = new Date().toISOString();
+  db.prepare("INSERT OR REPLACE INTO settings (key, value, set_at) VALUES ('abbey_start', ?, ?)").run(when, when);
+  setAbbeyStart(when);
+  req.log.warn({ when }, 'THE RUN HAS BEGUN — day 0 is now');
+
+  return { success: true, startedAt: when, clock: abbeyClock() };
+});
+
+/// Whether the run has begun, without the power to begin it. Same auth, because
+/// it is the operator's question and nobody else's — players are told by /day.
+fastify.get('/admin/begin', async (req, reply) => {
+  const want = process.env.ADMIN_TOKEN;
+  if (!want || req.headers['x-admin-token'] !== want) return reply.code(404).send({ error: 'Not found' });
+  const row = db.prepare("SELECT value, set_at FROM settings WHERE key = 'abbey_start'").get();
+  return { startedAt: row ? row.value : null, clock: abbeyClock() };
+});
 
 // The standings, for the operator settling the pot. FAILS CLOSED: without
 // ADMIN_TOKEN in the server's environment there is no way to call this at all.
@@ -991,6 +1474,7 @@ fastify.post('/duty/:type', async (req, reply) => {
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(player, reply)) return reply;
+  if (notBegun(reply)) return reply;
   if (runClosed(reply)) return reply;
 
   const fresh = ensureFreshDay(db, player);
@@ -1159,6 +1643,7 @@ fastify.post('/referral', async (req, reply) => {
   const referee = playerFor(wallet, tokenId);
   if (!referee) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(referee, reply)) return reply;
+  if (notBegun(reply)) return reply;
   if (runClosed(reply)) return reply;
 
   const handle = String(xHandle || '').trim().replace(/^@/, '');
@@ -1270,6 +1755,7 @@ fastify.post('/x/claim', async (req, reply) => {
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(player, reply)) return reply;
+  if (notBegun(reply)) return reply;
   if (runClosed(reply)) return reply;
   if (!player.x_handle) return reply.code(400).send({ error: 'No X handle bound to this Cultist' });
 
@@ -1355,7 +1841,7 @@ fastify.get('/bloodlines', async (req, reply) => {
 // A stale page cannot know it is stale by looking at itself. It has to ask.
 fastify.get('/collection', async (req, reply) => {
   reply.header('Cache-Control', 'no-store');
-  return { address: BLOODLINE_ADDRESS, chainId: 43114 };
+  return { address: BLOODLINE_ADDRESS, chainId: CHAIN_ID };
 });
 
 fastify.get('/day', async () => {

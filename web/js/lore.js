@@ -114,6 +114,12 @@ export const LORE = {
       speaker: 'The Door is Shut',
       text: 'No wallet is bound.\n\nPress WALLET to connect, then take up a Bloodline.',
     },
+    // NOT a blocked state — the doors are open. Shown once on the way in, so
+    // nobody performs three duties before finding out they paid for nothing.
+    notBegun: {
+      speaker: 'The Abbey Waits',
+      text: 'The doors are open.\n\nThe run has not begun. Nothing is counted yet.\n\nRaise your line. When it starts, it starts for everyone at once.',
+    },
     bloodline: {
       speaker: 'The Door is Shut',
       text: 'Your wallet holds no Bloodline.\n\nPress MINT to raise one. Nothing here is counted without it.',

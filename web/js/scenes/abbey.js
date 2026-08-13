@@ -14,6 +14,9 @@ import { Scourge, StickPile } from '../scourge.js';
 import { SkullShrine } from '../skullrite.js';
 import { FireVigil } from '../vigil.js';
 import { CHANT_PAIR } from '../config.js';
+// The gas token's ticker, so the confession price is not labelled AVAX on a
+// chain that charges ETH.
+import { COIN } from '../wallet.js';
 import {
   TILE, COLS, ROWS, GRID, PROPS, tileAt, isSolid, h2, CATHEDRAL_ALCOVES, STAIRS,
   ALCOVES, ROOMS, BEDS, SPAWN_BEDS, SKULL_ROOM, SKULL_ALTAR, NAVE, TRANSEPT, NAVE_CX,
@@ -874,13 +877,22 @@ export class AbbeyScene {
           + row('Streak', `${streak}d`) + '\n'
           + row('Multiplier', `${mult}x`),
       },
-      {
-        speaker: 'The Season',
-        text: row('Week', `${clock.week || 1} of ${clock.weeks || 8}`) + '\n'
-          + row('Devotion per task', task.base != null ? task.base : 0) + '\n'
-          + row('Days left', clock.daysLeft != null ? clock.daysLeft : '?') + '\n\n'
-          + 'The base rises each\nweek, for everyone.',
-      },
+      // A run that has not begun has no week and no days left, and printing
+      // "Week 1, 56 days left" over a clock that is not running would be a lie
+      // a player could plan around.
+      clock.started === false
+        ? {
+          speaker: 'The Season',
+          text: 'The abbey is open.\n\nThe run has NOT begun.\n\n'
+            + 'Nothing is counted\nyet. Raise your line\nand wait.',
+        }
+        : {
+          speaker: 'The Season',
+          text: row('Week', `${clock.week || 1} of ${clock.weeks || 8}`) + '\n'
+            + row('Devotion per task', task.base != null ? task.base : 0) + '\n'
+            + row('Days left', clock.daysLeft != null ? clock.daysLeft : '?') + '\n\n'
+            + 'The base rises each\nweek, for everyone.',
+        },
       {
         // "In all" is not the same figure as "Earned" and is not redundant
         // with it: Earned is what BRINGING people in has paid, and In all adds
@@ -919,7 +931,9 @@ export class AbbeyScene {
         text: '"You have broken something."\n\n'
           + `"Week ${p.week}. ${p.pct}% of what the line cost to raise, `
           + `across ${p.cultists} Cultist${p.cultists === 1 ? '' : 's'}."\n\n`
-          + `"${p.avax} AVAX. Kneel, or go."`,
+          + (p.token
+            ? `"${p.avax} ${COIN}, or ${p.token.amount} ${p.token.symbol}. Kneel, or go."`
+            : `"${p.avax} ${COIN}. Kneel, or go."`),
       };
     }
     return LORE.stations[s.id] || LORE.stations[s.kind];
@@ -948,8 +962,10 @@ export class AbbeyScene {
         quote = e.body;
       }
 
-      // 2. Sign the transfer the server quoted.
-      const hash = await this.onConfessionPay(quote.payTo, quote.price.wei, quote.price.avax);
+      // 2. Sign the transfer the server quoted. The whole quote goes up: it
+      //    carries both prices, and picking between them happens where the
+      //    overlay is.
+      const hash = await this.onConfessionPay(quote);
       if (!hash) { this.onToast('Nothing was paid, so nothing was mended.'); return; }
 
       // 3. Hand up the hash. The server verifies it against the chain.
@@ -973,7 +989,7 @@ export class AbbeyScene {
     // over a quoted price on a build that took nothing would let a player
     // believe they had paid it.
     this.onToast(res.collected
-      ? `Paid ${res.costPaid} AVAX. Streak restored to ${res.restoredStreak}.`
+      ? `Paid ${res.costPaid} ${res.paidCurrency || COIN}. Streak restored to ${res.restoredStreak}.`
       : `Streak restored to ${res.restoredStreak}. Nothing was taken.`);
   }
 

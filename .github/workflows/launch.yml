@@ -1,0 +1,648 @@
+# THE WHOLE LAUNCH, IN ONE RUN.
+#
+# The nine steps that used to be done by hand across three workflows, in the one
+# order that works, with the state carried between them automatically. It exists
+# because the manual sequence has more ways to go wrong than to go right: the
+# price is hardcoded in a different file from the button that uses it, the
+# database archive is easy to forget and locks every new player out if it is,
+# and opening the mint before the server points at the new collection sells
+# Bloodlines the game cannot read.
+#
+# WHAT IT DOES, in order, stopping at the first failure:
+#
+#   1. refuses unless `confirm` is typed exactly
+#   2. runs the contract tests — a hard gate, nothing is signed if one fails
+#   3. closes the mint on the OLD collection, if one was named
+#   4. sweeps the OLD collection's balance to team and treasury
+#   5. deploys the new contract
+#   6. verifies it on the explorer (best effort — a failure here is not fatal)
+#   7. takes the founder's free Bloodline
+#   8. writes the new address and DEPLOYED_AT into the four places that carry
+#      them, and commits
+#   9. deploys the server and web, archives the player database, and only then
+#      opens the mint
+#
+# DEPLOYED_AT IS DAY 0. Step 8 is what makes the clock start, which is why the
+# database archive in step 9 comes after it and the mint opens after that.
+name: LAUNCH — deploy, restart and open
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Which chain. Do the testnet first — the price is immutable.'
+        required: true
+        default: robinhoodTestnet
+        type: choice
+        options: [robinhoodTestnet, robinhood, fuji, avalanche]
+      confirm:
+        description: 'Type LAUNCH to run it. This deploys a contract, ARCHIVES THE PLAYER DATABASE and opens a mint.'
+        required: true
+        default: ''
+      price_per_cultist_wei:
+        description: 'IMMUTABLE. 0.01 ETH = 10000000000000000. A 20-Cultist line costs 20x this.'
+        required: true
+        default: '10000000000000000'
+      pay_token:
+        description: 'IMMUTABLE. ERC-20 players may pay with instead of the coin. Blank = coin only.'
+        required: false
+        default: '0xe8fB470E0685437d7739BD2AacBA60b228800335'
+      pay_token_per_cultist:
+        description: 'IMMUTABLE. Whole tokens per Cultist, written plainly: 30000. Decimals are read off the token.'
+        required: false
+        default: '30000'
+      expect_deployer:
+        description: 'The deployer WALLET ADDRESS you expect (public). Fails if DEPLOYER_KEY is a different key. Never paste the key.'
+        required: false
+        default: '0x91596DFCD3aA33cBB6a20D1BaAA82c072c40b2A2'
+      team_address:
+        description: 'Where the 20% goes. IMMUTABLE. Blank falls back to the TEAM_ADDRESS secret.'
+        required: false
+        default: '0xe8C03A96fEC88E51f7BB1315bF58F38321B5aCaB'
+      treasury_address:
+        description: 'Where the 80% goes — the pot. IMMUTABLE. Blank falls back to the TREASURY_ADDRESS secret.'
+        required: false
+        default: '0x018B025A1f4d4C049CE4B24ACC080E6f922e67e8'
+      await_begin:
+        description: 'Open the doors but HOLD AT DAY 0 until you call /admin/begin. Almost always true.'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+      deploy_tolls:
+        description: 'Deploy the tolls contract too (mini games and anything else priced). Rarely no.'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+      founder_cultists:
+        description: 'Cultists in the founder free line (1-20). 0 to skip the founder mint.'
+        required: true
+        default: '1'
+      old_contract:
+        description: 'The PREVIOUS collection, to close and sweep. Defaults to the live Avalanche one. Blank to skip.'
+        required: false
+        default: '0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878'
+      old_network:
+        description: 'Which chain the PREVIOUS collection is on. It is not the one you are launching to.'
+        required: false
+        default: avalanche
+        type: choice
+        options: [avalanche, fuji, robinhood, robinhoodTestnet]
+      max_supply:
+        description: 'IMMUTABLE. Default is uncapped.'
+        required: true
+        default: '115792089237316195423570985008687907853269984665640564039457584007913129639935'
+      base_uri:
+        description: 'Where metadata is served. Must end in a slash.'
+        required: true
+        default: 'https://membersonly.cc/nft/'
+
+concurrency:
+  # Two launches at once would deploy two collections and race over which
+  # address the server ends up pointing at.
+  group: launch
+  cancel-in-progress: false
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.network }}
+    permissions:
+      contents: write        # step 8 commits the new address
+    steps:
+      - name: Refuse unless confirmed
+        if: inputs.confirm != 'LAUNCH'
+        run: |
+          echo "::error::Not confirmed. Re-run and type LAUNCH in the confirm box."
+          exit 1
+
+      # HELD AT DAY 0 WITH NO WAY TO START IT is a game that can never begin.
+      # /admin/begin needs ADMIN_TOKEN, and with no token on the server that
+      # endpoint is a 404 — so this combination launches an abbey whose clock
+      # nothing can start short of editing a file on the box by hand.
+      - name: Refuse to hold a clock nothing can start
+        if: inputs.await_begin != 'false' && secrets.ADMIN_TOKEN == ''
+        run: |
+          echo "::error::await_begin is true but ADMIN_TOKEN is not set. The run would be held at day 0 with no way to start it — /admin/begin needs that token and answers 404 without it. Set the secret (any long random string), or set await_begin to false."
+          exit 1
+
+      # THE ADMIN TOKEN GOES ON THE WEB SERVER. The deploy key deliberately
+      # does not — see the note in contracts/hardhat.config.js — so that a
+      # compromised web host cannot reach the wallet that owns the collection.
+      # Making them the same value hands that property away.
+      - name: Refuse to put the deploy key on the web server
+        if: secrets.ADMIN_TOKEN != '' && secrets.DEPLOYER_KEY != ''
+        env:
+          A: ${{ secrets.ADMIN_TOKEN }}
+          D: ${{ secrets.DEPLOYER_KEY }}
+        run: |
+          # Compared as hashes so neither value can reach the log even by
+          # accident, and with whitespace stripped so "the same but for a
+          # newline" is caught too.
+          ha=$(printf '%s' "$A" | tr -d '[:space:]' | sha256sum | cut -d' ' -f1)
+          hd=$(printf '%s' "$D" | tr -d '[:space:]' | sha256sum | cut -d' ' -f1)
+          hd2=$(printf '%s' "$D" | tr -d '[:space:]' | sed 's/^0[xX]//' | sha256sum | cut -d' ' -f1)
+          if [ "$ha" = "$hd" ] || [ "$ha" = "$hd2" ]; then
+            echo "::error::ADMIN_TOKEN is the same value as DEPLOYER_KEY. The admin token is written to /etc/aeterna-server.env on the web server and sent in a header on every admin call; the deploy key is deliberately kept off that machine. Use a separate random string for ADMIN_TOKEN."
+            exit 1
+          fi
+          echo "ok  the admin token and the deploy key are different values"
+
+      - name: Say what is about to happen
+        run: |
+          {
+            echo "### Launch"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| network | \`${{ inputs.network }}\` |"
+            echo "| price per Cultist | \`${{ inputs.price_per_cultist_wei }}\` wei |"
+            echo "| a 20-Cultist line | \`$(( ${{ inputs.price_per_cultist_wei }} / 1000000000000000 * 20 ))\` milli-units |"
+            echo "| team (20%) | \`${{ inputs.team_address || secrets.TEAM_ADDRESS }}\` |"
+            echo "| treasury (80%) | \`${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}\` |"
+            echo "| founder Cultists | \`${{ inputs.founder_cultists }}\` |"
+            echo "| token door | \`${{ inputs.pay_token || 'off — coin only' }}\` |"
+            echo "| price in token | \`${{ inputs.pay_token_per_cultist || 'n/a' }}\` per Cultist |"
+            echo "| previous collection | \`${{ inputs.old_contract || 'none — first launch' }}\` on \`${{ inputs.old_network }}\` |"
+            echo ""
+            echo "| clock | \`${{ inputs.await_begin != 'false' && 'HELD at day 0 until /admin/begin' || 'starts immediately' }}\` |"
+            echo ""
+            echo "The player database will be archived and day 0 reset."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v4
+        with:
+          # The default token cannot push in a way that re-triggers workflows,
+          # which is what we want: step 8 commits with [skip ci] anyway.
+          persist-credentials: true
+
+      - name: Check the secrets are present
+        env:
+          KEY: ${{ secrets.DEPLOYER_KEY }}
+          TEAM: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          for v in KEY TEAM TREASURY VPS_HOST VPS_USER VPS_KEY; do
+            if [ -z "${!v}" ]; then echo "::error::No value for $v — set the repo secret, or type it into the workflow inputs where one exists."; exit 1; fi
+          done
+          # Checked HERE, before a transaction is signed, because both are
+          # immutable the moment the constructor runs.
+          for v in TEAM TREASURY; do
+            if ! printf '%s' "${!v}" | grep -qiE '^0x[0-9a-f]{40}$'; then
+              echo "::error::$v is not an address: ${!v}"; exit 1
+            fi
+          done
+          echo "team     ${TEAM}"
+          echo "treasury ${TREASURY}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+
+      - name: Install
+        working-directory: contracts
+        run: npm install --no-audit --no-fund
+
+      # IS THE KEY IN THE SECRET THE KEY YOU THINK IT IS? The deployer address
+      # is derived from DEPLOYER_KEY and configured nowhere, so without this the
+      # runner deploys with whatever key it holds — and the first sign that it
+      # was the wrong one is a collection owned by a wallet you do not control.
+      - name: The deployer is who you expect
+        if: inputs.expect_deployer != ''
+        working-directory: contracts
+        env:
+          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+          EXPECT: ${{ inputs.expect_deployer }}
+        run: |
+          # The address is derived and printed. The key never is.
+          # Trimmed the same way .env is written, so this checks the key that
+          # will actually be used and not a tidier copy of it.
+          export DEPLOYER_KEY=$(printf '%s' "${DEPLOYER_KEY}" | tr -d '[:space:]')
+          if ! printf '%s' "$DEPLOYER_KEY" | grep -qiE '^(0x)?[0-9a-f]{64}$'; then
+            echo "::error::DEPLOYER_KEY is not a 32-byte private key. Nothing was signed."
+            exit 1
+          fi
+          GOT=$(node -e "
+            const { Wallet } = require('ethers');
+            process.stdout.write(new Wallet(process.env.DEPLOYER_KEY).address);
+          ")
+          echo "expected  ${EXPECT}"
+          echo "the key is for  ${GOT}"
+          if [ "$(printf '%s' "$GOT" | tr A-Z a-z)" != "$(printf '%s' "$EXPECT" | tr A-Z a-z)" ]; then
+            echo "::error::DEPLOYER_KEY is the key for ${GOT}, not ${EXPECT}. Nothing was signed."
+            exit 1
+          fi
+
+      # THE GATE. Nothing below signs anything if a single assertion fails.
+      - name: Test the contract
+        working-directory: contracts
+        run: npx hardhat test
+
+      - name: Write .env
+        working-directory: contracts
+        env:
+          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+          TEAM_ADDRESS: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
+          EXPLORER_KEY: ${{ secrets.EXPLORER_KEY }}
+        run: |
+          {
+            echo "DEPLOYER_KEY=$(printf '%s' "${DEPLOYER_KEY}" | tr -d '[:space:]')"
+            echo "TEAM_ADDRESS=${TEAM_ADDRESS}"
+            echo "TREASURY_ADDRESS=${TREASURY_ADDRESS}"
+            echo "EXPLORER_KEY=${EXPLORER_KEY}"
+            echo "PRICE_PER_CULTIST_WEI=${{ inputs.price_per_cultist_wei }}"
+            echo "MAX_SUPPLY=${{ inputs.max_supply }}"
+            echo "BASE_URI=${{ inputs.base_uri }}"
+            echo "PAY_TOKEN=${{ inputs.pay_token }}"
+            echo "PAY_TOKEN_PER_CULTIST=${{ inputs.pay_token_per_cultist }}"
+          } > .env
+
+      # ---- 3 & 4: finish with the old collection before starting the new one --
+      # ON THE OLD CHAIN, WHICH IS NOT THE NEW ONE. The game is moving from
+      # Avalanche to Robinhood, so the collection being shut down is not on the
+      # chain being launched to. Running these against `network` pointed them at
+      # an address with no contract on it: the launch would have died here, and
+      # the old collection would have been left open and unswept.
+      # A DIFFERENT KEY, WHEN THE OLD COLLECTION HAS A DIFFERENT OWNER.
+      # setMintOpen is onlyOwner, and the wallet that deployed the Avalanche
+      # collection is not the wallet launching this one. OLD_DEPLOYER_KEY is
+      # used here and nowhere else; without it this falls back to DEPLOYER_KEY,
+      # which is right only when the same wallet owns both.
+      #
+      # A step-level env var wins over contracts/.env — dotenv does not
+      # overwrite what is already set — so this key applies to these two steps
+      # and the deploy below still signs with the new one.
+      - name: Close the old mint
+        if: inputs.old_contract != ''
+        working-directory: contracts
+        env:
+          DEPLOYER_KEY: ${{ secrets.OLD_DEPLOYER_KEY || secrets.DEPLOYER_KEY }}
+          MINT_OPEN: 'false'
+          CONTRACT_ADDRESS: ${{ inputs.old_contract }}
+        run: npx hardhat run scripts/setMint.js --network ${{ inputs.old_network }}
+
+      # withdraw() is callable by ANYONE — see the contract — so this one works
+      # with either key. It still takes the old one when there is one, so both
+      # old-chain steps are signed by the same wallet.
+      - name: Sweep the old collection
+        if: inputs.old_contract != ''
+        working-directory: contracts
+        env:
+          DEPLOYER_KEY: ${{ secrets.OLD_DEPLOYER_KEY || secrets.DEPLOYER_KEY }}
+          CONTRACT_ADDRESS: ${{ inputs.old_contract }}
+        run: npx hardhat run scripts/withdraw.js --network ${{ inputs.old_network }}
+
+      # ---- 5: the new collection ---------------------------------------------
+      - name: Deploy
+        id: deploy
+        working-directory: contracts
+        run: |
+          npx hardhat run scripts/deploy.js --network ${{ inputs.network }} | tee deploy.log
+          # `|| true` so a no-match reaches the message below rather than dying
+          # on grep's exit 1 under pipefail — the deploy has already been signed
+          # by this point and the operator needs to be told what to look for.
+          ADDR=$(grep -oE '^deployed +0x[0-9a-fA-F]{40}' deploy.log | grep -oE '0x[0-9a-fA-F]{40}' || true)
+          if [ -z "$ADDR" ]; then echo "::error::Could not read the deployed address from the log. The contract IS deployed — read it off the run log before doing anything else."; exit 1; fi
+          echo "address=$ADDR" >> "$GITHUB_OUTPUT"
+          echo "Deployed $ADDR"
+
+      - name: Verify on the explorer
+        # Best effort. An unverified contract is a shame, not a reason to stop a
+        # launch that has already signed a deploy.
+        continue-on-error: true
+        working-directory: contracts
+        env:
+          TEAM_ADDRESS: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
+        run: |
+          # The token price in SMALLEST UNITS is not an input — deploy.js works
+          # it out from the token's own decimals() and records it. Reading it
+          # back is the only way the verify arguments can match what was
+          # actually deployed.
+          REC="deployments/${{ inputs.network }}.json"
+          PAY_TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REC','utf8')).payToken)")
+          TOKEN_PRICE=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REC','utf8')).tokenPricePerCultist)")
+          npx hardhat verify --network ${{ inputs.network }} \
+            "${{ steps.deploy.outputs.address }}" \
+            "${{ inputs.price_per_cultist_wei }}" \
+            "${{ inputs.max_supply }}" \
+            "$TEAM_ADDRESS" "$TREASURY_ADDRESS" "${{ inputs.base_uri }}" \
+            "$PAY_TOKEN" "$TOKEN_PRICE"
+
+      # ---- 7: the founder's line, before anyone else can mint ----------------
+      - name: Founder mint
+        id: founder
+        if: inputs.founder_cultists != '0'
+        working-directory: contracts
+        env:
+          CONTRACT_ADDRESS: ${{ steps.deploy.outputs.address }}
+          FOUNDER_CULTISTS: ${{ inputs.founder_cultists }}
+        run: |
+          npx hardhat run scripts/founderMint.js --network ${{ inputs.network }} | tee founder.log
+          TOK=$(grep -oE '^founderTokenId +[0-9]+' founder.log | grep -oE '[0-9]+$' || true)
+          echo "token=${TOK:-0}" >> "$GITHUB_OUTPUT"
+
+      # ---- 7b: the tolls contract, for everything priced that is not the mint -
+      - name: Deploy the tolls contract
+        id: tolls
+        if: inputs.deploy_tolls != 'false'
+        working-directory: contracts
+        env:
+          CONTRACT_ADDRESS: ${{ steps.deploy.outputs.address }}
+        run: |
+          # Separate from the collection on purpose — see the contract's own
+          # header. It takes team, treasury and the token FROM the collection,
+          # so the two cannot disagree about where money goes.
+          #
+          # It starts with nothing priced. A mini game added later is one
+          # setToll transaction, not a deploy and not a release.
+          npx hardhat run scripts/deployTolls.js --network ${{ inputs.network }} | tee tolls.log
+          ADDR=$(grep -oE '^tolls deployed +0x[0-9a-fA-F]{40}' tolls.log | grep -oE '0x[0-9a-fA-F]{40}' || true)
+          if [ -z "$ADDR" ]; then echo "::error::Could not read the tolls address from the log."; exit 1; fi
+          echo "address=$ADDR" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the tolls contract
+        continue-on-error: true
+        if: steps.tolls.outputs.address != ''
+        working-directory: contracts
+        run: |
+          REC="deployments/${{ inputs.network }}.json"
+          RD () { node -e "console.log(JSON.parse(require('fs').readFileSync('$REC','utf8')).$1 || '')"; }
+          npx hardhat verify --network ${{ inputs.network }} "${{ steps.tolls.outputs.address }}" \
+            "$(RD team)" "$(RD treasury)" "$(RD payToken)"
+
+      # ---- 8: point the game at it, and start the clock ----------------------
+      - name: Wire the new collection in, and commit
+        id: wire
+        env:
+          ADDR: ${{ steps.deploy.outputs.address }}
+          NET: ${{ inputs.network }}
+          TOLLS: ${{ steps.tolls.outputs.address }}
+        run: |
+          set -e
+          # deployedAt is the moment the clock starts. Taken from the deployment
+          # record the deploy script just wrote, not from `now`, so DEPLOYED_AT
+          # and the record cannot disagree.
+          REC="contracts/deployments/${NET}.json"
+          DEPLOYED_AT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REC','utf8')).deployedAt)")
+          echo "deployedAt=$DEPLOYED_AT" >> "$GITHUB_OUTPUT"
+
+          node - "$ADDR" "$DEPLOYED_AT" "$NET" "$REC" "$TOLLS" <<'JS'
+          const fs = require('fs');
+          const [addr, deployedAt, net, rec, tolls] = process.argv.slice(2);
+          const record = JSON.parse(fs.readFileSync(rec, 'utf8'));
+          // A pattern that no longer matches is a broken launch and stops it.
+          // A pattern that matches and is ALREADY the wanted value is not —
+          // relaunching on the same chain rewrites the address and the date but
+          // leaves the chain identity untouched, and treating "no change" as
+          // "the file moved" failed the second launch after the contract had
+          // already been deployed.
+          const edit = (file, from, to) => {
+            const before = fs.readFileSync(file, 'utf8');
+            if (!from.test(before)) throw new Error(`nothing to replace in ${file} — pattern moved?`);
+            const after = before.replace(from, to);
+            if (after !== before) fs.writeFileSync(file, after);
+            console.log(`  wired ${file}${after === before ? '  (already)' : ''}`);
+          };
+          // WHICH CHAIN. Not just the id: a wallet that has never heard of the
+          // chain is offered these exact values, and the ticker is what the
+          // mint screen prints beside the price. Getting the id right and the
+          // ticker wrong sells a line for "0.2 AVAX" and charges ETH.
+          const CHAINS = {
+            robinhood:        { id: 4663,  name: 'Robinhood Chain',         currency: 'Ether', symbol: 'ETH',
+                                rpc: 'https://rpc.mainnet.chain.robinhood.com/', explorer: 'https://robinhoodchain.blockscout.com' },
+            robinhoodTestnet: { id: 46630, name: 'Robinhood Chain Testnet', currency: 'Ether', symbol: 'ETH',
+                                rpc: 'https://rpc.testnet.chain.robinhood.com/', explorer: 'https://explorer.testnet.chain.robinhood.com' },
+            avalanche:        { id: 43114, name: 'Avalanche C-Chain',       currency: 'Avalanche', symbol: 'AVAX',
+                                rpc: 'https://api.avax.network/ext/bc/C/rpc', explorer: 'https://snowtrace.io' },
+            fuji:             { id: 43113, name: 'Avalanche Fuji',          currency: 'Avalanche', symbol: 'AVAX',
+                                rpc: 'https://api.avax-test.network/ext/bc/C/rpc', explorer: 'https://testnet.snowtrace.io' },
+          };
+          const chain = CHAINS[net];
+          if (!chain) throw new Error(`no chain identity recorded for network ${net}`);
+
+          // The address, in the two places a running system reads it.
+          edit('web/index.html', /name="bloodline-address" content="0x[0-9a-fA-F]{40}"/,
+               `name="bloodline-address" content="${addr}"`);
+          edit('server/src/index.js', /\|\| '0x[0-9a-fA-F]{40}';/, `|| '${addr}';`);
+
+          const meta = (name, value) =>
+            edit('web/index.html', new RegExp(`name="${name}" content="[^"]*"`), `name="${name}" content="${value}"`);
+          meta('bloodline-chain-id', chain.id);
+          meta('chain-name', chain.name);
+          meta('chain-currency', chain.currency);
+          meta('chain-symbol', chain.symbol);
+          meta('chain-rpc', chain.rpc);
+          meta('chain-explorer', chain.explorer);
+          // /collection reports this, and a page whose id disagrees with the
+          // server's is exactly the stale-page case that endpoint exists for.
+          // The server's RPC is not edited here — it comes from CHAIN_RPC in
+          // the service environment, written a few steps below, because the
+          // public endpoint is rate-limited and swapping it must not need a
+          // commit.
+          edit('server/src/index.js', /const CHAIN_ID = Number\(process\.env\.CHAIN_ID \|\| \d+\);/,
+               `const CHAIN_ID = Number(process.env.CHAIN_ID || ${chain.id});`);
+
+          // THE SECOND DOOR. Both are read back off the deployment record
+          // rather than from the workflow inputs: the raw price is computed
+          // from the token's own decimals() at deploy time, and the ticker is
+          // read off the token, so neither is knowable up here. Blank when the
+          // collection was deployed coin-only, which is what shuts the door in
+          // the client.
+          const ZERO = '0x' + '0'.repeat(40);
+          const tokenOn = record.payToken && record.payToken !== ZERO;
+          meta('pay-token', tokenOn ? record.payToken : '');
+          meta('pay-token-symbol', tokenOn ? (record.tokenSymbol || '') : '');
+          meta('tolls-address', tolls || '');
+
+          // And DAY 0. The trailing comment names the deployment record this
+          // has to agree with, so it moves with the network.
+          edit('server/src/lib/gameLogic.js',
+               /const DEPLOYED_AT = '[^']+';.*/,
+               `const DEPLOYED_AT = '${deployedAt}';    // contracts/deployments/${net}.json`);
+
+          // Carried to the step that writes the service environment, so the
+          // chain is described in exactly one place in this workflow.
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,
+            `chainId=${chain.id}\nrpc=${chain.rpc}\nsymbol=${chain.symbol}\n`);
+          JS
+
+          git config user.name  'Claude'
+          git config user.email 'noreply@anthropic.com'
+          git add -A
+          # [skip ci] because this job deploys the server itself, a few steps
+          # below. Without it the push would fire deploy-server.yml as well and
+          # the two would race over restarting the service while the database is
+          # being archived.
+          git commit -m "LAUNCH: ${NET} ${ADDR}, day 0 ${DEPLOYED_AT} [skip ci]" || echo "nothing to commit"
+          git push
+
+      # ---- 9: the server, the database, and only then the mint ---------------
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking accept-new
+          EOF
+
+      - name: Deploy the server and the web
+        run: |
+          rsync -az --delete --exclude 'node_modules' --exclude 'data' --exclude '.env' \
+            -e ssh server/ vps:/opt/aeterna-server/
+          rsync -az --delete -e ssh web/ vps:/opt/web/
+          ssh vps '
+            set -e
+            cd /opt/aeterna-server
+            rm -rf node_modules
+            npm ci --omit=dev
+            systemctl daemon-reload
+            systemctl restart aeterna-server
+          '
+
+      - name: Write the server's environment
+        env:
+          TOKEN: ${{ steps.founder.outputs.token }}
+          CHAIN_ID: ${{ steps.wire.outputs.chainId }}
+          CHAIN_RPC: ${{ steps.wire.outputs.rpc }}
+          CHAIN_SYMBOL: ${{ steps.wire.outputs.symbol }}
+          TOLLS_ADDRESS: ${{ steps.tolls.outputs.address }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          # The settings that must survive a restart and must not need a commit
+          # to change: which chain to read and where, what to call its coin,
+          # where the confession money is expected to go, which line is the
+          # founder's (the one excluded from the standings), and the token that
+          # reads the final standings when the run ends.
+          #
+          # CONFESSION_TREASURY is not optional on a redeploy. The server's
+          # fallback is the FIRST collection's treasury; deploy to a different
+          # address without setting this and every confession answers 503,
+          # because the cross-check compares the new contract against the old
+          # address. Written from the same secret the contract was deployed
+          # with, so it stays a genuine second source.
+          #
+          # Written by rewriting the whole file rather than appending, so
+          # re-running a launch cannot leave two values for the same key.
+          {
+            echo "CHAIN_ID=${CHAIN_ID}"
+            echo "CHAIN_RPC=${CHAIN_RPC}"
+            echo "CHAIN_SYMBOL=${CHAIN_SYMBOL}"
+            if [ -n "${TOLLS_ADDRESS}" ]; then echo "TOLLS_ADDRESS=${TOLLS_ADDRESS}"; fi
+            # HELD AT DAY 0. The launch opens the doors; it does not start the
+            # eight weeks. Without this, week 1 burns while people are still
+            # minting and whoever gets in first is a week ahead of whoever gets
+            # in last. Fire the starting gun by hand when you are ready:
+            #   curl -X POST -H "x-admin-token: $ADMIN_TOKEN" https://membersonly.cc/admin/begin
+            if [ "${AWAIT_BEGIN}" != "false" ]; then echo "ABBEY_AWAIT_BEGIN=1"; fi
+            echo "CONFESSION_TREASURY=${TREASURY_ADDRESS}"
+            if [ -n "${TOKEN}" ] && [ "${TOKEN}" != "0" ]; then echo "FOUNDER_TOKEN_ID=${TOKEN}"; fi
+            if [ -n "${ADMIN_TOKEN}" ]; then echo "ADMIN_TOKEN=${ADMIN_TOKEN}"; fi
+          } > env.new
+          # Not `cat env.new` — ADMIN_TOKEN is in it.
+          sed 's/^ADMIN_TOKEN=.*/ADMIN_TOKEN=(set)/' env.new
+          scp env.new vps:/tmp/aeterna-env.new
+          ssh vps bash -s <<'REMOTE'
+            set -e
+            touch /etc/aeterna-server.env
+            # Anything the operator set by hand that this launch does not own
+            # is kept; the keys below are replaced.
+            grep -vE '^(CHAIN_ID|CHAIN_RPC|CHAIN_SYMBOL|CONFESSION_TREASURY|TOLLS_ADDRESS|ABBEY_AWAIT_BEGIN|FOUNDER_TOKEN_ID|ADMIN_TOKEN)=' /etc/aeterna-server.env > /tmp/aeterna-env.keep || true
+            cat /tmp/aeterna-env.keep /tmp/aeterna-env.new > /etc/aeterna-server.env
+            chmod 600 /etc/aeterna-server.env
+            grep -q 'EnvironmentFile=-\?/etc/aeterna-server.env' /etc/systemd/system/aeterna-server.service \
+              || sed -i '/^\[Service\]/a EnvironmentFile=-/etc/aeterna-server.env' /etc/systemd/system/aeterna-server.service
+            systemctl daemon-reload
+            systemctl restart aeterna-server
+            rm -f /tmp/aeterna-env.new /tmp/aeterna-env.keep
+          REMOTE
+
+      - name: Archive the player database and start a fresh run
+        run: |
+          # NOT optional. Token ids start at 1 again on a new collection, and
+          # /bind refuses a token already bound to a row — so without this the
+          # first person to mint the new #1 is told it belongs to somebody else
+          # and cannot get into the abbey at all.
+          ssh vps bash -s <<'REMOTE'
+            set -e
+            cd /opt/aeterna-server
+            STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+            systemctl stop aeterna-server
+            mkdir -p data/archive
+            for f in data/aeterna.db data/aeterna.db-wal data/aeterna.db-shm; do
+              [ -f "$f" ] && mv "$f" "data/archive/$(basename $f).$STAMP" || true
+            done
+            echo "archived as data/archive/aeterna.db.$STAMP"
+            systemctl start aeterna-server
+            sleep 2
+            systemctl --no-pager --lines=5 status aeterna-server
+          REMOTE
+
+      - name: Check the abbey answers, and is on the new collection
+        run: |
+          for i in 1 2 3 4 5; do
+            if curl -fsS --max-time 10 https://membersonly.cc/health >/dev/null; then break; fi
+            echo "not up yet — retrying in $((i * 5))s"; sleep $((i * 5))
+          done
+          COLL=$(curl -fsS --max-time 10 https://membersonly.cc/collection)
+          echo "$COLL"
+          echo "$COLL" | grep -qi "${{ steps.deploy.outputs.address }}" \
+            || { echo "::error::The server is not reading the new collection."; exit 1; }
+
+      # LAST. Nobody can mint into a collection the server is not yet reading.
+      - name: Open the mint
+        working-directory: contracts
+        env:
+          MINT_OPEN: 'true'
+          CONTRACT_ADDRESS: ${{ steps.deploy.outputs.address }}
+        run: npx hardhat run scripts/setMint.js --network ${{ inputs.network }}
+
+      - name: What just happened
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "### Result"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| contract | \`${{ steps.deploy.outputs.address }}\` |"
+            echo "| chain | \`${{ inputs.network }}\` (id \`${{ steps.wire.outputs.chainId }}\`) |"
+            echo "| day 0 | \`${{ steps.wire.outputs.deployedAt }}\` |"
+            echo "| founder token | \`${{ steps.founder.outputs.token || 'skipped' }}\` |"
+            echo "| tolls | \`${{ steps.tolls.outputs.address || 'not deployed' }}\` |"
+            echo ""
+            if [ "${{ inputs.await_begin }}" != "false" ]; then
+              echo "**The clock is held at day 0.** The mint is open and nothing is counted."
+              echo "Start the run when you are ready:"
+              echo ""
+              echo '```'
+              echo 'curl -X POST -H "x-admin-token: $ADMIN_TOKEN" https://membersonly.cc/admin/begin'
+              echo '```'
+              echo ""
+            fi
+            if [ -z "${{ secrets.ADMIN_TOKEN }}" ]; then
+              echo "> **ADMIN_TOKEN is not set as a repository secret.** Without it"
+              echo "> \`/admin/standings\` stays a 404 and the final totals cannot be"
+              echo "> read when the run ends. Set it and re-run this workflow, or put"
+              echo "> it in \`/etc/aeterna-server.env\` by hand."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Shred the key
+        if: always()
+        run: rm -f contracts/.env env.new
