@@ -13,7 +13,8 @@ missing rather than letting the launch find out.
 
 | | |
 |---|---|
-| **Repo secrets** | `DEPLOYER_KEY`, `TEAM_ADDRESS`, `TREASURY_ADDRESS`, `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` |
+| **Real secrets** | `DEPLOYER_KEY`, `VPS_SSH_KEY`, `VPS_HOST`, `VPS_USER`, `ADMIN_TOKEN` — credentials. These must be repo secrets and must never be pasted anywhere. |
+| **Addresses** | `TEAM_ADDRESS`, `TREASURY_ADDRESS` — **public**, and readable off the chain by anyone with `team()` / `treasury()`. Keep them as secrets, or type them straight into the workflow inputs. Typed wins; the secret is the fallback. |
 | **`ADMIN_TOKEN`** | Any long random string. Without it the final standings can never be read, and there is no second chance to want it. |
 | **Gas** | ETH in the deployer wallet **on Robinhood Chain**. Bridged in ahead of time. |
 | **Team + treasury** | Must be addresses you control **on Robinhood Chain**. Both are immutable at deploy. |
@@ -34,6 +35,15 @@ long as the treasury is a different wallet**.
 
 PREFLIGHT prints all three and says plainly when any two are the same. They are
 fixed forever at deploy, so that report is the last honest moment to notice.
+
+**Team and treasury are addresses, not keys.** Nothing is protected by keeping
+them in a secret — anyone can read them off the chain. They can go in the
+workflow inputs instead, where you can see them in the confirm summary before
+pressing LAUNCH. The launch refuses anything that is not a 40-hex-digit address
+before it signs, since both are immutable the moment the constructor runs.
+
+**`DEPLOYER_KEY` is a private key and is different in kind.** It must stay a
+repo secret. So must `VPS_SSH_KEY` and `ADMIN_TOKEN`.
 
 `EXPLORER_KEY` is optional — Blockscout takes any key.
 
@@ -91,6 +101,8 @@ be got wrong at no cost.
 | `price_per_cultist_wei` | `10000000000000000` — **0.01 ETH.** Read this before pressing. |
 | `pay_token` | `0xe8fB470E0685437d7739BD2AacBA60b228800335` |
 | `pay_token_per_cultist` | `30000` |
+| `team_address` | blank to use the secret, or paste the address |
+| `treasury_address` | blank to use the secret, or paste the address |
 | `await_begin` | `true` — **opens the doors, holds the clock at day 0** |
 | `deploy_tolls` | `true` |
 | `founder_cultists` | `1` |

@@ -51,6 +51,14 @@ on:
         description: 'IMMUTABLE. Whole tokens per Cultist, written plainly: 30000. Decimals are read off the token.'
         required: false
         default: '30000'
+      team_address:
+        description: 'Where the 20% goes. IMMUTABLE. Blank falls back to the TEAM_ADDRESS secret.'
+        required: false
+        default: ''
+      treasury_address:
+        description: 'Where the 80% goes — the pot. IMMUTABLE. Blank falls back to the TREASURY_ADDRESS secret.'
+        required: false
+        default: ''
       await_begin:
         description: 'Open the doors but HOLD AT DAY 0 until you call /admin/begin. Almost always true.'
         required: false
@@ -115,6 +123,8 @@ jobs:
             echo "| network | \`${{ inputs.network }}\` |"
             echo "| price per Cultist | \`${{ inputs.price_per_cultist_wei }}\` wei |"
             echo "| a 20-Cultist line | \`$(( ${{ inputs.price_per_cultist_wei }} / 1000000000000000 * 20 ))\` milli-units |"
+            echo "| team (20%) | \`${{ inputs.team_address || secrets.TEAM_ADDRESS }}\` |"
+            echo "| treasury (80%) | \`${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}\` |"
             echo "| founder Cultists | \`${{ inputs.founder_cultists }}\` |"
             echo "| token door | \`${{ inputs.pay_token || 'off — coin only' }}\` |"
             echo "| price in token | \`${{ inputs.pay_token_per_cultist || 'n/a' }}\` per Cultist |"
@@ -134,14 +144,21 @@ jobs:
       - name: Check the secrets are present
         env:
           KEY: ${{ secrets.DEPLOYER_KEY }}
-          TEAM: ${{ secrets.TEAM_ADDRESS }}
-          TREASURY: ${{ secrets.TREASURY_ADDRESS }}
+          TEAM: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           for v in KEY TEAM TREASURY VPS_HOST VPS_USER VPS_KEY; do
-            if [ -z "${!v}" ]; then echo "::error::Missing repository secret for $v"; exit 1; fi
+            if [ -z "${!v}" ]; then echo "::error::No value for $v — set the repo secret, or type it into the workflow inputs where one exists."; exit 1; fi
+          done
+          # Checked HERE, before a transaction is signed, because both are
+          # immutable the moment the constructor runs.
+          for v in TEAM TREASURY; do
+            if ! printf '%s' "${!v}" | grep -qiE '^0x[0-9a-f]{40}$'; then
+              echo "::error::$v is not an address: ${!v}"; exit 1
+            fi
           done
           echo "team     ${TEAM}"
           echo "treasury ${TREASURY}"
@@ -165,8 +182,8 @@ jobs:
         working-directory: contracts
         env:
           DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
-          TEAM_ADDRESS: ${{ secrets.TEAM_ADDRESS }}
-          TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
+          TEAM_ADDRESS: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
           EXPLORER_KEY: ${{ secrets.EXPLORER_KEY }}
         run: |
           {
@@ -222,8 +239,8 @@ jobs:
         continue-on-error: true
         working-directory: contracts
         env:
-          TEAM_ADDRESS: ${{ secrets.TEAM_ADDRESS }}
-          TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
+          TEAM_ADDRESS: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
         run: |
           # The token price in SMALLEST UNITS is not an input — deploy.js works
           # it out from the token's own decimals() and records it. Reading it
@@ -423,7 +440,7 @@ jobs:
           CHAIN_RPC: ${{ steps.wire.outputs.rpc }}
           CHAIN_SYMBOL: ${{ steps.wire.outputs.symbol }}
           TOLLS_ADDRESS: ${{ steps.tolls.outputs.address }}
-          TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
           # The settings that must survive a restart and must not need a commit

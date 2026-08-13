@@ -33,6 +33,14 @@ on:
         description: 'To show what a line will actually cost.'
         required: true
         default: '10000000000000000'
+      team_address:
+        description: 'Where the 20% will go. Blank falls back to the TEAM_ADDRESS secret.'
+        required: false
+        default: ''
+      treasury_address:
+        description: 'Where the 80% will go. Blank falls back to the TREASURY_ADDRESS secret.'
+        required: false
+        default: ''
       old_contract:
         description: 'The PREVIOUS collection, to check it is reachable and sweepable.'
         required: false
@@ -73,8 +81,8 @@ jobs:
         continue-on-error: true
         env:
           DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
-          TEAM_ADDRESS: ${{ secrets.TEAM_ADDRESS }}
-          TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
+          TEAM_ADDRESS: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -85,7 +93,7 @@ jobs:
           # Never the value, only whether there is one — this log is readable by
           # anyone who can see the run.
           for v in DEPLOYER_KEY TEAM_ADDRESS TREASURY_ADDRESS VPS_HOST VPS_USER VPS_SSH_KEY; do
-            if [ -z "${!v}" ]; then echo "::error::MISSING required secret $v"; bad=1; else echo "ok        $v"; fi
+            if [ -z "${!v}" ]; then echo "::error::MISSING $v — no secret, and no value typed in"; bad=1; else echo "ok        $v"; fi
           done
           # ADMIN_TOKEN is not needed to launch. It IS needed to ever read the
           # final standings, and there is no second chance to want it.
@@ -105,8 +113,8 @@ jobs:
         working-directory: contracts
         env:
           DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
-          TEAM_ADDRESS: ${{ secrets.TEAM_ADDRESS }}
-          TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
+          TEAM_ADDRESS: ${{ inputs.team_address || secrets.TEAM_ADDRESS }}
+          TREASURY_ADDRESS: ${{ inputs.treasury_address || secrets.TREASURY_ADDRESS }}
           PAY_TOKEN: ${{ inputs.pay_token }}
           PAY_TOKEN_PER_CULTIST: ${{ inputs.pay_token_per_cultist }}
           PRICE_PER_CULTIST_WEI: ${{ inputs.price_per_cultist_wei }}
