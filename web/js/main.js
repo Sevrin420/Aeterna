@@ -1139,8 +1139,9 @@ async function openLinesScreen(menu) {
       } else {
         const given = await askOverlay({
           title: 'Name the Bloodline',
-          message: 'A line is named once. This one has no name yet.',
-          placeholder: 'House Vane',
+          message: 'A line is named once. This one has no name yet.<br><br>'
+            + 'You take the name too — call it Throbbin and you walk as Brother Throbbin.',
+          placeholder: 'Throbbin',
           confirm: 'Name it',
         });
         if (given) {
@@ -1659,9 +1660,10 @@ async function openMintPicker(menu) {
       if (fresh) {
         given = await askOverlay({
           title: 'Name the Bloodline',
-          message: 'What shall this line be called? The abbey will use this name '
-            + 'every time you take it up, and it is carved on its card.',
-          placeholder: 'House Vane',
+          message: 'What shall this line be called? It is carved on its card, and '
+            + 'the abbey calls you by it — name the line Throbbin and you are '
+            + 'Brother Throbbin for as long as you keep it.',
+          placeholder: 'Throbbin',
           confirm: 'Name it',
           skip: 'Leave it unnamed',
         });

@@ -177,6 +177,28 @@ function playerFor(wallet, tokenId) {
 // claim or referral pays them. Without this the pseudo-id in localStorage is a
 // free, resettable identity that can farm Devotion forever and then carry it
 // onto a token at mint time.
+/**
+ * THE MONK IS THE LINE. A holder who calls their Bloodline "Throbbin" is
+ * Brother Throbbin — the given name follows the line rather than sitting beside
+ * it, so a player and their Bloodline are one thing on screen instead of two
+ * names to hold in your head.
+ *
+ * Derived, never stored. Rename the line and the monk is renamed with it; the
+ * auto-assigned monastic name stays underneath as the fallback for a line
+ * nobody has named yet, so an unnamed holder is still somebody.
+ *
+ * "House Vane" becomes Brother Vane. The naming prompt used to suggest exactly
+ * that shape, and "Brother House Vane" is not a name — the article is dropped
+ * so the old suggestion and the new meaning can both be right.
+ */
+function personName(row) {
+  if (!row) return '';
+  const line = row.bloodline_name ? String(row.bloodline_name).trim() : '';
+  if (!line || isUnnamed(line, row.token_id)) return row.name;
+  const bare = line.replace(/^(?:the\s+)?house\s+(?:of\s+)?/i, '').trim();
+  return bare || row.name;
+}
+
 function requireBloodline(player, reply) {
   if (player && player.token_id) return null;
   reply.code(403).send({
@@ -982,6 +1004,11 @@ fastify.get('/me', async (req, reply) => {
     .get(String(wallet).toLowerCase(), key);
   return {
     ...fresh,
+    // The line's name is the monk's name. Overwrites the row's own `name` on
+    // the way out, so everything downstream — the HUD, chat, the label over
+    // another player's head — gets it without knowing the rule.
+    name: personName(fresh),
+    givenName: fresh.name,
     multiplier: mult,
     taskDevotion: { base: perTask, award: taskAward(clock.week, fresh.streak), week: clock.week },
     clock,
@@ -1872,9 +1899,9 @@ fastify.post('/cathedral/:id/claim', async (req, reply) => {
 
   const claimed_at = new Date().toISOString();
   db.prepare('UPDATE cathedral_rooms SET owner_id = ?, owner_name = ?, claimed_at = ? WHERE id = ?')
-    .run(player.id, `${player.prefix} ${player.name}`, claimed_at, id);
+    .run(player.id, `${player.prefix} ${personName(player)}`, claimed_at, id);
 
-  return { success: true, room: { id, owner_id: player.id, owner_name: `${player.prefix} ${player.name}`, claimed_at } };
+  return { success: true, room: { id, owner_id: player.id, owner_name: `${player.prefix} ${personName(player)}`, claimed_at } };
 });
 
 // The admin award endpoint has been removed. It added arbitrary Devotion to
