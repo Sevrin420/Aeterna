@@ -33,7 +33,8 @@ What is **not** automatic, and must be true before the button is pressed:
 | | |
 |---|---|
 | Chain | **Robinhood Chain** (id `4663`, gas token ETH) |
-| Mint price | **0.01 ETH per Cultist** |
+| Mint price | **0.01 ETH per Cultist, or 30,000 $THROBBIN** |
+| $THROBBIN | `0xe8fB470E0685437d7739BD2AacBA60b228800335` |
 | Founder mint | **One free Bloodline for the deployer wallet** |
 | Founder payout | **None. The founder's line takes no share, however it places.** |
 | Payout method | **Settled by hand.** No payout contract; the operator pays winners directly. |
@@ -240,13 +241,22 @@ the value in the box before typing `LAUNCH`.
 
 ### The mint price is the only price
 
-There are exactly **two** things a player ever pays, and the second is derived
-from the first:
+There are exactly **two** things a player pays today, and the second is derived
+from the first — in **both** currencies:
 
-| | |
-|---|---|
-| **Mint** | `pricePerCultist × cultists`, on the contract. |
-| **Confession** | `pricePerCultist × cultists × week%`, paid to the treasury. |
+| | coin | $THROBBIN |
+|---|---|---|
+| **Mint** | `pricePerCultist × cultists` | `tokenPricePerCultist × cultists` |
+| **Confession** | `pricePerCultist × cultists × week%` | `tokenPricePerCultist × cultists × week%` |
+
+**Two prices, not a conversion.** There is no oracle and no rate anywhere — both
+are flat numbers fixed at deploy. A mint costs what the sign says whatever the
+market does that week, and the consequence is worth stating once: if the token's
+value moves, one of the two doors becomes the cheap one, and **neither price can
+be changed afterwards**. Both are immutable.
+
+At 30,000 a Cultist that is **30,000 to 600,000 THROBBIN** for a line, and a
+week-8 mending on a 20-Cultist line is **1,200,000 THROBBIN** (200%).
 
 The server reads `pricePerCultist()` off the deployed contract at boot — it is
 not configured anywhere — so **changing the mint price changes the confession
@@ -259,6 +269,56 @@ means a 1-Cultist line mends for 0.0025 → 0.02 ETH across the run, and a
 20-Cultist line for **0.05 → 0.4 ETH**. The top of that range is twice what the
 line cost to raise, which is the design — but it is a number worth having looked
 at deliberately before the mint opens rather than discovering in week 8.
+
+### Adding something else that costs money, later
+
+Mini games, entries, wagers — anything priced that is not the mint — go through
+`ThrobbinAbbeyTolls`, a second contract deployed beside the collection.
+
+**Adding one is a transaction, not a deploy:**
+
+```
+TOLL=dice COIN=0.001 TOKEN=5000 npm run toll:robinhood
+```
+
+That names a toll, prices it in either currency or both, and opens it. Nothing
+is rebuilt, nothing is redeployed, and the collection is not touched.
+
+**Then one call on the server:**
+
+```js
+const paid = await verifyToll(txHash, { toll: 'dice', player: fresh });
+if (!paid.ok) return reply.code(paid.status).send({ error: paid.error });
+paid.spend();          // once the thing paid for has actually been given
+// paid.amount / paid.inToken / paid.ref — then run the game.
+```
+
+`verifyToll` already checks the three things that make a payment safe: it went
+to the abbey's own tolls contract for **this** toll, it was signed by the wallet
+holding **this** Bloodline, and the hash cannot be spent twice. `POST /toll/:name`
+is a working endpoint and the reference implementation of the pattern; it banks
+a payment and grants nothing, because what a payment buys is the game's
+business.
+
+**Why it is a separate contract.** `ThrobbinAbbeyBloodline` is immutable on
+purpose — its price, its supply and both payout addresses cannot be changed by
+anyone, and that promise is worth more than the convenience of one contract. A
+price map the owner can edit does not belong beside it. Kept apart, a toll can
+be repriced, switched off or got wrong and a Bloodline is still a Bloodline.
+The tolls contract can also be deployed **later**, on its own, without touching
+a live collection.
+
+**What the owner can and cannot do.** They can name tolls, price them and close
+them. They cannot move the money: `withdraw` splits to the same two immutable
+addresses as the collection and anyone may call it. And a reprice cannot
+overcharge anyone mid-signature — payment is exact and checked in the same
+transaction, so a player signing the old price gets a revert, not a surprise
+charge.
+
+`TOLLS_ADDRESS` on the server and the `tolls-address` meta tag are both written
+by the launch workflow. Until they are set, nothing is priced and `/tolls`
+returns an empty board — which is the correct state before the first game
+exists.
 
 ### `CONFESSION_TREASURY` must be set at every deploy
 

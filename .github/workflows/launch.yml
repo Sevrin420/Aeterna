@@ -51,6 +51,12 @@ on:
         description: 'IMMUTABLE. Whole tokens per Cultist, written plainly: 30000. Decimals are read off the token.'
         required: false
         default: '30000'
+      deploy_tolls:
+        description: 'Deploy the tolls contract too (mini games and anything else priced). Rarely no.'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
       founder_cultists:
         description: 'Cultists in the founder free line (1-20). 0 to skip the founder mint.'
         required: true
@@ -226,12 +232,42 @@ jobs:
           TOK=$(grep -oE '^founderTokenId +[0-9]+' founder.log | grep -oE '[0-9]+$' || true)
           echo "token=${TOK:-0}" >> "$GITHUB_OUTPUT"
 
+      # ---- 7b: the tolls contract, for everything priced that is not the mint -
+      - name: Deploy the tolls contract
+        id: tolls
+        if: inputs.deploy_tolls != 'false'
+        working-directory: contracts
+        env:
+          CONTRACT_ADDRESS: ${{ steps.deploy.outputs.address }}
+        run: |
+          # Separate from the collection on purpose — see the contract's own
+          # header. It takes team, treasury and the token FROM the collection,
+          # so the two cannot disagree about where money goes.
+          #
+          # It starts with nothing priced. A mini game added later is one
+          # setToll transaction, not a deploy and not a release.
+          npx hardhat run scripts/deployTolls.js --network ${{ inputs.network }} | tee tolls.log
+          ADDR=$(grep -oE '^tolls deployed +0x[0-9a-fA-F]{40}' tolls.log | grep -oE '0x[0-9a-fA-F]{40}' || true)
+          if [ -z "$ADDR" ]; then echo "::error::Could not read the tolls address from the log."; exit 1; fi
+          echo "address=$ADDR" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the tolls contract
+        continue-on-error: true
+        if: steps.tolls.outputs.address != ''
+        working-directory: contracts
+        run: |
+          REC="deployments/${{ inputs.network }}.json"
+          RD () { node -e "console.log(JSON.parse(require('fs').readFileSync('$REC','utf8')).$1 || '')"; }
+          npx hardhat verify --network ${{ inputs.network }} "${{ steps.tolls.outputs.address }}" \
+            "$(RD team)" "$(RD treasury)" "$(RD payToken)"
+
       # ---- 8: point the game at it, and start the clock ----------------------
       - name: Wire the new collection in, and commit
         id: wire
         env:
           ADDR: ${{ steps.deploy.outputs.address }}
           NET: ${{ inputs.network }}
+          TOLLS: ${{ steps.tolls.outputs.address }}
         run: |
           set -e
           # deployedAt is the moment the clock starts. Taken from the deployment
@@ -241,9 +277,9 @@ jobs:
           DEPLOYED_AT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REC','utf8')).deployedAt)")
           echo "deployedAt=$DEPLOYED_AT" >> "$GITHUB_OUTPUT"
 
-          node - "$ADDR" "$DEPLOYED_AT" "$NET" "$REC" <<'JS'
+          node - "$ADDR" "$DEPLOYED_AT" "$NET" "$REC" "$TOLLS" <<'JS'
           const fs = require('fs');
-          const [addr, deployedAt, net, rec] = process.argv.slice(2);
+          const [addr, deployedAt, net, rec, tolls] = process.argv.slice(2);
           const record = JSON.parse(fs.readFileSync(rec, 'utf8'));
           // A pattern that no longer matches is a broken launch and stops it.
           // A pattern that matches and is ALREADY the wanted value is not —
@@ -307,6 +343,7 @@ jobs:
           const tokenOn = record.payToken && record.payToken !== ZERO;
           meta('pay-token', tokenOn ? record.payToken : '');
           meta('pay-token-symbol', tokenOn ? (record.tokenSymbol || '') : '');
+          meta('tolls-address', tolls || '');
 
           // And DAY 0. The trailing comment names the deployment record this
           // has to agree with, so it moves with the network.
@@ -365,6 +402,7 @@ jobs:
           CHAIN_ID: ${{ steps.wire.outputs.chainId }}
           CHAIN_RPC: ${{ steps.wire.outputs.rpc }}
           CHAIN_SYMBOL: ${{ steps.wire.outputs.symbol }}
+          TOLLS_ADDRESS: ${{ steps.tolls.outputs.address }}
           TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
@@ -387,6 +425,7 @@ jobs:
             echo "CHAIN_ID=${CHAIN_ID}"
             echo "CHAIN_RPC=${CHAIN_RPC}"
             echo "CHAIN_SYMBOL=${CHAIN_SYMBOL}"
+            if [ -n "${TOLLS_ADDRESS}" ]; then echo "TOLLS_ADDRESS=${TOLLS_ADDRESS}"; fi
             echo "CONFESSION_TREASURY=${TREASURY_ADDRESS}"
             if [ -n "${TOKEN}" ] && [ "${TOKEN}" != "0" ]; then echo "FOUNDER_TOKEN_ID=${TOKEN}"; fi
             if [ -n "${ADMIN_TOKEN}" ]; then echo "ADMIN_TOKEN=${ADMIN_TOKEN}"; fi
@@ -399,7 +438,7 @@ jobs:
             touch /etc/aeterna-server.env
             # Anything the operator set by hand that this launch does not own
             # is kept; the keys below are replaced.
-            grep -vE '^(CHAIN_ID|CHAIN_RPC|CHAIN_SYMBOL|CONFESSION_TREASURY|FOUNDER_TOKEN_ID|ADMIN_TOKEN)=' /etc/aeterna-server.env > /tmp/aeterna-env.keep || true
+            grep -vE '^(CHAIN_ID|CHAIN_RPC|CHAIN_SYMBOL|CONFESSION_TREASURY|TOLLS_ADDRESS|FOUNDER_TOKEN_ID|ADMIN_TOKEN)=' /etc/aeterna-server.env > /tmp/aeterna-env.keep || true
             cat /tmp/aeterna-env.keep /tmp/aeterna-env.new > /etc/aeterna-server.env
             chmod 600 /etc/aeterna-server.env
             grep -q 'EnvironmentFile=-\?/etc/aeterna-server.env' /etc/systemd/system/aeterna-server.service \
@@ -462,6 +501,7 @@ jobs:
             echo "| chain | \`${{ inputs.network }}\` (id \`${{ steps.wire.outputs.chainId }}\`) |"
             echo "| day 0 | \`${{ steps.wire.outputs.deployedAt }}\` |"
             echo "| founder token | \`${{ steps.founder.outputs.token || 'skipped' }}\` |"
+            echo "| tolls | \`${{ steps.tolls.outputs.address || 'not deployed' }}\` |"
             echo ""
             if [ -z "${{ secrets.ADMIN_TOKEN }}" ]; then
               echo "> **ADMIN_TOKEN is not set as a repository secret.** Without it"

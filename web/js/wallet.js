@@ -61,6 +61,10 @@ const WC_CHAIN = Number(_meta('wc-chain-id')) || BLOODLINE_CHAIN_ID;
 // The gas token's ticker, shown wherever a price is. ETH on Robinhood Chain,
 // AVAX on Avalanche — a label, never used for arithmetic.
 export const COIN = _meta('chain-symbol') || 'AVAX';
+// Everything priced that is not the mint — mini games and whatever else gets
+// built. Empty until the tolls contract is deployed, and empty must read as
+// "nothing is priced yet", never as an error.
+export const TOLLS_ADDRESS = _meta('tolls-address') || '';
 const WC_SRC = 'https://esm.sh/@walletconnect/ethereum-provider@2.17.2';
 
 export function hasWalletConnect() { return !!WC_PROJECT_ID; }

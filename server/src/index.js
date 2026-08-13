@@ -6,7 +6,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
-import { verifyMessage } from 'viem';
+import { verifyMessage, keccak256, toHex } from 'viem';
 import db from './db/database.js';
 // THE SAME MAP THE CLIENT DRAWS. abbeyMap.js is a pure constants module with no
 // imports and no browser globals, and it resolves identically in development
@@ -340,9 +340,12 @@ function decodeAbiString(hex) {
 function formatUnits(raw, dp) {
   const v = BigInt(raw || 0);
   const scale = 10n ** BigInt(dp);
-  const whole = v / scale;
   const frac = (v % scale).toString().padStart(dp, '0').replace(/0+$/, '');
-  return frac ? `${whole}.${frac}` : String(whole);
+  // Grouped, exactly as web/js/wallet.js groups it. The same amount printed by
+  // the two sides has to read the same way, and 30000 is a number people read
+  // in threes.
+  const whole = (v / scale).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return frac ? `${whole}.${frac}` : whole;
 }
 
 // What mending this player's streak costs, right now, in EITHER currency. Both
@@ -380,6 +383,250 @@ async function confessionPriceFor(player, now = new Date()) {
   }
   return out;
 }
+
+// ── TOLLS: EVERYTHING PRICED THAT IS NOT THE MINT ───────────────────────────
+//
+// Mini games, entries, wagers — anything built later that costs money. The
+// contract is generic and so is this: a new priced thing is `setToll` on chain
+// and then ONE call to verifyToll() here. There is nothing per-game in this
+// block and there should never need to be.
+//
+// The shape a future endpoint takes:
+//
+//   const paid = await verifyToll(txHash, { toll: 'dice', player: fresh });
+//   if (!paid.ok) return reply.code(paid.status).send({ error: paid.error });
+//   // paid.amount / paid.inToken / paid.ref — then run the game.
+//
+// The three things that make it safe are already done there: the payment went
+// to the abbey's own tolls contract, it was signed by the wallet holding the
+// line, and the hash cannot be spent twice.
+const TOLLS_ADDRESS = (process.env.TOLLS_ADDRESS || '').toLowerCase();
+
+/// keccak256('Paid(bytes32,address,uint256,bool,uint256,bytes32)')
+const PAID_TOPIC = '0x76d84c1b54f42be49e84fdb77b44c167aae13ab2b62315640e6b72a012aef6e6';
+
+/// A toll's on-chain id is the hash of its name, so a name can be any length
+/// and still reads as itself wherever it is printed.
+export function tollId(name) {
+  return keccak256(toHex(String(name)));
+}
+
+/// Prices, straight off the contract. Null when no tolls contract is configured
+/// — which is the state before the first mini game exists, and must read as
+/// "nothing is priced", never as an error.
+async function readToll(name) {
+  if (!TOLLS_ADDRESS) return null;
+  try {
+    const id = tollId(name);
+    const hex = await chainCall('0xc8add869' + id.slice(2), TOLLS_ADDRESS);   // tolls(bytes32)
+    const w = String(hex).replace(/^0x/, '');
+    if (w.length < 192) return null;
+    const coin = BigInt('0x' + w.slice(0, 64));
+    const token = BigInt('0x' + w.slice(64, 128));
+    const open = BigInt('0x' + w.slice(128, 192)) !== 0n;
+    // An id that was never set reads back as three zeros rather than a revert,
+    // which is indistinguishable from a real toll priced at nothing. Both are
+    // "there is no such thing here", so both come back null — otherwise /tolls
+    // cheerfully lists every game nobody has built yet.
+    if (coin === 0n && token === 0n && !open) return null;
+    return { id, name, coin, token, open };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Was this transaction a real payment of this toll, by this player?
+ *
+ * Everything a future mini game needs to trust a payment, in one call. It reads
+ * the Paid event rather than the transaction, because that is the only place
+ * that carries WHICH toll and WHICH Bloodline — and a transaction to the tolls
+ * contract proves neither on its own.
+ *
+ * `spend` is what stops a hash being reused. It is a table lookup, not a chain
+ * read: the chain will happily confirm the same payment forever.
+ */
+async function verifyToll(txHash, { toll, player, log }) {
+  const fail = (status, error) => ({ ok: false, status, error });
+  if (!TOLLS_ADDRESS) return fail(503, 'Nothing is priced here yet.');
+  if (!/^0x[0-9a-fA-F]{64}$/.test(String(txHash || ''))) return fail(400, 'That is not a transaction hash.');
+  const hash = String(txHash).toLowerCase();
+
+  const spent = db.prepare('SELECT 1 FROM toll_payments WHERE tx_hash = ?').get(hash);
+  if (spent) return fail(409, 'That payment has already been spent.');
+
+  const priced = await readToll(toll);
+  if (!priced) return fail(503, 'The abbey cannot read its own prices. Try again in a moment.');
+  if (!priced.open) return fail(409, 'That is not open.');
+
+  let tx;
+  let receipt;
+  try {
+    tx = await rpc('eth_getTransactionByHash', [hash]);
+    receipt = await rpc('eth_getTransactionReceipt', [hash]);
+  } catch {
+    return fail(503, 'The chain could not be reached to check that payment. Nothing was taken.');
+  }
+  if (!tx) return fail(404, 'No such transaction.');
+  if (!receipt) return fail(425, 'That payment has not been sealed yet. Try again in a moment.');
+  if (String(receipt.status) !== '0x1') return fail(400, 'That transaction failed on the chain.');
+
+  // The event, from the abbey's own tolls contract, for THIS toll and THIS
+  // Bloodline. topics = [sig, id, payer, tokenId].
+  let found = null;
+  for (const l of receipt.logs || []) {
+    if (String(l.address || '').toLowerCase() !== TOLLS_ADDRESS) continue;
+    const t = l.topics || [];
+    if (t.length < 4) continue;
+    if (String(t[0]).toLowerCase() !== PAID_TOPIC) continue;
+    if (String(t[1]).toLowerCase() !== priced.id.toLowerCase()) continue;
+    if (BigInt(t[3]) !== BigInt(player.token_id)) continue;
+    const payer = '0x' + String(t[2]).replace(/^0x/, '').slice(-40).toLowerCase();
+    const d = String(l.data || '0x').replace(/^0x/, '');
+    found = {
+      payer,
+      inToken: BigInt('0x' + d.slice(0, 64)) !== 0n,
+      amount: BigInt('0x' + d.slice(64, 128)),
+      ref: '0x' + d.slice(128, 192),
+    };
+    break;
+  }
+  if (!found) return fail(400, 'That payment was not for this.');
+
+  // The price is checked here as well as on chain. The contract already refuses
+  // the wrong value, but a toll repriced between the two would otherwise let an
+  // old payment buy a dearer thing.
+  const owed = found.inToken ? priced.token : priced.coin;
+  if (owed === 0n) return fail(400, 'That is not payable that way.');
+  if (found.amount < owed) return fail(402, 'That is not enough.');
+
+  // Signed by the wallet holding the line. Same rule as the confession: a
+  // stranger's payment must not buy somebody else a turn.
+  const from = String(tx.from || '').toLowerCase();
+  if (from !== found.payer) return fail(403, 'That payment did not come from the wallet that signed it.');
+  try {
+    const onChain = await readTokenFromChain(player.token_id);
+    if (onChain.owner !== from) return fail(403, 'That payment did not come from the wallet holding this Bloodline.');
+  } catch (e) {
+    if (log) log.error({ err: e, tokenId: player.token_id }, 'toll: could not verify the holder');
+    return fail(503, 'The chain could not be reached to check that Bloodline. Nothing was taken.');
+  }
+
+  return {
+    ok: true,
+    hash,
+    toll,
+    id: priced.id,
+    payer: found.payer,
+    inToken: found.inToken,
+    amount: found.amount,
+    ref: found.ref,
+    /// Bank it. Call this once the thing paid for has actually been given —
+    /// the UNIQUE index is what holds under two requests arriving together.
+    spend: () => {
+      db.prepare(`
+        INSERT INTO toll_payments (tx_hash, toll, player_id, token_id, payer, in_token, amount, ref, paid_at)
+        VALUES (?,?,?,?,?,?,?,?,?)
+      `).run(hash, toll, player.id, player.token_id, found.payer,
+             found.inToken ? 1 : 0, found.amount.toString(), found.ref, new Date().toISOString());
+    },
+  };
+}
+
+// The board of prices, for a client that wants to draw it. Named tolls only —
+// the caller says which it cares about, so an unbuilt game is simply absent.
+fastify.get('/tolls', async (req, reply) => {
+  reply.header('Cache-Control', 'no-store');
+  const names = String(req.query.names || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 20);
+  if (!TOLLS_ADDRESS || !names.length) return { address: TOLLS_ADDRESS || null, tolls: [] };
+  const tok = await payTokenInfo();
+  const out = [];
+  for (const n of names) {
+    const t = await readToll(n);
+    if (!t) continue;
+    out.push({
+      name: n,
+      id: t.id,
+      open: t.open,
+      coin: t.coin > 0n ? { wei: t.coin.toString(), amount: weiToAvax(t.coin), symbol: COIN } : null,
+      token: (t.token > 0n && tok)
+        ? { wei: t.token.toString(), amount: formatUnits(t.token, tok.decimals), symbol: tok.symbol, address: tok.address }
+        : null,
+    });
+  }
+  return { address: TOLLS_ADDRESS, tolls: out };
+});
+
+/**
+ * Bank a toll payment.
+ *
+ * The reference implementation of the pattern above, and a working endpoint in
+ * its own right: it checks a payment and records it, and grants nothing. What
+ * the payment BUYS is the game's business, and a game that has not been built
+ * yet has no business here.
+ *
+ * A mini game added later has two ways to use this. Either it calls
+ * verifyToll() itself and does the game in the same request — the right shape
+ * when the outcome must be decided at the moment of payment — or it lets the
+ * player bank the payment here first and then spends the banked row. The second
+ * is worth knowing about: it means the payment and the play can be separate
+ * requests without the payment being replayable in between.
+ */
+fastify.post('/toll/:name', async (req, reply) => {
+  const { wallet, tokenId, txHash } = req.body || {};
+  const name = String(req.params.name || '').slice(0, 40);
+  if (!wallet) return reply.code(400).send({ error: 'Missing wallet' });
+
+  const player = playerFor(wallet, tokenId);
+  if (!player) return reply.code(404).send({ error: 'Player not found' });
+  if (requireBloodline(player, reply)) return reply;
+  if (runClosed(reply)) return reply;
+
+  const priced = await readToll(name);
+  if (!priced || !priced.open) {
+    return reply.code(404).send({ error: 'Nothing here is priced by that name.' });
+  }
+
+  // No payment yet: quote both doors, the same shape the confession uses.
+  if (!txHash) {
+    const tok = await payTokenInfo();
+    return reply.code(402).send({
+      error: 'This costs something.',
+      toll: name,
+      id: priced.id,
+      payTo: TOLLS_ADDRESS,
+      price: {
+        coin: priced.coin > 0n ? { wei: priced.coin.toString(), amount: weiToAvax(priced.coin), symbol: COIN } : null,
+        token: (priced.token > 0n && tok)
+          ? { wei: priced.token.toString(), amount: formatUnits(priced.token, tok.decimals), symbol: tok.symbol, address: tok.address }
+          : null,
+      },
+    });
+  }
+
+  const paid = await verifyToll(txHash, { toll: name, player, log: req.log });
+  if (!paid.ok) return reply.code(paid.status).send({ error: paid.error });
+
+  try {
+    paid.spend();
+  } catch (e) {
+    // The primary key firing here means another request banked this same hash
+    // between the check and now. That is the race the key exists for.
+    if (e && typeof e.code === 'string' && e.code.startsWith('SQLITE_CONSTRAINT')) {
+      return reply.code(409).send({ error: 'That payment has already been spent.' });
+    }
+    throw e;
+  }
+
+  return {
+    success: true,
+    toll: name,
+    txHash: paid.hash,
+    inToken: paid.inToken,
+    amount: paid.amount.toString(),
+    ref: paid.ref,
+  };
+});
 
 // ── WHERE THE MONEY GOES ────────────────────────────────────────────────────
 //

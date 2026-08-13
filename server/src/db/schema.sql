@@ -177,3 +177,27 @@ CREATE TABLE IF NOT EXISTS final_standings (
   frozen_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_final_standings_rank ON final_standings(rank);
+
+-- EVERY TOLL EVER PAID. Mini games, entries, wagers — anything priced that is
+-- not the mint.
+--
+-- One row per transaction, and the UNIQUE primary key is what actually stops a
+-- payment being spent twice: verifyToll() checks for a duplicate before it
+-- writes, but two requests arriving together would both pass that check and
+-- only one can win the insert.
+--
+-- Deliberately generic. A new priced thing adds rows here and nothing else —
+-- no column, no table, no migration.
+CREATE TABLE IF NOT EXISTS toll_payments (
+  tx_hash   TEXT PRIMARY KEY,
+  toll      TEXT NOT NULL,      -- the name, readable: 'dice', not a hash
+  player_id TEXT NOT NULL,
+  token_id  INTEGER,
+  payer     TEXT,               -- the chain address that signed it
+  in_token  INTEGER DEFAULT 0,  -- 0 = the chain's coin, 1 = the ERC-20
+  amount    TEXT,               -- smallest units, as text: it does not fit a REAL
+  ref       TEXT,               -- the caller's own reference, opaque here
+  paid_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_toll_payments_player ON toll_payments(player_id, toll);

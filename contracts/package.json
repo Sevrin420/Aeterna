@@ -14,7 +14,11 @@
     "open:robinhoodTestnet": "MINT_OPEN=true hardhat run scripts/setMint.js --network robinhoodTestnet",
     "open:robinhood": "MINT_OPEN=true hardhat run scripts/setMint.js --network robinhood",
     "open:fuji": "MINT_OPEN=true hardhat run scripts/setMint.js --network fuji",
-    "open:avalanche": "MINT_OPEN=true hardhat run scripts/setMint.js --network avalanche"
+    "open:avalanche": "MINT_OPEN=true hardhat run scripts/setMint.js --network avalanche",
+    "tolls:robinhoodTestnet": "hardhat run scripts/deployTolls.js --network robinhoodTestnet",
+    "toll:robinhoodTestnet": "hardhat run scripts/setToll.js --network robinhoodTestnet",
+    "tolls:robinhood": "hardhat run scripts/deployTolls.js --network robinhood",
+    "toll:robinhood": "hardhat run scripts/setToll.js --network robinhood"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
