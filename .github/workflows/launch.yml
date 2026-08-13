@@ -80,9 +80,9 @@ on:
         required: true
         default: '1'
       old_contract:
-        description: 'The PREVIOUS collection, to close and sweep. Defaults to the live Avalanche one. Blank to skip.'
+        description: 'The PREVIOUS collection, to close and sweep. BLANK SKIPS IT. The live Avalanche one is 0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878 — paste it only if OLD_DEPLOYER_KEY is set and that wallet has gas.'
         required: false
-        default: '0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878'
+        default: ''
       old_network:
         description: 'Which chain the PREVIOUS collection is on. It is not the one you are launching to.'
         required: false
@@ -273,6 +273,11 @@ jobs:
           } > .env
 
       # ---- 3 & 4: finish with the old collection before starting the new one --
+      # BLANK MEANS SKIP, and blank is the default. Closing the old mint needs
+      # the key that OWNS it — a different wallet from the one launching — and
+      # gas on that chain. Neither is true by default, so the safe thing is to
+      # do nothing and say so, rather than fail the launch at step three.
+      #
       # ON THE OLD CHAIN, WHICH IS NOT THE NEW ONE. The game is moving from
       # Avalanche to Robinhood, so the collection being shut down is not on the
       # chain being launched to. Running these against `network` pointed them at

@@ -132,7 +132,7 @@ be got wrong at no cost.
 | `await_begin` | `true` — **opens the doors, holds the clock at day 0** |
 | `deploy_tolls` | `true` |
 | `founder_cultists` | `1` |
-| `old_contract` | **blank** — see below |
+| `old_contract` | **blank** (defaulted) — see below |
 | `old_network` | `avalanche` (irrelevant when old_contract is blank) |
 | `max_supply` | uncapped (defaulted) |
 | `base_uri` | `https://membersonly.cc/nft/` (defaulted) |
@@ -145,7 +145,13 @@ AVAX, and it is now 0.01 **ETH**. A 20-Cultist line costs **0.2 ETH**.
 on the chain being launched to, and closing and sweeping it has to happen on
 **its** chain.
 
-**As things stand, leave `old_contract` blank.** The Avalanche collection is
+**`old_contract` defaults to blank, which skips the old collection entirely.**
+It has to: an empty string passed through the API is read as "not supplied" and
+the default wins, so a non-blank default cannot be overridden to nothing. Paste
+the address in only when `OLD_DEPLOYER_KEY` is set and that wallet has gas on
+that chain.
+
+**As things stand, leave it blank.** The Avalanche collection is
 owned by `0x2cBf16…` and the new deployer holds **0 AVAX**, so it can pay for
 neither the close nor the sweep. Preflight reports both. The 0.04 AVAX in there
 is not going anywhere — `withdraw()` is callable by anyone, forever, by whoever
