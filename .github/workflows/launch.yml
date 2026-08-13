@@ -189,6 +189,13 @@ jobs:
           EXPECT: ${{ inputs.expect_deployer }}
         run: |
           # The address is derived and printed. The key never is.
+          # Trimmed the same way .env is written, so this checks the key that
+          # will actually be used and not a tidier copy of it.
+          export DEPLOYER_KEY=$(printf '%s' "${DEPLOYER_KEY}" | tr -d '[:space:]')
+          if ! printf '%s' "$DEPLOYER_KEY" | grep -qiE '^(0x)?[0-9a-f]{64}$'; then
+            echo "::error::DEPLOYER_KEY is not a 32-byte private key. Nothing was signed."
+            exit 1
+          fi
           GOT=$(node -e "
             const { Wallet } = require('ethers');
             process.stdout.write(new Wallet(process.env.DEPLOYER_KEY).address);
@@ -214,7 +221,7 @@ jobs:
           EXPLORER_KEY: ${{ secrets.EXPLORER_KEY }}
         run: |
           {
-            echo "DEPLOYER_KEY=${DEPLOYER_KEY}"
+            echo "DEPLOYER_KEY=$(printf '%s' "${DEPLOYER_KEY}" | tr -d '[:space:]')"
             echo "TEAM_ADDRESS=${TEAM_ADDRESS}"
             echo "TREASURY_ADDRESS=${TREASURY_ADDRESS}"
             echo "EXPLORER_KEY=${EXPLORER_KEY}"

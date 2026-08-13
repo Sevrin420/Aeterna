@@ -99,6 +99,15 @@ jobs:
           for v in DEPLOYER_KEY TEAM_ADDRESS TREASURY_ADDRESS VPS_HOST VPS_USER VPS_SSH_KEY; do
             if [ -z "${!v}" ]; then echo "::error::MISSING $v — no secret, and no value typed in"; bad=1; else echo "ok        $v"; fi
           done
+          # Shape only, never the value. A key with a stray newline fails deep
+          # inside hardhat as "errors in your config file", which names nothing.
+          if [ -n "$DEPLOYER_KEY" ]; then
+            if printf '%s' "$DEPLOYER_KEY" | grep -qiE '^(0x)?[0-9a-f]{64}$'; then
+              echo "ok        DEPLOYER_KEY is a well-formed 32-byte key"
+            else
+              echo "::error::DEPLOYER_KEY is not a 32-byte hex private key — check for a stray space or newline"; bad=1
+            fi
+          fi
           # ADMIN_TOKEN is not needed to launch. It IS needed to ever read the
           # final standings, and there is no second chance to want it.
           if [ -z "$ADMIN_TOKEN" ]; then
@@ -125,7 +134,7 @@ jobs:
           EXPECT_DEPLOYER: ${{ inputs.expect_deployer }}
           OLD_CONTRACT: ${{ inputs.old_contract }}
         run: |
-          echo "DEPLOYER_KEY=${DEPLOYER_KEY}" > .env
+          echo "DEPLOYER_KEY=$(printf '%s' "${DEPLOYER_KEY}" | tr -d '[:space:]')" > .env
           npx hardhat run scripts/preflight.js --network ${{ inputs.network }}
 
       - name: The old collection, on its own chain
@@ -138,7 +147,7 @@ jobs:
           OLD_ONLY: '1'
           OLD_CONTRACT: ${{ inputs.old_contract }}
         run: |
-          echo "DEPLOYER_KEY=${DEPLOYER_KEY}" > .env
+          echo "DEPLOYER_KEY=$(printf '%s' "${DEPLOYER_KEY}" | tr -d '[:space:]')" > .env
           npx hardhat run scripts/preflight.js --network ${{ inputs.old_network }}
 
       - name: The box
