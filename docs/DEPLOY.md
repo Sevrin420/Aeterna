@@ -132,8 +132,8 @@ be got wrong at no cost.
 | `await_begin` | `true` — **opens the doors, holds the clock at day 0** |
 | `deploy_tolls` | `true` |
 | `founder_cultists` | `1` |
-| `old_contract` | `0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878` (defaulted) |
-| `old_network` | `avalanche` (defaulted) |
+| `old_contract` | **blank** — see below |
+| `old_network` | `avalanche` (irrelevant when old_contract is blank) |
 | `max_supply` | uncapped (defaulted) |
 | `base_uri` | `https://membersonly.cc/nft/` (defaulted) |
 
@@ -144,6 +144,16 @@ AVAX, and it is now 0.01 **ETH**. A 20-Cultist line costs **0.2 ETH**.
 `old_network` is `avalanche` on purpose. The collection being shut down is not
 on the chain being launched to, and closing and sweeping it has to happen on
 **its** chain.
+
+**As things stand, leave `old_contract` blank.** The Avalanche collection is
+owned by `0x2cBf16…` and the new deployer holds **0 AVAX**, so it can pay for
+neither the close nor the sweep. Preflight reports both. The 0.04 AVAX in there
+is not going anywhere — `withdraw()` is callable by anyone, forever, by whoever
+has AVAX for gas.
+
+The cost of leaving it: **the Avalanche mint stays open**, so someone could still
+raise a Bloodline there that the new game will not read. Closing it later needs
+the old key and a little AVAX.
 
 **The old chain also needs its own key.** `setMintOpen` is `onlyOwner`, and the
 Avalanche collection is owned by `0x2cBf16…` — not by the new deployer. Set
