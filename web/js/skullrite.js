@@ -23,13 +23,27 @@
 
 import { BONE, BLOOD, VOID, SOUL, WALL, SHADOW, blueFlame, candleFlame, SOULFIRE } from './palette.js';
 import { CHANT_PAIR } from './config.js';
+import { TILE } from './abbeyMap.js';
 
-// The rite starts from ONE tile, and it is painted blood red so you can see
-// which. It used to start from anywhere inside a 44px circle, which let the
-// player kneel half inside the pool and gave no clue where the right place
-// was; a marked tile answers that without a word of instruction. The radius
-// survives only as the slack on standing exactly on it.
-export const WORSHIP_R = 9;
+// THE RITE STARTS FROM ONE FLAGSTONE, and it is painted blood red so you can
+// see which. It used to start from anywhere inside a 44px circle, which let the
+// player kneel half inside the pool and gave no clue where the right place was;
+// a marked stone answers that without a word of instruction.
+//
+// A FLAGSTONE IS NOT A TILE. The floor is grouted every TWO tiles so it reads
+// as 20px slabs rather than a busy 10px checkerboard — see _drawFloor in the
+// abbey scene. A mark one tile square therefore covered a QUARTER of the stone
+// it sat on and read as a small rug laid on the floor, which is exactly what it
+// looked like. The mark is the whole slab now, and so is the reach: a player
+// standing anywhere on the red is standing on it.
+const SLAB = TILE * 2;
+
+// The slab a point falls in, as a rect in world pixels.
+function slabAt(x, y) {
+  const sx = Math.floor(x / SLAB) * SLAB;
+  const sy = Math.floor(y / SLAB) * SLAB;
+  return { x: sx, y: sy, w: SLAB, h: SLAB };
+}
 const SKULL_S = 18;             // cranium half-width in pixels — deliberately large
 const RISE = 34;                // how high it gets by the last line of the chant
 // Even at rest the skull is drawn well above its tile centre. Centred on the
@@ -170,27 +184,31 @@ export class SkullShrine {
     if (this.altar) {
       const live = !this.done && !this.active;
       const a = live ? 0.5 + Math.sin(t * 2.2) * 0.16 : 0.20;
-      // THE WHOLE TILE. It was an 8x8 square centred on a 10x10 flagstone,
-      // which read as a rug laid on the floor rather than a stone that IS the
-      // floor — a small mark you could stand beside without being on.
-      const A = this.altar;
-      const x0 = A.x - 5, y0 = A.y - 5;          // the flagstone's own corner
+      // THE WHOLE FLAGSTONE, matched to the slab grid the floor is drawn on so
+      // it is the same size as every other stone around it.
+      const s = slabAt(this.altar.x, this.altar.y);
+      const { x: x0, y: y0, w: sw, h: sh } = s;
       ctx.fillStyle = `rgba(140,26,34,${live ? 0.96 : 0.82})`;   // the stone
-      ctx.fillRect(x0, y0, 10, 10);
+      ctx.fillRect(x0, y0, sw, sh);
       ctx.fillStyle = `rgba(198,43,48,${a})`;                    // lit face
-      ctx.fillRect(x0, y0, 10, 10);
+      ctx.fillRect(x0, y0, sw, sh);
       // Bevelled, and bevelled in reds: the light the crypt has comes from
       // above and to the left, so that is where the cut catches and the far
-      // edges fall away. Drawn INSIDE the tile, so the stone still ends where
-      // the flagstone ends.
+      // edges fall away. Drawn INSIDE the stone, so it still ends where the
+      // grout does.
       ctx.fillStyle = `rgba(232,90,74,${Math.min(1, a * 1.1)})`;
-      ctx.fillRect(x0, y0, 10, 1.5);                             // top edge
-      ctx.fillRect(x0, y0, 1.5, 10);                             // left edge
+      ctx.fillRect(x0, y0, sw, 2);                               // top edge
+      ctx.fillRect(x0, y0, 2, sh);                               // left edge
       ctx.fillStyle = `rgba(255,150,132,${a * 0.6})`;            // the cut itself
-      ctx.fillRect(x0, y0, 4, 0.9);
+      ctx.fillRect(x0, y0, 7, 1);
       ctx.fillStyle = `rgba(74,13,22,${live ? 0.9 : 0.65})`;
-      ctx.fillRect(x0, y0 + 8.5, 10, 1.5);                       // bottom, in shadow
-      ctx.fillRect(x0 + 8.5, y0, 1.5, 10);                       // right, in shadow
+      ctx.fillRect(x0, y0 + sh - 2, sw, 2);                      // bottom, in shadow
+      ctx.fillRect(x0 + sw - 2, y0, 2, sh);                      // right, in shadow
+      // The grout it sits in, so the stone reads as set into the floor rather
+      // than painted on top of it.
+      ctx.fillStyle = `rgba(28,8,14,${live ? 0.55 : 0.4})`;
+      ctx.fillRect(x0 - 1, y0 - 1, sw + 2, 1);
+      ctx.fillRect(x0 - 1, y0 - 1, 1, sh + 2);
     }
 
     // --- the pool ---------------------------------------------------------
@@ -292,10 +310,15 @@ export class SkullShrine {
   // the point of it going back down.
   settle() { this.done = true; }
 
-  // Only from the marked tile. `altar` is world pixels, set by the scene.
+  // Only from the marked flagstone. `altar` is world pixels, set by the scene.
+  //
+  // A rectangle, not a radius: the mark is a square stone and the reach is the
+  // same square, so what you can see is exactly what you can stand on. A circle
+  // inside it left the corners looking marked and behaving unmarked.
   inReach(px, py) {
     if (!this.altar) return false;
-    return Math.hypot(px - this.altar.x, py - this.altar.y) < WORSHIP_R;
+    const s = slabAt(this.altar.x, this.altar.y);
+    return px >= s.x && px < s.x + s.w && py >= s.y && py < s.y + s.h;
   }
 
   begin(px, py) {
