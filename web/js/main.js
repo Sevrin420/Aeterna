@@ -403,6 +403,7 @@ chatInput.addEventListener('keydown', (e) => {
 });
 
 const CROWD = parseInt(new URLSearchParams(location.search).get('crowd') || '0', 10) || 0;
+let _saidNotBegun = false;
 
 function enterAbbey(player) {
   updateHud(player);
@@ -430,6 +431,15 @@ function enterAbbey(player) {
   scene.enter();
   hint.textContent = '';
   window.__aeterna = { scene, player };
+
+  // The run has not begun. Said on the way in, ONCE a session — nobody should
+  // perform three duties and only then discover none of them counted. Once,
+  // because it is a state that can last days and a notice on every entry
+  // becomes something to dismiss without reading.
+  if (player && player.clock && player.clock.started === false && !_saidNotBegun) {
+    _saidNotBegun = true;
+    showToast(`${LORE.blocked.notBegun.speaker}\n\n${LORE.blocked.notBegun.text}`, { size: 't-mid' });
+  }
 }
 
 // Dev-mode stand-in for real identity: until Cultist NFTs are attached,

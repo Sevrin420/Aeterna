@@ -51,6 +51,12 @@ on:
         description: 'IMMUTABLE. Whole tokens per Cultist, written plainly: 30000. Decimals are read off the token.'
         required: false
         default: '30000'
+      await_begin:
+        description: 'Open the doors but HOLD AT DAY 0 until you call /admin/begin. Almost always true.'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
       deploy_tolls:
         description: 'Deploy the tolls contract too (mini games and anything else priced). Rarely no.'
         required: false
@@ -113,6 +119,8 @@ jobs:
             echo "| token door | \`${{ inputs.pay_token || 'off — coin only' }}\` |"
             echo "| price in token | \`${{ inputs.pay_token_per_cultist || 'n/a' }}\` per Cultist |"
             echo "| previous collection | \`${{ inputs.old_contract || 'none — first launch' }}\` on \`${{ inputs.old_network }}\` |"
+            echo ""
+            echo "| clock | \`${{ inputs.await_begin != 'false' && 'HELD at day 0 until /admin/begin' || 'starts immediately' }}\` |"
             echo ""
             echo "The player database will be archived and day 0 reset."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -438,6 +446,12 @@ jobs:
             echo "CHAIN_RPC=${CHAIN_RPC}"
             echo "CHAIN_SYMBOL=${CHAIN_SYMBOL}"
             if [ -n "${TOLLS_ADDRESS}" ]; then echo "TOLLS_ADDRESS=${TOLLS_ADDRESS}"; fi
+            # HELD AT DAY 0. The launch opens the doors; it does not start the
+            # eight weeks. Without this, week 1 burns while people are still
+            # minting and whoever gets in first is a week ahead of whoever gets
+            # in last. Fire the starting gun by hand when you are ready:
+            #   curl -X POST -H "x-admin-token: $ADMIN_TOKEN" https://membersonly.cc/admin/begin
+            if [ "${AWAIT_BEGIN}" != "false" ]; then echo "ABBEY_AWAIT_BEGIN=1"; fi
             echo "CONFESSION_TREASURY=${TREASURY_ADDRESS}"
             if [ -n "${TOKEN}" ] && [ "${TOKEN}" != "0" ]; then echo "FOUNDER_TOKEN_ID=${TOKEN}"; fi
             if [ -n "${ADMIN_TOKEN}" ]; then echo "ADMIN_TOKEN=${ADMIN_TOKEN}"; fi
@@ -450,7 +464,7 @@ jobs:
             touch /etc/aeterna-server.env
             # Anything the operator set by hand that this launch does not own
             # is kept; the keys below are replaced.
-            grep -vE '^(CHAIN_ID|CHAIN_RPC|CHAIN_SYMBOL|CONFESSION_TREASURY|TOLLS_ADDRESS|FOUNDER_TOKEN_ID|ADMIN_TOKEN)=' /etc/aeterna-server.env > /tmp/aeterna-env.keep || true
+            grep -vE '^(CHAIN_ID|CHAIN_RPC|CHAIN_SYMBOL|CONFESSION_TREASURY|TOLLS_ADDRESS|ABBEY_AWAIT_BEGIN|FOUNDER_TOKEN_ID|ADMIN_TOKEN)=' /etc/aeterna-server.env > /tmp/aeterna-env.keep || true
             cat /tmp/aeterna-env.keep /tmp/aeterna-env.new > /etc/aeterna-server.env
             chmod 600 /etc/aeterna-server.env
             grep -q 'EnvironmentFile=-\?/etc/aeterna-server.env' /etc/systemd/system/aeterna-server.service \
@@ -515,6 +529,15 @@ jobs:
             echo "| founder token | \`${{ steps.founder.outputs.token || 'skipped' }}\` |"
             echo "| tolls | \`${{ steps.tolls.outputs.address || 'not deployed' }}\` |"
             echo ""
+            if [ "${{ inputs.await_begin }}" != "false" ]; then
+              echo "**The clock is held at day 0.** The mint is open and nothing is counted."
+              echo "Start the run when you are ready:"
+              echo ""
+              echo '```'
+              echo 'curl -X POST -H "x-admin-token: $ADMIN_TOKEN" https://membersonly.cc/admin/begin'
+              echo '```'
+              echo ""
+            fi
             if [ -z "${{ secrets.ADMIN_TOKEN }}" ]; then
               echo "> **ADMIN_TOKEN is not set as a repository secret.** Without it"
               echo "> \`/admin/standings\` stays a 404 and the final totals cannot be"

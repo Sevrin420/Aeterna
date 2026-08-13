@@ -191,6 +191,51 @@ export function weiToAvax(wei, dp = 4) {
 // anchor went with it. Change this and contracts/deployments/avalanche.json
 // together or the abbey's clock and the contract it is meant to track disagree.
 const DEPLOYED_AT = '2026-08-09T02:53:08Z';    // contracts/deployments/avalanche.json
+
+// ── HELD AT DAY 0 UNTIL SOMEBODY SAYS BEGIN ─────────────────────────────────
+//
+// Deploying and starting the run are two different events, and tying them
+// together burns week 1 on an empty abbey. The mint has to open before anyone
+// can hold a Bloodline, and the people who mint on the first afternoon should
+// not be a week ahead of the people who mint on the second.
+//
+// So a launch can now open the doors and STOP. Nothing is counted, nothing is
+// paid and no streak accrues until the run is begun — and the moment it is
+// begun becomes day 0, for everybody at once.
+//
+// Precedence, in order:
+//   1. ABBEY_START in the environment — an explicit override, unchanged. A test
+//      server that wants to sit in week 6 still can.
+//   2. the begin time recorded in the database, once somebody has said begin
+//   3. ABBEY_AWAIT_BEGIN set — the run is PENDING and the clock is not running
+//   4. DEPLOYED_AT — what it always did
+//
+// (3) is last-but-one on purpose: without it, deploying this to a server whose
+// run is already underway would stop it dead. A launch sets ABBEY_AWAIT_BEGIN;
+// an existing box carries on as before.
+let _started = process.env.ABBEY_START ? new Date(process.env.ABBEY_START) : null;
+let _awaitBegin = !!process.env.ABBEY_AWAIT_BEGIN && !process.env.ABBEY_START;
+
+/// Hand the clock the begin time recorded in the database. Called once at boot
+/// and again the moment the run is begun. The env override always wins, so a
+/// test server pinned to a week cannot be moved by a stray row.
+export function setAbbeyStart(when) {
+  if (process.env.ABBEY_START) return;
+  _started = when ? new Date(when) : null;
+  if (_started) _awaitBegin = false;
+}
+
+/// Has the run begun? False only in the pending state.
+export function abbeyStarted() {
+  return !!_started || !_awaitBegin;
+}
+
+/// When day 0 is. Falls back to the deploy timestamp for a box that never had
+/// a begin — which is every box that existed before this.
+function startAt() {
+  return _started || new Date(DEPLOYED_AT);
+}
+
 export const ABBEY_START = new Date(process.env.ABBEY_START || DEPLOYED_AT);
 
 // ONE playthrough, eight weeks long. Not a season — nothing repeats after it
@@ -203,7 +248,10 @@ export const PLAYTHROUGH_DAYS = PLAYTHROUGH_WEEKS * 7;      // 56, days 0..55
 // the starting gun, not the first day of play, and every other number here is
 // derived from it.
 export function abbeyDay(now = new Date()) {
-  const elapsed = Math.floor((now.getTime() - ABBEY_START.getTime()) / 86400000);
+  // A run that has not begun is at day 0 and stays there, however long it
+  // waits. It is not day -3 and it is not day 12: it has not started.
+  if (!abbeyStarted()) return 0;
+  const elapsed = Math.floor((now.getTime() - startAt().getTime()) / 86400000);
   return Math.max(0, elapsed);
 }
 
@@ -216,17 +264,22 @@ export function abbeyWeek(now = new Date()) {
 
 // Everything about where the run stands, in one place.
 export function abbeyClock(now = new Date()) {
+  const started = abbeyStarted();
   const day = abbeyDay(now);
   const week = abbeyWeek(now);
-  const ended = day >= PLAYTHROUGH_DAYS;
+  // A pending run cannot be over. `ended` drives freezing the standings, and
+  // freezing a run nobody has played would be the worst possible reading of
+  // "the clock is not running".
+  const ended = started && day >= PLAYTHROUGH_DAYS;
   return {
+    started,
     day,
     week,
     ended,
     lastDay: PLAYTHROUGH_DAYS - 1,                            // 55
-    daysLeft: ended ? 0 : PLAYTHROUGH_DAYS - day,
+    daysLeft: !started ? PLAYTHROUGH_DAYS : (ended ? 0 : PLAYTHROUGH_DAYS - day),
     weeks: PLAYTHROUGH_WEEKS,
-    since: ABBEY_START.toISOString(),
+    since: started ? startAt().toISOString() : null,
   };
 }
 

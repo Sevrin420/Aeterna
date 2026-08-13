@@ -1,7 +1,8 @@
 # Deploy
 
-Two buttons in **Actions**. The first one is free and changes nothing; the
-second one is the launch.
+Three steps. **PREFLIGHT** is free and changes nothing. **LAUNCH** opens the
+doors and is irreversible. **BEGIN** starts the clock, and is yours to fire
+whenever you like — the run does not start until you do.
 
 ---
 
@@ -73,6 +74,7 @@ be got wrong at no cost.
 | `price_per_cultist_wei` | `10000000000000000` — **0.01 ETH.** Read this before pressing. |
 | `pay_token` | `0xe8fB470E0685437d7739BD2AacBA60b228800335` |
 | `pay_token_per_cultist` | `30000` |
+| `await_begin` | `true` — **opens the doors, holds the clock at day 0** |
 | `deploy_tolls` | `true` |
 | `founder_cultists` | `1` |
 | `old_contract` | `0x78b796dcCadD44825A6A75AfC8BeB13d6a9Cb878` (defaulted) |
@@ -101,9 +103,12 @@ on the chain being launched to, and closing and sweeping it has to happen on
 9. Rewrites and commits the address, the chain meta tags, the token, the tolls
    address and `DEPLOYED_AT` — **which is day 0** — with `[skip ci]`
 10. Deploys server and web; writes `CHAIN_ID`, `CHAIN_RPC`, `CHAIN_SYMBOL`,
-    `CONFESSION_TREASURY`, `TOLLS_ADDRESS`, `FOUNDER_TOKEN_ID` and `ADMIN_TOKEN`
-    to `/etc/aeterna-server.env`; **archives the player database**; checks
-    `/collection` reports the new address; and **opens the mint last**
+    `CONFESSION_TREASURY`, `TOLLS_ADDRESS`, `ABBEY_AWAIT_BEGIN`,
+    `FOUNDER_TOKEN_ID` and `ADMIN_TOKEN` to `/etc/aeterna-server.env`;
+    **archives the player database**; checks `/collection` reports the new
+    address; and **opens the mint last**
+
+It does **not** start the run — see step 3 below.
 
 ### It is irreversible
 
@@ -113,6 +118,44 @@ The guards are the typed `LAUNCH` and the test gate. There is no undo.
 The archive is not optional: token ids restart at 1 on a new collection and
 `/bind` refuses a token already bound to a row, so without it the first person
 to mint the new #1 is told it belongs to someone else and cannot get in at all.
+
+---
+
+## 3. BEGIN — the starting gun
+
+Launching does **not** start the run. With `await_begin` true the mint opens,
+people connect, raise lines, name them and walk the abbey — and **nothing is
+counted**. Duties do not pay, streaks do not accrue, the Confessor has nothing
+to forgive. The board says so and the abbey says so on the way in.
+
+Fire it when you are ready:
+
+```
+curl -X POST -H "x-admin-token: $ADMIN_TOKEN" https://membersonly.cc/admin/begin
+```
+
+**That instant becomes day 0, for everybody at once.** Week 1 starts, the base
+duty is worth 10, and there are 56 days on the clock.
+
+Ask without firing:
+
+```
+curl -H "x-admin-token: $ADMIN_TOKEN" https://membersonly.cc/admin/begin
+```
+
+Three things worth knowing:
+
+- **It fires once.** A second call is refused and tells you when the first was.
+  Day 0 moving after people have started keeping streaks would rewrite every
+  week boundary underneath them.
+- **It survives a restart.** The time is written to the database, not held in
+  the process — a bounced service must not silently reschedule the run.
+- **It needs `ADMIN_TOKEN`.** Without it the endpoint is a 404 and there is no
+  way to start the run at all.
+
+Why hold at all: without it, week 1 burns while people are still minting, and
+whoever gets in on the first afternoon is a week ahead of whoever gets in on
+the second.
 
 ---
 

@@ -877,13 +877,22 @@ export class AbbeyScene {
           + row('Streak', `${streak}d`) + '\n'
           + row('Multiplier', `${mult}x`),
       },
-      {
-        speaker: 'The Season',
-        text: row('Week', `${clock.week || 1} of ${clock.weeks || 8}`) + '\n'
-          + row('Devotion per task', task.base != null ? task.base : 0) + '\n'
-          + row('Days left', clock.daysLeft != null ? clock.daysLeft : '?') + '\n\n'
-          + 'The base rises each\nweek, for everyone.',
-      },
+      // A run that has not begun has no week and no days left, and printing
+      // "Week 1, 56 days left" over a clock that is not running would be a lie
+      // a player could plan around.
+      clock.started === false
+        ? {
+          speaker: 'The Season',
+          text: 'The abbey is open.\n\nThe run has NOT begun.\n\n'
+            + 'Nothing is counted\nyet. Raise your line\nand wait.',
+        }
+        : {
+          speaker: 'The Season',
+          text: row('Week', `${clock.week || 1} of ${clock.weeks || 8}`) + '\n'
+            + row('Devotion per task', task.base != null ? task.base : 0) + '\n'
+            + row('Days left', clock.daysLeft != null ? clock.daysLeft : '?') + '\n\n'
+            + 'The base rises each\nweek, for everyone.',
+        },
       {
         // "In all" is not the same figure as "Earned" and is not redundant
         // with it: Earned is what BRINGING people in has paid, and In all adds

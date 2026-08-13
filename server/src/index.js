@@ -20,10 +20,19 @@ import {
   REFERRAL_CAP, X_COMMENT_DEVOTION, X_DAILY_CLAIMS, X_PHRASE, matchesPhrase,
   todayStr, streakMultiplier, taskAward, taskDevotionForWeek, ensureFreshDay, pendingConfession,
   abbeyWeek, abbeyClock, confessionPct, confessionCostWei, weiToAvax,
+  setAbbeyStart,
 } from './lib/gameLogic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.join(__dirname, '..', '..', 'web');
+
+// WHEN THE RUN BEGAN, if it has. Read once at boot and handed to the clock
+// before a single request is served — an endpoint answering with the wrong day
+// because this had not been loaded yet would be a schedule, not a glitch.
+{
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'abbey_start'").get();
+  if (row && row.value) setAbbeyStart(row.value);
+}
 
 const fastify = Fastify({ logger: true });
 await fastify.register(cors, { origin: true });
@@ -580,6 +589,7 @@ fastify.post('/toll/:name', async (req, reply) => {
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(player, reply)) return reply;
+  if (notBegun(reply)) return reply;
   if (runClosed(reply)) return reply;
 
   const priced = await readToll(name);
@@ -1049,6 +1059,7 @@ fastify.post('/confession', async (req, reply) => {
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(player, reply)) return reply;
+  if (notBegun(reply)) return reply;
   if (runClosed(reply)) return reply;
 
   const fresh = ensureFreshDay(db, player);
@@ -1354,6 +1365,27 @@ function freezeStandings() {
 // The guard every earning route sits behind. Returns the reply when the run is
 // over, so callers can `if (runClosed(reply)) return reply;` the same way they
 // already do for requireBloodline.
+// The other end of the same idea: the run has not STARTED yet.
+//
+// The abbey is open — people can mint, bind, name a line, walk it, read the
+// board and talk to each other. Nothing is counted. Duties do not pay, streaks
+// do not accrue and the Confessor has nothing to forgive, because there is no
+// day 1 to have missed.
+//
+// This is not politeness, it is fairness: without it, whoever minted first
+// would bank a week of Devotion before the last person could get in. Held here,
+// everybody's day 0 is the same instant.
+function notBegun(reply) {
+  const clock = abbeyClock();
+  if (clock.started) return null;
+  reply.code(425).send({
+    error: 'The abbey has not begun. Nothing is counted yet.',
+    started: false,
+    pending: true,
+  });
+  return reply;
+}
+
 function runClosed(reply) {
   const clock = abbeyClock();
   if (!clock.ended) return null;
@@ -1364,6 +1396,50 @@ function runClosed(reply) {
   });
   return reply;
 }
+
+/**
+ * BEGIN THE RUN. The starting gun, fired by hand.
+ *
+ * The moment this returns, day 0 is now and the eight weeks are running for
+ * everybody at once. Before it, the abbey is open and nothing counts.
+ *
+ * FAILS CLOSED, exactly like /admin/standings: with no ADMIN_TOKEN in the
+ * server's environment there is no way to call this at all, and a wrong token
+ * is a 404 rather than a 401 — the endpoint does not admit to existing.
+ *
+ * It can be fired ONCE. Day 0 moving after people have started keeping streaks
+ * would rewrite every week boundary underneath them, so a second call is
+ * refused and says when the first one was.
+ */
+fastify.post('/admin/begin', async (req, reply) => {
+  const want = process.env.ADMIN_TOKEN;
+  if (!want || req.headers['x-admin-token'] !== want) return reply.code(404).send({ error: 'Not found' });
+
+  const already = db.prepare("SELECT value, set_at FROM settings WHERE key = 'abbey_start'").get();
+  if (already && already.value) {
+    return reply.code(409).send({
+      error: 'The run has already begun.',
+      startedAt: already.value,
+      clock: abbeyClock(),
+    });
+  }
+
+  const when = new Date().toISOString();
+  db.prepare("INSERT OR REPLACE INTO settings (key, value, set_at) VALUES ('abbey_start', ?, ?)").run(when, when);
+  setAbbeyStart(when);
+  req.log.warn({ when }, 'THE RUN HAS BEGUN — day 0 is now');
+
+  return { success: true, startedAt: when, clock: abbeyClock() };
+});
+
+/// Whether the run has begun, without the power to begin it. Same auth, because
+/// it is the operator's question and nobody else's — players are told by /day.
+fastify.get('/admin/begin', async (req, reply) => {
+  const want = process.env.ADMIN_TOKEN;
+  if (!want || req.headers['x-admin-token'] !== want) return reply.code(404).send({ error: 'Not found' });
+  const row = db.prepare("SELECT value, set_at FROM settings WHERE key = 'abbey_start'").get();
+  return { startedAt: row ? row.value : null, clock: abbeyClock() };
+});
 
 // The standings, for the operator settling the pot. FAILS CLOSED: without
 // ADMIN_TOKEN in the server's environment there is no way to call this at all.
@@ -1398,6 +1474,7 @@ fastify.post('/duty/:type', async (req, reply) => {
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(player, reply)) return reply;
+  if (notBegun(reply)) return reply;
   if (runClosed(reply)) return reply;
 
   const fresh = ensureFreshDay(db, player);
@@ -1566,6 +1643,7 @@ fastify.post('/referral', async (req, reply) => {
   const referee = playerFor(wallet, tokenId);
   if (!referee) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(referee, reply)) return reply;
+  if (notBegun(reply)) return reply;
   if (runClosed(reply)) return reply;
 
   const handle = String(xHandle || '').trim().replace(/^@/, '');
@@ -1677,6 +1755,7 @@ fastify.post('/x/claim', async (req, reply) => {
   const player = playerFor(wallet, tokenId);
   if (!player) return reply.code(404).send({ error: 'Player not found' });
   if (requireBloodline(player, reply)) return reply;
+  if (notBegun(reply)) return reply;
   if (runClosed(reply)) return reply;
   if (!player.x_handle) return reply.code(400).send({ error: 'No X handle bound to this Cultist' });
 

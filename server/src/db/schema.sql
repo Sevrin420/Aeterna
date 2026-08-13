@@ -201,3 +201,16 @@ CREATE TABLE IF NOT EXISTS toll_payments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_toll_payments_player ON toll_payments(player_id, toll);
+
+-- ONE ROW PER SETTING, for the few things the operator sets at RUNTIME rather
+-- than at deploy. Only one so far: abbey_start, the moment the run was begun.
+--
+-- In the database rather than the environment because it is written by a
+-- request, not by a person editing a file — and because it must survive a
+-- restart. Day 0 moving because a service bounced would be the whole run's
+-- schedule quietly changing.
+CREATE TABLE IF NOT EXISTS settings (
+  key     TEXT PRIMARY KEY,
+  value   TEXT,
+  set_at  TEXT
+);
