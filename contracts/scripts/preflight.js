@@ -55,12 +55,43 @@ async function main() {
   else ok('the deployer has gas');
 
   // ---- where the money will go ---------------------------------------------
-  for (const [label, addr] of [['TEAM_ADDRESS', process.env.TEAM_ADDRESS], ['TREASURY_ADDRESS', process.env.TREASURY_ADDRESS]]) {
+  const team = process.env.TEAM_ADDRESS;
+  const treasury = process.env.TREASURY_ADDRESS;
+  for (const [label, addr] of [['TEAM_ADDRESS', team], ['TREASURY_ADDRESS', treasury]]) {
     if (!addr || !hre.ethers.isAddress(addr)) { fail(`${label} is not an address: ${addr}`); continue; }
     if (addr.toLowerCase() === ZERO) { fail(`${label} is the zero address`); continue; }
     // Immutable at deploy, so this is the last moment either can be corrected.
     ok(`${label} ${addr}`);
   }
+
+  // THREE ROLES, AND WHETHER THEY ARE THREE WALLETS.
+  //
+  // Not failures — one wallet can legitimately be two of these. But all three
+  // are fixed forever at deploy and none of them can be changed afterwards, so
+  // the last honest moment to notice they are the same is now, printed rather
+  // than assumed.
+  //
+  // The one that actually matters: the DEPLOYER key signs, and it is the key
+  // most likely to be on a laptop. Money never lands in it — withdraw() pays
+  // only team and treasury — unless the treasury IS it, at which point every
+  // coin the run takes sits behind the key that has been used the most.
+  const same = (a, b) => a && b && a.toLowerCase() === b.toLowerCase();
+  const dep = signer.address;
+  if (same(team, treasury)) {
+    note('TEAM_ADDRESS and TREASURY_ADDRESS are the SAME wallet — the 20/80 split still happens on chain, but both halves land in one place.');
+  } else if (team && treasury) {
+    ok('team and treasury are different wallets');
+  }
+  if (same(treasury, dep)) {
+    note('THE TREASURY IS THE DEPLOYER WALLET. Everything the run takes will sit behind the key that signs the deploys. A separate treasury is worth the five minutes.');
+  } else if (treasury) {
+    ok('the treasury is not the deployer — signing keys and held funds are apart');
+  }
+  if (same(team, dep)) note('TEAM_ADDRESS is the deployer wallet too.');
+  // Said whichever way it goes, because it is a thing to have decided rather
+  // than discovered: the founder's free Bloodline is minted BY the owner, TO
+  // the owner, and it is soulbound, so it can never be moved to another wallet.
+  note(`the founder's free line will be raised in the deployer wallet ${dep}, and is soulbound there forever`);
 
   // ---- what a line will cost ------------------------------------------------
   const price = BigInt(process.env.PRICE_PER_CULTIST_WEI || 0);

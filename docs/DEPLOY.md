@@ -18,6 +18,23 @@ missing rather than letting the launch find out.
 | **Gas** | ETH in the deployer wallet **on Robinhood Chain**. Bridged in ahead of time. |
 | **Team + treasury** | Must be addresses you control **on Robinhood Chain**. Both are immutable at deploy. |
 
+### The four wallets, and which are which
+
+| Role | What it is | Where it lives |
+|---|---|---|
+| **Deployer / owner** | Signs the deploys. Opens and closes the mint, takes the founder line, names and prices tolls. **Never receives mint money.** | `DEPLOYER_KEY` |
+| **Team** | 20% of everything minted and every toll | `TEAM_ADDRESS` |
+| **Treasury** | 80% — the pot the run pays out of | `TREASURY_ADDRESS` |
+| **Founder line** | The free Bloodline. Minted by the owner, **to** the owner, and soulbound there forever. Excluded from the payout. | the deployer wallet |
+
+Mint money never touches the deployer wallet: `withdraw()` and `withdrawToken()`
+pay only team and treasury, both immutable, and anyone may call them. So a
+compromised deployer key costs you control of the mint — not the funds — **as
+long as the treasury is a different wallet**.
+
+PREFLIGHT prints all three and says plainly when any two are the same. They are
+fixed forever at deploy, so that report is the last honest moment to notice.
+
 `EXPLORER_KEY` is optional — Blockscout takes any key.
 
 ---
