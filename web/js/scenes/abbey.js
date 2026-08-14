@@ -847,7 +847,15 @@ export class AbbeyScene {
   // survive the trip, and a ledger of dotted rows is what a board of figures
   // ought to look like anyway. Every row is built to exactly ROW_W characters,
   // which is what fits a line at this font.
-  async _readBoard() {
+  // `input` so the box can be opened on a clean queue — see the flush below.
+  // It is optional only so a caller without one still reads the board.
+  async _readBoard(input = null) {
+    // The row is fetched before the box opens, so a second press while the
+    // first fetch is in the air used to start a second read — two requests, and
+    // the later one reopening the box at page one under a reader already on
+    // page two.
+    if (this._boardReading) return;
+    this._boardReading = true;
     let p = this.player;
     try {
       const fresh = await api.me();
@@ -857,6 +865,7 @@ export class AbbeyScene {
         this.onPlayerUpdate(this.player);
       }
     } catch { /* show what we have rather than nothing */ }
+    finally { this._boardReading = false; }
 
     const ROW_W = 22;
     const row = (label, value) => {
@@ -908,6 +917,11 @@ export class AbbeyScene {
           + row('In all', `+${ref.total || 0}`),
       },
     ];
+    // This box opens a network round trip after the press that asked for it,
+    // and the abbey has been running the whole time. Whatever was pressed
+    // during the wait was aimed at the room, not at a box that did not exist
+    // yet, so none of it comes in with the box.
+    if (input && input.flush) input.flush();
     this.dialogue.show(pages, boxOpts());
   }
 
@@ -1083,6 +1097,24 @@ export class AbbeyScene {
     // behind it but nothing walks, and A/B belong to the text.
     if (this.dialogue.active) { this.dialogue.update(dt, input); return; }
 
+    // DRAIN THE DIRECTION QUEUE. The abbey walks off input.dirs — the HELD
+    // state — and never reads the edge-triggered queue beside it. Nothing else
+    // down here reads it either, so every direction the player pressed while
+    // walking around sat in that queue and stayed there, for the whole session.
+    //
+    // It was not idle. The dialogue box reads one queued direction per frame
+    // and pages on left/right, so opening the Reckoning — the one board in the
+    // abbey with more than a single page — drained a walk's worth of stale
+    // presses into it in the first few frames and landed the reader on the last
+    // page before they had seen the first. Closing and reopening looked fixed
+    // only because the first open had emptied the queue.
+    //
+    // Fixed where it starts rather than at each screen that suffers it: the
+    // emoji ring already carried its own drain for exactly this reason, and the
+    // next thing to read a direction would have needed a third copy. Drained
+    // here, the queue never outlives the frame the abbey ignores it in.
+    while (input.consumeDir && input.consumeDir()) { /* not ours; do not keep it */ }
+
     const p = this.pc;
     let dx = 0, dy = 0;
     if (input.dirs.up) { dy -= 1; p.dir = 'up'; }
@@ -1153,7 +1185,7 @@ export class AbbeyScene {
         // whole point is that its numbers are current. So it re-reads the row
         // rather than showing whatever was true when the player walked in —
         // the same staleness that once hid a referral's Devotion.
-        this._readBoard();
+        this._readBoard(input);
       } else if (this._activeStation) {
         // Every station introduces itself before it acts. The box closes into
         // the rite, so reading is never a detour — it is the way in.
