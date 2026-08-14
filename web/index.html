@@ -110,7 +110,13 @@
           <input class="naming-input" id="walletInput" type="text" maxlength="16"
                  autocomplete="off" autocapitalize="none" spellcheck="false" hidden />
           <!-- The mint rite: how many Cultists this Bloodline will hold, fixed
-               forever the moment it is raised. -->
+               forever the moment it is raised.
+
+               Three things and no more — the count, what it costs, and the bar
+               that sets it. The 1/20 end labels that used to sit under the bar
+               are gone: the count above it is live and always reads the number
+               the bar is on, so the labels only told the player something they
+               were already being told, in the smallest type on the screen. -->
           <div class="cultist-slider" id="cultistSlider" hidden>
             <p class="cultist-count" id="cultistCount">1 Cultist</p>
             <!-- Overwritten by paint() with the real price and ticker the
@@ -118,7 +124,6 @@
             <p class="cultist-cost" id="cultistCost">—</p>
             <input type="range" id="cultistRange" min="1" max="20" step="1" value="1"
                    aria-label="Cultists in this Bloodline" />
-            <p class="cultist-ticks"><span>1</span><span>20</span></p>
           </div>
           <button type="button" class="naming-submit" id="walletSubmit" hidden>Confirm</button>
           <button type="button" class="naming-submit" id="walletSkip" hidden>Not now</button>

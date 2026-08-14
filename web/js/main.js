@@ -1456,10 +1456,13 @@ async function openMintPicker(menu) {
 
   const total = (n) => price * BigInt(n);
   const tokenTotal = (n) => (payTok ? payTok.price * BigInt(n) : 0n);
-  walletMsg.innerHTML = 'How many Cultists shall this Bloodline hold? The count is fixed '
-    + `forever at the moment it is raised. <span class="addr">${formatAvax(price)} ${COIN}</span>`
-    + (payTok ? ` or <span class="addr">${formatUnits(payTok.price, payTok.decimals)} ${payTok.symbol}</span>` : '')
-    + ' each.';
+  // The one line of prose this screen keeps. Everything else it used to say —
+  // how many a Bloodline may hold, what one Cultist costs in each currency —
+  // is either shown live above the bar or is a number the player never has to
+  // do arithmetic on. What CANNOT be read off anything else is that the choice
+  // is one-way, so that is the sentence that stays.
+  const COUNT_MSG = 'The count is fixed forever.';
+  walletMsg.textContent = COUNT_MSG;
 
   cultistSlider.hidden = false;
   walletSubmitBtn.hidden = false;
@@ -1471,8 +1474,13 @@ async function openMintPicker(menu) {
   const paint = () => {
     const n = Number(cultistRange.value);
     cultistCount.textContent = `${n} Cultist${n === 1 ? '' : 's'}`;
-    cultistCost.textContent = payTok
-      ? `${formatAvax(total(n))} ${COIN}  ·  ${formatUnits(tokenTotal(n), payTok.decimals)} ${payTok.symbol}`
+    // The two prices go on two lines rather than side by side with a dot
+    // between them. At the size this screen is now set in, the pair on one
+    // line — "0.20 ETH · 600,000 THROBBIN" — is wider than the panel and wraps
+    // wherever it happens to run out, which is what made the block look broken
+    // at the top of the range. Split deliberately, both lines fit at full size.
+    cultistCost.innerHTML = payTok
+      ? `${formatAvax(total(n))} ${COIN}<br>or ${formatUnits(tokenTotal(n), payTok.decimals)} ${payTok.symbol}`
       : `${formatAvax(total(n))} ${COIN}`;
   };
   paint();
@@ -1576,7 +1584,9 @@ async function openMintPicker(menu) {
 
     cultistSlider.hidden = true;
     walletSkipBtn.hidden = false;
-    walletMsg.innerHTML = `<b>${n} Cultist${n === 1 ? '' : 's'}.</b> How will you pay?`;
+    // The count is repeated here because the bar that showed it is gone, and
+    // this is the last screen before money moves.
+    walletMsg.innerHTML = `<b>${n} Cultist${n === 1 ? '' : 's'}.</b><br>How will you pay?`;
 
     const paintPick = () => {
       const coinTxt = `${formatAvax(total(n))} ${COIN}`;
@@ -1608,9 +1618,7 @@ async function openMintPicker(menu) {
           walletSkipBtn.hidden = true;
           cultistSlider.hidden = false;
           walletSubmitBtn.textContent = 'Raise it';
-          walletMsg.innerHTML = 'How many Cultists shall this Bloodline hold? The count is fixed '
-            + `forever at the moment it is raised. <span class="addr">${formatAvax(price)} ${COIN}</span>`
-            + ` or <span class="addr">${formatUnits(payTok.price, payTok.decimals)} ${payTok.symbol}</span> each.`;
+          walletMsg.textContent = COUNT_MSG;
           _mintInput = slider;
           input.flush();
         }

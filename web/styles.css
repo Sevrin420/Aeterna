@@ -897,18 +897,13 @@ body.rite-open .hud {
   color: #f2d264;
   font-size: clamp(11px, 3.4cqw, 17px);
   letter-spacing: 0.04em;
+  line-height: 1.2;
 }
 .cultist-cost {
   margin: 2px 0 6px;
   color: #8ef06e;
   font-size: clamp(8px, 2.6cqw, 12px);
-}
-.cultist-ticks {
-  display: flex;
-  justify-content: space-between;
-  margin: 2px 0 0;
-  color: #6b5227;
-  font-size: clamp(6px, 2cqw, 9px);
+  line-height: 1.25;
 }
 /* ---- THE MINT SLIDER, and only it -------------------------------------
    `minting` is put on the overlay while the count is being chosen and taken
@@ -916,19 +911,25 @@ body.rite-open .hud {
    Cultist chooser and the name/handle prompts — which share this overlay and
    are much tighter for room — keep the sizes they were tuned at.
 
+   FOUR THINGS ARE ON THIS SCREEN: what rite it is, how many, what that costs,
+   and the bar that sets it — plus the one sentence saying the choice cannot be
+   taken back. The paragraph that used to open it (how many a Bloodline may
+   hold, and the per-Cultist price in both currencies) and the 1/20 labels under
+   the bar are both gone: the count and the total are painted live an inch
+   above, so all either did was say the same thing again in smaller type.
+
    The type is pushed as far as it goes. What stops it is NOT wrapping, which
    was the thing to watch for — it is the height of the box: the overlay is a
    flex column with no scroll, so the moment the stack is taller than the panel
-   the bottom of it hangs outside the frame. The ceilings below were found by
-   growing everything against the LONGEST message this screen can show (the
-   opening "How many Cultists…", which is longer than any of the errors that
-   replace it) and stopping short of that limit, so a font that loads a little
-   wide has somewhere to go.
+   the bottom of it hangs outside the frame. Losing the paragraph and the labels
+   is what paid for the sizes below; they were raised until the tallest state
+   this screen can reach (both prices, plus an error long enough to wrap) still
+   sits inside ~314px of content height, and stopped short of it so a font that
+   loads a little wide has somewhere to go.
 
-   The prose is deliberately grown less than the numbers. It is the longest run
-   of text here and every step it takes costs several lines of height, so
-   holding it back is what buys the count its size — and the count is what the
-   player is actually reading.
+   The prose is still deliberately grown less than the numbers. It is the one
+   element here that can wrap, and every line it takes costs the count its size
+   — and the count is what the player is actually reading.
 
    `.naming-title` is the exception to all of the above, and its ceiling is
    arithmetic rather than measurement: it is the one element in Press Start 2P,
@@ -942,13 +943,19 @@ body.rite-open .hud {
    inside it, not in the overlay, so THAT cap — and not the panel — is what the
    count line has to fit; at the size below "20 Cultists" is 260px wide and was
    breaking after "20". The mint page gives it the full width of the panel. */
-.wallet-overlay.minting .cultist-slider { width: 100%; max-width: none; }
+.wallet-overlay.minting .cultist-slider { width: 100%; max-width: none; margin: 0 auto; }
+/* A short stack in a tall panel: left at the top it hung under the title with
+   the whole lower half of the frame empty. Centred, and with the gaps opened
+   up, the five things left on the screen are spaced rather than stacked. */
+.wallet-overlay.minting { justify-content: center; gap: clamp(6px, 2.4cqw, 12px); }
 .wallet-overlay.minting .naming-title { font-size: clamp(9px, 3.75cqw, 18px); }
-.wallet-overlay.minting .wallet-msg { font-size: clamp(8px, 3.1cqw, 15px); }
-.wallet-overlay.minting .cultist-count { font-size: clamp(15px, 7.7cqw, 37px); }
-.wallet-overlay.minting .cultist-cost { font-size: clamp(11px, 5.4cqw, 26px); }
-.wallet-overlay.minting .cultist-ticks { font-size: clamp(8px, 3.95cqw, 19px); }
-.wallet-overlay.minting .naming-submit { font-size: clamp(9px, 5cqw, 24px); padding: 8px 20px; }
+.wallet-overlay.minting .wallet-msg { font-size: clamp(9px, 3.5cqw, 17px); min-height: 0; }
+.wallet-overlay.minting .cultist-count { font-size: clamp(17px, 8.8cqw, 42px); }
+/* The two prices are on two lines (see paint() in main.js), so the width to
+   clear is the longer ONE of them — "or 600,000 THROBBIN", 19 Courier
+   characters, which touches the edges at 29.5px. */
+.wallet-overlay.minting .cultist-cost { font-size: clamp(11px, 5.6cqw, 26px); margin: 4px 0 10px; }
+.wallet-overlay.minting .naming-submit { font-size: clamp(10px, 5.4cqw, 26px); padding: 8px 20px; }
 /* The mint page has no Back button. B backs out of it instead, the same way B
    backs out of the Bloodline chooser — see _mintBack in main.js. Removing the
    button without that would leave the only exit from this screen a purchase. */
@@ -994,6 +1001,18 @@ body.rite-open .hud {
   border-radius: 2px;
   cursor: pointer;
 }
+/* The bar grows with the type it sits under. Kept as four separate rules on
+   purpose: a browser that does not know one of these vendor pseudo-elements
+   throws out the WHOLE selector list it appears in, so grouping them would
+   silently drop the rule everywhere. */
+.wallet-overlay.minting #cultistRange::-webkit-slider-runnable-track { height: 6px; }
+.wallet-overlay.minting #cultistRange::-moz-range-track { height: 6px; }
+.wallet-overlay.minting #cultistRange::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  margin-top: -8px;
+}
+.wallet-overlay.minting #cultistRange::-moz-range-thumb { width: 22px; height: 22px; }
 
 
 /* ===== Emoji: the button, and the ring it opens ========================== */
