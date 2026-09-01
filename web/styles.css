@@ -22,6 +22,14 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Extra room below only, not above: centering an item in a box padded
+     evenly on both sides still centers it in the viewport, so the D-pad and
+     face buttons — which sit in the console art's bottom third — always
+     ended up in the lower half of the screen, right where a phone's thumb
+     reach and browser chrome are tightest. Padding the bottom of the flex
+     box (never the top) shifts that center of mass upward without moving
+     the console off the top edge on short viewports. */
+  padding-bottom: clamp(24px, 6vh, 64px);
   overscroll-behavior: none;
   -webkit-touch-callout: none;
 }
