@@ -124,6 +124,71 @@ Shown before a password-only account is created, and on the account page while n
 - State-changing POSTs require the session cookie plus a same-origin check.
 - Password change or reset revokes all other sessions for that account.
 
+## Play tracking
+
+Every play of every game is recorded on the server, whether or not the player is signed in. Consistency rewards are computed from these records.
+
+### Player identity for a play
+
+| Situation | Player key | Notes |
+|---|---|---|
+| Signed in | `account:<id>` | Plays are attributed to the account directly. |
+| Anonymous | `anon:<uuid>` | Anonymous id in an `HttpOnly; Secure; SameSite=Lax` cookie, valid one year. Created on first anonymous play. |
+
+Anonymous ids are grouped by cookie, so clearing cookies or switching browser starts a new anonymous player. That is an accepted gap: anonymous history is a convenience, not a record that can be relied on for rewards.
+
+### Anonymous history on sign-up or login
+
+When an anonymous player signs up, logs in, or links a wallet, the server claims their anonymous id for that account:
+
+1. Find `anon_players` row for the cookie's id. If it is already claimed by a different account, do nothing.
+2. Otherwise set `claimed_by_account_id` and re-attribute all `play_events` with `player_key = anon:<uuid>` to the account.
+
+This runs in one transaction. A given anonymous id can be claimed only once.
+
+### Schema
+
+```sql
+anon_players (
+  anon_id            TEXT PRIMARY KEY,   -- uuid v4, the cookie value
+  claimed_by_account_id INTEGER REFERENCES accounts(id),
+  created_at         TEXT NOT NULL
+);
+
+play_events (
+  id           INTEGER PRIMARY KEY,
+  game_id      TEXT NOT NULL,            -- registry of games, see below
+  player_key   TEXT NOT NULL,            -- 'account:<id>' or 'anon:<uuid>'
+  account_id   INTEGER REFERENCES accounts(id),  -- NULL while anonymous
+  started_at   TEXT NOT NULL,
+  ended_at     TEXT,
+  outcome      TEXT,                     -- game-defined: 'win' | 'loss' | 'completed' | ...
+  score        INTEGER,
+  access_level TEXT NOT NULL,            -- level in force when the play started
+  meta         TEXT                      -- JSON, game-defined
+);
+CREATE INDEX play_events_account ON play_events(account_id, started_at);
+CREATE INDEX play_events_player  ON play_events(player_key, started_at);
+```
+
+`account_id` is set alongside `player_key` when a play is recorded for a signed-in player and filled in on claim for anonymous ones. Leaderboards and reward queries use `account_id`, plus `player_key` for anonymous groups.
+
+### Game registry
+
+Each game registers an id, title and access level in config, not code. The registry is the only place a game's access level is set, so tracking and access rules stay in one place.
+
+### Recording a play
+
+- Game client calls `POST /plays/start` with `game_id` and receives a `play_id`.
+- On finish, the client calls `POST /plays/:id/end` with outcome and score.
+- The server, not the client, sets `player_key`, `account_id`, `started_at` and `access_level`. Clients cannot choose whose play it is.
+- Plays left open for a long time (for example over 24 hours) are closed with no outcome, so they don't count as completed.
+- Score and outcome are reported by the game server for games where that matters, not trusted from a browser. Where a game cannot verify its own results, its plays are still counted as attempts, but rewards for those games use only completed-play counts, not scores.
+
+### Consistency rewards
+
+Rewards are computed from `play_events` for signed-in accounts only. Anonymous groups appear in analytics and leaderboards but are not eligible for rewards until they claim an account. This keeps the reward ledger tied to something that can be verified.
+
 ## Existing identity
 
 The current dev stand-in (`POST /register` with a client-generated pseudo-wallet id in `localStorage`) is replaced by this model. Existing Cultist rows keyed by that id need a migration plan before cutover. **Open:** whether any live players must be carried over.
@@ -141,3 +206,4 @@ The current dev stand-in (`POST /register` with a client-generated pseudo-wallet
 3. SIWE nonce, verify, and login/link/reset endpoints with tests for replay, domain mismatch and expiry.
 4. Access-level middleware and the NFT gate reader, with the chain read stubbed in tests.
 5. Migrate the existing game to `/auth/me`.
+6. Play tracking: `anon_players` and `play_events` tables, `/plays/start` and `/plays/:id/end`, and anonymous-to-account claim on signup, login and link, with tests for double-claim and cross-account attempts.
