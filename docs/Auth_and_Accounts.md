@@ -187,7 +187,11 @@ Each game registers an id, title and access level in config, not code. The regis
 
 ### Consistency rewards
 
-Rewards are computed from `play_events` for signed-in accounts only. Anonymous groups appear in analytics and leaderboards but are not eligible for rewards until they claim an account. This keeps the reward ledger tied to something that can be verified.
+Rewards are computed from `play_events` for accounts with a linked wallet only. Rewards are paid to that wallet, so an account without one has nowhere to send them.
+
+- Anonymous groups appear in analytics and leaderboards, but are not reward-eligible.
+- Password-only accounts keep their play history and appear in leaderboards, but are not reward-eligible until they link a wallet.
+- Linking a wallet makes all earlier plays on the account eligible. Plays are never re-scored, only counted when the reward is computed.
 
 ## Existing identity
 
