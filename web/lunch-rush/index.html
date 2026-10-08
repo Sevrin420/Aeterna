@@ -63,6 +63,10 @@ const INF = 1e9;
 const BURGER = { pts: 2, price: 200, range: 2.5, col: '#a8642c' };
 const ORDER_SIZES = [10, 20, 30];
 const LOW_AMMO = 5;   // a lady at or below this pulses red
+// Every lady cooks her own burgers, but only keeps a small stack hot. Runners
+// carry the big orders that fill her past it for the busy waves.
+const COOK = { every: 4, everyUpgraded: 2, keep: 20 };
+const NEW_LADY_BURGERS = 5;
 const STU = {
   nerd:  { hunger: 2, speed: 1.5, dps: 20 },
   cheer: { hunger: 3, speed: 1.1, dps: 20 },
@@ -70,7 +74,7 @@ const STU = {
   foot:  { hunger: 8, speed: 0.6, dps: 60 },
 };
 const STU_KEYS = ['nerd', 'cheer', 'band', 'foot'];
-const COST = { table: 1000, lady: 3000, dur: 1500, checkout: 2500, range: 2500, fast: 2500, mop: 2500 };
+const COST = { table: 1000, lady: 3000, dur: 1500, checkout: 2500, range: 2500, fast: 2500, mop: 2500, cook: 2500 };
 const PAY_PER_PT = 150, LADY_CAP = 100;
 const HOMES = [[0.3, 8.15], [0.85, 8.15]];
 // Tie-break orders for students' 50/50 bias: down first, then the biased side.
@@ -461,13 +465,13 @@ function drawBG() {
 let G = null, mode = 'title', uiT = 0, sel = null;
 
 function mkTable(c, r) { return { kind: 'table', c, r, hp: 100, max: 100, dur: false, checkout: false, hitT: 0 }; }
-function mkLady(c, r, ammo) { return { kind: 'lady', c, r, ammo, incoming: 0, range: false, fast: false, mop: null, throwT: 0, armT: 0, face: 1, faceVis: 1 }; }
+function mkLady(c, r, ammo) { return { kind: 'lady', c, r, ammo, incoming: 0, range: false, fast: false, mop: null, cook: false, cookT: 0, throwT: 0, armT: 0, face: 1, faceVis: 1 }; }
 function mkRunner(i) { return { i, x: HOMES[i][0], y: HOMES[i][1], state: 'idle', path: [], carry: null, loadT: 0, stunT: 0, anim: 0, face: 1, faceVis: 1, moving: false }; }
 
 function newGame(demo) {
   const g = {
     demo, t: 0, money: 4000, orders: [], grid: [], tables: [], ladies: [], students: [], foods: [], puddles: [],
-    parts: [], floats: [], leaks: 0, spawnAcc: 0, over: false, overT: 0, fallT: 0, combo: 0, lastFed: -9, banner: null,
+    parts: [], floats: [], leaks: 0, spawnAcc: 0, over: false, overT: 0, combo: 0, lastFed: -9, banner: null,
     shake: 0, flash: 0, msg: null, botT: 1, fieldN: null, fieldF: null, ver: 0,
   };
   for (let r = 0; r < ROWS; r++) g.grid.push(new Array(COLS).fill(null));
@@ -659,6 +663,15 @@ function pickTarget(g, l) {
 }
 function updLady(g, l, dt) {
   l.armT -= dt;
+  if (l.ammo < COOK.keep) {
+    l.cookT += dt;
+    const every = l.cook ? COOK.everyUpgraded : COOK.every;
+    if (l.cookT >= every) {
+      l.cookT -= every; l.ammo++;
+      const [sx, sy, s] = P(l.c + 0.5, l.r + 0.5);
+      addPart(g, { k: 'dust', x: sx + 4 * s, y: sy - 13 * s, vx: 0, vy: -8, col: 'rgba(255,255,255,0.85)', life: 0.5, t: 0 });
+    }
+  } else l.cookT = 0;
   l.throwT -= dt;
   if (l.throwT <= 0) {
     const s = pickTarget(g, l);
@@ -739,15 +752,15 @@ function replan(g, ru) {
   ru.path = pathBack(g, ru);
 }
 // Buying burgers from a lady's menu: paid now, carried by the next free runner.
-function orderBurgers(g, l, q, free) {
+function orderBurgers(g, l, q) {
   const room = LADY_CAP - l.ammo - l.incoming;
   if (room <= 0) return fail(g, 'She is full');
-  const qty = Math.min(q, room), cost = free ? 0 : qty * BURGER.price;
+  const qty = Math.min(q, room), cost = qty * BURGER.price;
   if (g.money < cost) return fail(g, 'Not enough money');
   g.money -= cost; l.incoming += qty;
   g.orders.push({ lady: l, qty });
   const idle = g.runners.some(r => r.state === 'idle');
-  if (!free) say(g, idle ? `${qty} burgers! Runner on the way` : `${qty} burgers queued for the next runner`);
+  say(g, idle ? `${qty} burgers! Runner on the way` : `${qty} burgers queued for the next runner`);
   return true;
 }
 function dispatch(g) {
@@ -839,7 +852,7 @@ function placeLady(g, c, r) {
   if (!ok) return fail(g, 'She must stand next to a table or the counter');
   if (g.money < COST.lady) return fail(g, 'Not enough money');
   if (wouldTrap(g, c, r)) return fail(g, 'That would trap the students');
-  g.money -= COST.lady; addObj(g, mkLady(c, r, 0)); afterGrid(g);
+  g.money -= COST.lady; addObj(g, mkLady(c, r, NEW_LADY_BURGERS)); afterGrid(g);
   const [x, y] = P(c + 0.5, r + 0.5); burst(g, 'star', x, y - 10, 8, ['#f8d030', '#fff']);
   return true;
 }
@@ -864,7 +877,7 @@ function bot(g, dt) {
   const tryRandom = fn => { for (let k = 0; k < 14; k++) if (fn(g, rint(7), 1 + rint(5))) return; };
   if (g.money >= 4500 && g.ladies.length < 6 && Math.random() < 0.5) tryRandom(placeLady);
   else if (g.money >= 2500 && g.tables.length < 7 && Math.random() < 0.3) tryRandom(placeTable);
-  else if (g.money >= 5000 && Math.random() < 0.2) { const l = g.ladies[rint(g.ladies.length)]; upgrade(g, l, ['range', 'fast', 'mop'][rint(3)]); }
+  else if (g.money >= 5000 && Math.random() < 0.2) { const l = g.ladies[rint(g.ladies.length)]; upgrade(g, l, ['cook', 'range', 'fast', 'mop'][rint(4)]); }
 }
 
 // ---------------------------------------------------------------- effects
@@ -897,7 +910,9 @@ function updFx(g, dt) {
 // ---------------------------------------------------------------- simulation
 function sim(g, dt) {
   g.t += dt;
-  const rate = 20 + 30 * Math.min(g.t, 90) / 90;   // students per minute
+  // students per minute: 20 -> 50 over the first 90 s, then +30 more every minute after,
+  // so every defence eventually breaks
+  const rate = g.t <= 90 ? 20 + 30 * g.t / 90 : 50 + 30 * (g.t - 90) / 60;
   g.spawnAcc += rate / 60 * dt;
   while (g.spawnAcc >= 1) { g.spawnAcc -= 1; spawn(g); }
   for (const s of g.students) if (s.alive) { updStudent(g, s, dt); if (g.over) break; }
@@ -911,17 +926,6 @@ function sim(g, dt) {
   for (const p of g.puddles) p.t -= dt;
   g.puddles = g.puddles.filter(p => p.t > 0);
   for (const t of g.tables) t.hitT -= dt;
-  // anti-softlock: nothing to throw, nothing on the way, and no money to fix it
-  const stuck = !g.orders.length && g.ladies.every(l => l.ammo < 5) && g.runners.every(r => r.state === 'idle') && g.money < ORDER_SIZES[0] * BURGER.price;
-  if (stuck) {
-    g.fallT += dt;
-    if (g.fallT >= 30) {
-      g.fallT = 0;
-      const l = g.ladies.reduce((a, b) => (b.ammo + b.incoming < a.ammo + a.incoming ? b : a));
-      if (orderBurgers(g, l, 10, true)) say(g, 'The kitchen sent 10 free burgers!');
-    }
-  }
-  else g.fallT = 0;
 }
 function update(dt) {
   uiT += dt;
@@ -963,10 +967,9 @@ function menuFor(g) {
     w = 122; h = 62; lift = 22;
     lab(5, 6.5, 'LADY', 6, '#3870c0', 'left');
     items.push({ t: 'ammo', x: 44, y: 6.5, n: o.ammo });
-    lab(117, 6.5, `reach ${rangeOf(o)}`, 4.8, INK, 'right');
-    btn(4, 13, 37, 17, 'RANGE', o.range ? 'DONE' : '$25', !o.range && g.money >= COST.range, () => upgrade(g, o, 'range'));
-    btn(43, 13, 37, 17, 'FAST', o.fast ? 'DONE' : '$25', !o.fast && g.money >= COST.fast, () => upgrade(g, o, 'fast'));
-    btn(82, 13, 37, 17, 'MOP', o.mop ? 'DONE' : '$25', !o.mop && g.money >= COST.mop, () => upgrade(g, o, 'mop'));
+    lab(117, 6.5, `cooks 1/${o.cook ? COOK.everyUpgraded : COOK.every}s · reach ${rangeOf(o)}`, 4.4, INK, 'right');
+    [['COOK', 'cook'], ['RANGE', 'range'], ['FAST', 'fast'], ['MOP', 'mop']].forEach(([label, k], i) =>
+      btn(4 + i * 29, 13, 27, 17, label, o[k] ? 'DONE' : '$25', !o[k] && g.money >= COST[k], () => upgrade(g, o, k)));
     const idle = g.runners.filter(r => r.state === 'idle').length;
     lab(5, 35, 'ORDER BURGERS', 5.5, '#3870c0', 'left');
     lab(117, 35, g.orders.length ? `${g.orders.length} queued` : `${idle} runner${idle === 1 ? '' : 's'} free`, 4.6, idle || !g.orders.length ? INK : '#e02810', 'right');
@@ -1006,7 +1009,7 @@ function drawMenu(m) {
         txt(it.label, x + 22, y + it.h * 0.36, 5.8, lc, 'center', ls, 1.4);
         txt(it.sub, x + 22, y + it.h * 0.74, 4.8, light ? '#fff6a0' : lc, 'center', ls, 1.2);
       } else if (it.sub) {
-        txt(it.label, x + it.w / 2, y + it.h * 0.36, 5.5, lc, 'center', ls, 1.4);
+        txt(it.label, x + it.w / 2, y + it.h * 0.36, it.w < 30 ? 4.8 : 5.5, lc, 'center', ls, 1.4);
         txt(it.sub, x + it.w / 2, y + it.h * 0.74, 4.8, light ? '#fff6a0' : lc, 'center', ls, 1.2);
       } else txt(it.label, x + it.w / 2, y + it.h / 2, 6, lc, 'center', ls, 1.4);
     }
@@ -1122,6 +1125,11 @@ function drawLadyOverlay(l) {
     const rx = sx, ry = sy - 32 * s;
     ctx.beginPath(); ctx.arc(rx, ry, 1.8, 0, Math.PI * 2); stroke(ctx, 0.7, '#3870c0');
     ctx.beginPath(); ctx.arc(rx, ry, 0.6, 0, Math.PI * 2); ctx.fillStyle = '#3870c0'; ctx.fill();
+  }
+  if (l.cook) {
+    const fx = sx + 6.5 * s, fy = sy - 4 * s, fl = 1 + Math.sin(uiT * 14) * 0.15;
+    PL(ctx, [fx, fy - 3 * fl, fx + 1.4, fy - 0.6, fx + 0.9, fy + 0.8, fx - 0.9, fy + 0.8, fx - 1.4, fy - 0.6], '#f86818');
+    PL(ctx, [fx, fy - 1.6 * fl, fx + 0.7, fy, fx, fy + 0.7, fx - 0.7, fy], '#f8d030', true);
   }
   if (l.fast) {
     const bx2 = sx - 7.5 * s, by2 = sy - 19 * s;
@@ -1368,8 +1376,8 @@ function drawTitle() {
   const lines = [
     ['Students rush the lunch counter.', INK],
     ['Tap a tile: TABLES block, LADIES throw.', INK],
-    ['Tap a lady to order burgers.', INK],
-    ['A runner brings them to her.', INK],
+    ['Ladies cook burgers, 20 at a time.', INK],
+    ['Tap one to order more or upgrade her.', INK],
     ['Feed them all! 3 misses and it\'s over.', '#e02810'],
   ];
   lines.forEach(([l, col], i) => txt(l, 64, 92 + i * 9.4, 4.7, col, 'center', null));
@@ -1408,6 +1416,7 @@ window.__LR = {
   screen(lx, ly) { const r = cv.getBoundingClientRect(); return [(OX + lx * SC) * r.width / cv.width + r.left, (OY + ly * SC) * r.height / cv.height + r.top]; },
   menu() { return menuFor(G); }, step(sec, dt = 1 / 60) { for (let t = 0; t < sec; t += dt) update(dt); render(); },
   P, BURGER, COST,
+  act: { placeLady: (c, r) => placeLady(G, c, r), placeTable: (c, r) => placeTable(G, c, r), upgrade: (o, k) => upgrade(G, o, k), order: (l, q) => orderBurgers(G, l, q) },
 };
 })();
 </script>
