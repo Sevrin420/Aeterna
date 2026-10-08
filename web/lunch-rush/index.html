@@ -74,7 +74,7 @@ const STU = {
   foot:  { hunger: 8, speed: 0.6, dps: 60 },
 };
 const STU_KEYS = ['nerd', 'cheer', 'band', 'foot'];
-const COST = { table: 1000, lady: 3000, dur: 1500, checkout: 2500, range: 2500, fast: 2500, mop: 2500, cook: 2500 };
+const COST = { table: 1000, lady: 3000, dur: 1500, checkout: 2500, fast: 2500, mop: 2500, cook: 2500 };
 const PAY_PER_PT = 150, LADY_CAP = 100;
 const HOMES = [[0.3, 8.15], [0.85, 8.15]];
 // Tie-break orders for students' 50/50 bias: down first, then the biased side.
@@ -465,7 +465,7 @@ function drawBG() {
 let G = null, mode = 'title', uiT = 0, sel = null;
 
 function mkTable(c, r) { return { kind: 'table', c, r, hp: 100, max: 100, dur: false, checkout: false, hitT: 0 }; }
-function mkLady(c, r, ammo) { return { kind: 'lady', c, r, ammo, incoming: 0, range: false, fast: false, mop: null, cook: false, cookT: 0, throwT: 0, armT: 0, face: 1, faceVis: 1 }; }
+function mkLady(c, r, ammo) { return { kind: 'lady', c, r, ammo, incoming: 0, fast: false, mop: null, cook: false, cookT: 0, throwT: 0, armT: 0, face: 1, faceVis: 1 }; }
 function mkRunner(i) { return { i, x: HOMES[i][0], y: HOMES[i][1], state: 'idle', path: [], carry: null, loadT: 0, stunT: 0, anim: 0, face: 1, faceVis: 1, moving: false }; }
 
 function newGame(demo) {
@@ -646,11 +646,10 @@ function smash(g, t) {
 }
 
 // ---------------------------------------------------------------- lunch ladies
-function rangeOf(l) { return BURGER.range + (l.range ? 1 : 0); }
 // The nearest student who still needs food and is within her reach.
 function pickTarget(g, l) {
   if (l.ammo <= 0) return null;
-  const lx = l.c + 0.5, ly = l.r + 0.5, reach = rangeOf(l);
+  const lx = l.c + 0.5, ly = l.r + 0.5, reach = BURGER.range;
   let best = null, bd = Infinity;
   for (const s of g.students) {
     if (!s.alive || s.hunger - s.incoming <= 0) continue;
@@ -862,7 +861,6 @@ function upgrade(g, o, kind) {
   g.money -= COST[kind];
   if (kind === 'dur') { o.dur = true; o.max += 50; o.hp += 50; }
   else if (kind === 'mop') o.mop = { cd: 6, max: 6 };
-  else if (kind === 'range') o.range = true;
   else o[kind] = true;
   const [x, y] = P(o.c + 0.5, o.r + 0.5); burst(g, 'star', x, y - 8, 8, ['#f8d030', '#fff', '#58f858']);
   return true;
@@ -877,7 +875,7 @@ function bot(g, dt) {
   const tryRandom = fn => { for (let k = 0; k < 14; k++) if (fn(g, rint(7), 1 + rint(5))) return; };
   if (g.money >= 4500 && g.ladies.length < 6 && Math.random() < 0.5) tryRandom(placeLady);
   else if (g.money >= 2500 && g.tables.length < 7 && Math.random() < 0.3) tryRandom(placeTable);
-  else if (g.money >= 5000 && Math.random() < 0.2) { const l = g.ladies[rint(g.ladies.length)]; upgrade(g, l, ['cook', 'range', 'fast', 'mop'][rint(4)]); }
+  else if (g.money >= 5000 && Math.random() < 0.2) { const l = g.ladies[rint(g.ladies.length)]; upgrade(g, l, ['cook', 'fast', 'mop'][rint(3)]); }
 }
 
 // ---------------------------------------------------------------- effects
@@ -967,9 +965,9 @@ function menuFor(g) {
     w = 122; h = 62; lift = 22;
     lab(5, 6.5, 'LADY', 6, '#3870c0', 'left');
     items.push({ t: 'ammo', x: 44, y: 6.5, n: o.ammo });
-    lab(117, 6.5, `cooks 1/${o.cook ? COOK.everyUpgraded : COOK.every}s · reach ${rangeOf(o)}`, 4.4, INK, 'right');
-    [['COOK', 'cook'], ['RANGE', 'range'], ['FAST', 'fast'], ['MOP', 'mop']].forEach(([label, k], i) =>
-      btn(4 + i * 29, 13, 27, 17, label, o[k] ? 'DONE' : '$25', !o[k] && g.money >= COST[k], () => upgrade(g, o, k)));
+    lab(117, 6.5, `cooks 1/${o.cook ? COOK.everyUpgraded : COOK.every}s · reach ${BURGER.range}`, 4.4, INK, 'right');
+    [['COOK', 'cook'], ['FAST', 'fast'], ['MOP', 'mop']].forEach(([label, k], i) =>
+      btn(4 + i * 39, 13, 37, 17, label, o[k] ? 'DONE' : '$25', !o[k] && g.money >= COST[k], () => upgrade(g, o, k)));
     const idle = g.runners.filter(r => r.state === 'idle').length;
     lab(5, 35, 'ORDER BURGERS', 5.5, '#3870c0', 'left');
     lab(117, 35, g.orders.length ? `${g.orders.length} queued` : `${idle} runner${idle === 1 ? '' : 's'} free`, 4.6, idle || !g.orders.length ? INK : '#e02810', 'right');
@@ -1121,11 +1119,6 @@ function drawLadyOverlay(l) {
     txt('!', sx, head + b + 0.3, 5.5, '#fff', 'center', null);
   }
   if (l.incoming > 0) txt('+' + l.incoming, sx + 6 * s, sy - 20 * s, 4.5, '#58f858', 'left');
-  if (l.range) {
-    const rx = sx, ry = sy - 32 * s;
-    ctx.beginPath(); ctx.arc(rx, ry, 1.8, 0, Math.PI * 2); stroke(ctx, 0.7, '#3870c0');
-    ctx.beginPath(); ctx.arc(rx, ry, 0.6, 0, Math.PI * 2); ctx.fillStyle = '#3870c0'; ctx.fill();
-  }
   if (l.cook) {
     const fx = sx + 6.5 * s, fy = sy - 4 * s, fl = 1 + Math.sin(uiT * 14) * 0.15;
     PL(ctx, [fx, fy - 3 * fl, fx + 1.4, fy - 0.6, fx + 0.9, fy + 0.8, fx - 0.9, fy + 0.8, fx - 1.4, fy - 0.6], '#f86818');
@@ -1288,7 +1281,7 @@ function drawSel() {
   if (o && o.kind === 'lady') {
     ctx.beginPath();
     for (let k = 0; k <= 40; k++) {
-      const ang = k / 40 * Math.PI * 2, [px, py] = P(o.c + 0.5 + Math.cos(ang) * rangeOf(o), o.r + 0.5 + Math.sin(ang) * rangeOf(o));
+      const ang = k / 40 * Math.PI * 2, [px, py] = P(o.c + 0.5 + Math.cos(ang) * BURGER.range, o.r + 0.5 + Math.sin(ang) * BURGER.range);
       k ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
     }
     ctx.fillStyle = 'rgba(248,200,32,0.1)'; ctx.fill();
