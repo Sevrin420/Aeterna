@@ -58,6 +58,10 @@ await fastify.register(fastifyStatic, {
 // ========== HEALTH ==========
 fastify.get('/health', async () => ({ status: 'ok', service: 'aeterna' }));
 
+// Lunch Rush is a static page in web/lunch-rush/. The directory index only
+// answers with the trailing slash, so send the bare path there instead of a 404.
+fastify.get('/lunch-rush', (req, reply) => reply.redirect('/lunch-rush/', 301));
+
 // ========== BLOODLINE METADATA ==========
 // What the contract's tokenURI points at, and the whole of "the NFT is
 // upgradable": the card a marketplace shows is built here, now, from live
